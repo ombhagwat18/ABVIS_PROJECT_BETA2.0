@@ -1,0 +1,57 @@
+=================================================================
+Stage 2D-B ù YOLO Export Validation
+Timestamp: 2026-09-30T21:33:09.196764
+=================================================================
+[LOAD] Loading annotations.json ...
+[LOAD] Loading split.json ...
+[SPLIT] 594 images in split.json
+
+  [PASS] Check 01: Expected image counts
+         train=418, val=89, test=87, total=594
+  [PASS] Check 02: Exported images exist on disk
+         All 594 images present
+  [PASS] Check 03: Label file exists for every image
+         All 594 label files present
+  [PASS] Check 04: No unexpected image files
+         No unexpected image files found
+  [PASS] Check 05: No unexpected label files
+         No unexpected label files found
+
+[SCAN] Scanning all label files (checks 6-11) ...
+  [PASS] Check 06: All class IDs valid (0, 1, 2)
+  [PASS] Check 07: Every label line has exactly 5 values
+  [PASS] Check 08: All coordinate values are numeric
+  [PASS] Check 09: All coordinate values are finite
+  [PASS] Check 10: Width and height > 0
+  [PASS] Check 11: Edge-crop boxes not rejected (boundary touch OK)
+         245 edge-crop boxes found (all accepted as legitimate)
+  [PASS] Check 12: Total box count = 1994
+         Found 1994 boxes
+  [PASS] Check 13: Per-class totals
+         bottle=739, cap=709, label=546
+  [PASS] Check 14: Per-split box counts
+         All per-split per-class counts match
+  [PASS] Check 15: No image in multiple splits
+         All images appear in exactly one split
+  [PASS] Check 16: Exported filenames match split.json
+         Export filenames exactly match split.json
+  [PASS] Check 17: data.yaml correctness
+         nc=3, names=[bottle,cap,label], all split paths present
+
+[YOLO] Running Ultralytics compatibility check ...
+  [PASS] Check 18: Ultralytics YOLO compatibility
+         ultralytics 8.1.0 is installed
+  [PASS] Check 19: YOLO dataset loading smoke test
+         check_det_dataset passed ΓÇö train=E:\MACHINE LEARNING PROJECT\Datasets\Bottle-train-OpenCV-main_vesion two\stage2_dataset\yolo_export\images\train val=E:\MACHINE LEARNING PROJECT\Datasets\Bottle-train-OpenCV-main_vesion two\stage2_dataset\yolo_export\images\val
+
+[REPORT] Writing E:\MACHINE LEARNING PROJECT\Datasets\Bottle-train-OpenCV-main_vesion two\stage2_dataset\yolo_export\EXPORT_REPORT.md ...
+
+=================================================================
+Checks: 19 total | 19 PASSED | 0 FAILED
+=================================================================
+
+EXPORT_VALIDATION_PASSED
+
+All 19 checks passed. Do NOT start training.
+Do NOT modify the dataset.
+Report saved to: E:\MACHINE LEARNING PROJECT\Datasets\Bottle-train-OpenCV-main_vesion two\stage2_dataset\yolo_export\EXPORT_REPORT.md

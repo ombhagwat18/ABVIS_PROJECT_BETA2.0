@@ -20,10 +20,41 @@ venv/
 # per-machine preferences (font size, probe depth), not project state
 settings.json
 
-# legacy datasets, generated datasets, logs
+# legacy / generated image datasets
 All Datasets/
-stage2_dataset/
 yolo_detection_dataset/
 YOLO_EXPORT/
-*.log
+
+# Stage 2 detection dataset. The provenance IS tracked: scripts, annotations.json,
+# split.json, scene_map.json, manifests, audit reports and the portable data.yaml.
+# What is NOT tracked is anything bulky or regenerable: the images, and the YOLO
+# export (images + labels, rebuilt by stage2_dataset/export_yolo.py from
+# annotations.json + split.json; its hash is recorded in models/stage2_yolo).
+stage2_dataset/clean/
+stage2_dataset/source/
+stage2_dataset/yolo_export/
+
+# Model weights are never pushed (checksums and how to rebuild are recorded in
+# models/stage2_yolo/MODEL_PROVENANCE.json). Logs and editor autosaves neither.
 *.pt
+*.log
+*.~bak
+*.~isp
+
+# YOLO runs: keep only the small evidence, not sample batches, tfevents, smoke
+# runs or raw args.yaml (it records a local home-directory path).
+models/*
+!models/stage2_yolo/
+models/stage2_yolo/*
+!models/stage2_yolo/MODEL_PROVENANCE.json
+!models/stage2_yolo/training_metadata.json
+!models/stage2_yolo/run_yolov8n/
+models/stage2_yolo/run_yolov8n/*
+!models/stage2_yolo/run_yolov8n/results.csv
+!models/stage2_yolo/run_yolov8n/results.png
+!models/stage2_yolo/run_yolov8n/PR_curve.png
+!models/stage2_yolo/run_yolov8n/confusion_matrix_normalized.png
+!models/stage2_yolo/test_eval/
+models/stage2_yolo/test_eval/*
+!models/stage2_yolo/test_eval/PR_curve.png
+!models/stage2_yolo/test_eval/confusion_matrix_normalized.png

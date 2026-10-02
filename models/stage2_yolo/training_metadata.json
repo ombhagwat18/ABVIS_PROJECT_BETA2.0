@@ -1,0 +1,142 @@
+{
+  "date": "2026-10-02 14:20:31",
+  "chosen": "yolov8n.pt",
+  "model_path": "E:\\MACHINE LEARNING PROJECT\\Datasets\\Bottle-train-OpenCV-main_vesion two\\models\\stage2_yolo\\stage2_best.pt",
+  "model_size_mb": 6.226585,
+  "n_params": 3006233,
+  "train_args": {
+    "epochs": 80,
+    "imgsz": 640,
+    "batch": 8,
+    "patience": 20,
+    "seed": 0,
+    "deterministic": true,
+    "workers": 2,
+    "candidates": [
+      "yolov8n.pt",
+      "yolov8s.pt"
+    ],
+    "selection": "best val mAP50-95 (fitness) per run; candidate chosen on val mAP50-95"
+  },
+  "data": {
+    "yaml": "E:\\MACHINE LEARNING PROJECT\\Datasets\\Bottle-train-OpenCV-main_vesion two\\stage2_dataset\\yolo_export\\data.yaml",
+    "split_json": "stage2_dataset/split.json",
+    "train": 418,
+    "val": 89,
+    "test": 87,
+    "classes": [
+      "bottle",
+      "cap",
+      "label"
+    ]
+  },
+  "candidates": {
+    "yolov8n.pt": {
+      "run_dir": "E:\\MACHINE LEARNING PROJECT\\Datasets\\Bottle-train-OpenCV-main_vesion two\\models\\stage2_yolo\\run_yolov8n",
+      "best": "E:\\MACHINE LEARNING PROJECT\\Datasets\\Bottle-train-OpenCV-main_vesion two\\models\\stage2_yolo\\run_yolov8n\\weights\\best.pt",
+      "train_minutes": 14.826022736231486,
+      "epochs_run": 53,
+      "val": {
+        "map50": 0.9763506823884894,
+        "map50_95": 0.72978087133532,
+        "precision": 0.9978769501105326,
+        "recall": 0.9651994396519944,
+        "per_class": {
+          "bottle": {
+            "precision": 0.9983453728382731,
+            "recall": 0.9562043795620438,
+            "map50": 0.9886234063887694,
+            "map50_95": 0.7845467754624835
+          },
+          "cap": {
+            "precision": 0.9975317750623783,
+            "recall": 1.0,
+            "map50": 0.995,
+            "map50_95": 0.6497967240724525
+          },
+          "label": {
+            "precision": 0.9977537024309461,
+            "recall": 0.9393939393939394,
+            "map50": 0.9454286407766991,
+            "map50_95": 0.7549991144710235
+          }
+        }
+      }
+    }
+  },
+  "candidates_skipped": {
+    "yolov8s.pt": {
+      "reason": "insufficient memory before launch",
+      "mem": {
+        "free_ram_mb": 1841,
+        "free_commit_mb": 410,
+        "total_ram_mb": 16004
+      },
+      "min_free_ram_mb": 3000,
+      "min_free_commit_mb": 4000
+    }
+  },
+  "test": {
+    "map50": 0.9681920685683988,
+    "map50_95": 0.65999500096815,
+    "precision": 0.9361644876972104,
+    "recall": 0.968208652145044,
+    "per_class": {
+      "bottle": {
+        "precision": 0.9984373137189647,
+        "recall": 1.0,
+        "map50": 0.995,
+        "map50_95": 0.8159831646080098
+      },
+      "cap": {
+        "precision": 0.901795146468352,
+        "recall": 0.986013986013986,
+        "map50": 0.9870753390657455,
+        "map50_95": 0.5934754093836023
+      },
+      "label": {
+        "precision": 0.9082610029043147,
+        "recall": 0.9186119704211461,
+        "map50": 0.9225008666394507,
+        "map50_95": 0.570526428912838
+      }
+    }
+  },
+  "benchmark_gpu": {
+    "n_images": 87,
+    "device": "0",
+    "batch": 1,
+    "latency_ms_mean": 29.30897011493868,
+    "latency_ms_p50": 28.73239999996713,
+    "latency_ms_p95": 37.111229999970874,
+    "fps_end_to_end": 34.119247318427725,
+    "model_inference_ms_mean": 18.9466860102511,
+    "fps_model_only": 52.77967869731679
+  },
+  "benchmark_cpu": {
+    "n_images": 87,
+    "device": "cpu",
+    "batch": 1,
+    "latency_ms_mean": 247.92213218390955,
+    "latency_ms_p50": 214.0150000000176,
+    "latency_ms_p95": 439.03138000001724,
+    "fps_end_to_end": 4.0335245231684125,
+    "model_inference_ms_mean": 237.2183991574693,
+    "fps_model_only": 4.215524611715233
+  },
+  "export_hash_before": "11db7388e499dd4930dd402316341c46be8eccfb65813b3f2efebd030b823bd9",
+  "export_hash_after": "11db7388e499dd4930dd402316341c46be8eccfb65813b3f2efebd030b823bd9",
+  "export_unchanged": true,
+  "removed_ultralytics_cache_files": [
+    "labels\\test.cache",
+    "labels\\train.cache",
+    "labels\\val.cache"
+  ],
+  "env": {
+    "ultralytics": "8.1.0",
+    "torch": "2.4.1+cu124",
+    "cuda": "12.4",
+    "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU",
+    "python": "3.8.0"
+  }
+}

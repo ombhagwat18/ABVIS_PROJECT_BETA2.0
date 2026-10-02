@@ -1,0 +1,4771 @@
+{
+  "schema_version": "1.0",
+  "task": "detection",
+  "classes": [
+    "bottle",
+    "cap",
+    "label"
+  ],
+  "source_split_manifest": "stage2_dataset/split_manifest.csv",
+  "source_split_json": "stage2_dataset/split.json",
+  "total_images": 594,
+  "split_counts": {
+    "TRAIN": 418,
+    "VAL": 89,
+    "TEST": 87
+  },
+  "images": [
+    {
+      "source_filename": "img_001.png",
+      "clean_filename": "img_001.png",
+      "scene_id": 1,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_003.png",
+      "clean_filename": "img_003.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_004.png",
+      "clean_filename": "img_004.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_005.png",
+      "clean_filename": "img_005.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_006.png",
+      "clean_filename": "img_006.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_007.png",
+      "clean_filename": "img_007.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_008.png",
+      "clean_filename": "img_008.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_009.png",
+      "clean_filename": "img_009.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_010.png",
+      "clean_filename": "img_010.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_011.png",
+      "clean_filename": "img_011.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_012.png",
+      "clean_filename": "img_012.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_014.png",
+      "clean_filename": "img_014.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_015.png",
+      "clean_filename": "img_015.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_016.png",
+      "clean_filename": "img_016.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_017.png",
+      "clean_filename": "img_017.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_018.png",
+      "clean_filename": "img_018.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_019.png",
+      "clean_filename": "img_019.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_020.png",
+      "clean_filename": "img_020.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_021.png",
+      "clean_filename": "img_021.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_022.png",
+      "clean_filename": "img_022.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_023.png",
+      "clean_filename": "img_023.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_025.png",
+      "clean_filename": "img_025.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_026.png",
+      "clean_filename": "img_026.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_027.png",
+      "clean_filename": "img_027.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_028.png",
+      "clean_filename": "img_028.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_029.png",
+      "clean_filename": "img_029.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_030.png",
+      "clean_filename": "img_030.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_031.png",
+      "clean_filename": "img_031.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_032.png",
+      "clean_filename": "img_032.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_033.png",
+      "clean_filename": "img_033.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_034.png",
+      "clean_filename": "img_034.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_036.png",
+      "clean_filename": "img_036.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_037.png",
+      "clean_filename": "img_037.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_038.png",
+      "clean_filename": "img_038.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_039.png",
+      "clean_filename": "img_039.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_040.png",
+      "clean_filename": "img_040.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_041.png",
+      "clean_filename": "img_041.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_042.png",
+      "clean_filename": "img_042.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_043.png",
+      "clean_filename": "img_043.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_044.png",
+      "clean_filename": "img_044.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_068.png",
+      "clean_filename": "img_068.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_079.png",
+      "clean_filename": "img_079.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_090.png",
+      "clean_filename": "img_090.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_091.png",
+      "clean_filename": "img_091.png",
+      "scene_id": 10,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_092.png",
+      "clean_filename": "img_092.png",
+      "scene_id": 10,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_093.png",
+      "clean_filename": "img_093.png",
+      "scene_id": 10,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_094.png",
+      "clean_filename": "img_094.png",
+      "scene_id": 10,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_095.png",
+      "clean_filename": "img_095.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_096.png",
+      "clean_filename": "img_096.png",
+      "scene_id": 10,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_097.png",
+      "clean_filename": "img_097.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_098.png",
+      "clean_filename": "img_098.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_099.png",
+      "clean_filename": "img_099.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_100.png",
+      "clean_filename": "img_100.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_101.png",
+      "clean_filename": "img_101.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_102.png",
+      "clean_filename": "img_102.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_103.png",
+      "clean_filename": "img_103.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_104.png",
+      "clean_filename": "img_104.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_105.png",
+      "clean_filename": "img_105.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_106.png",
+      "clean_filename": "img_106.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_107.png",
+      "clean_filename": "img_107.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_108.png",
+      "clean_filename": "img_108.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_109.png",
+      "clean_filename": "img_109.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_110.png",
+      "clean_filename": "img_110.png",
+      "scene_id": 10,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_111.png",
+      "clean_filename": "img_111.png",
+      "scene_id": 11,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_112.png",
+      "clean_filename": "img_112.png",
+      "scene_id": 1,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_113.png",
+      "clean_filename": "img_113.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_114.png",
+      "clean_filename": "img_114.png",
+      "scene_id": 11,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_115.png",
+      "clean_filename": "img_115.png",
+      "scene_id": 11,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_116.png",
+      "clean_filename": "img_116.png",
+      "scene_id": 11,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_117.png",
+      "clean_filename": "img_117.png",
+      "scene_id": 11,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_118.png",
+      "clean_filename": "img_118.png",
+      "scene_id": 11,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_119.png",
+      "clean_filename": "img_119.png",
+      "scene_id": 11,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_120.png",
+      "clean_filename": "img_120.png",
+      "scene_id": 11,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_121.png",
+      "clean_filename": "img_121.png",
+      "scene_id": 11,
+      "near_dup_group_id": "3",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_122.png",
+      "clean_filename": "img_122.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_123.png",
+      "clean_filename": "img_123.png",
+      "scene_id": 11,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_124.png",
+      "clean_filename": "img_124.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_125.png",
+      "clean_filename": "img_125.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_126.png",
+      "clean_filename": "img_126.png",
+      "scene_id": 11,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_127.png",
+      "clean_filename": "img_127.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_128.png",
+      "clean_filename": "img_128.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_129.png",
+      "clean_filename": "img_129.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_130.png",
+      "clean_filename": "img_130.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_131.png",
+      "clean_filename": "img_131.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_132.png",
+      "clean_filename": "img_132.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_133.png",
+      "clean_filename": "img_133.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_134.png",
+      "clean_filename": "img_134.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_135.png",
+      "clean_filename": "img_135.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_136.png",
+      "clean_filename": "img_136.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_137.png",
+      "clean_filename": "img_137.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_138.png",
+      "clean_filename": "img_138.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_139.png",
+      "clean_filename": "img_139.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_140.png",
+      "clean_filename": "img_140.png",
+      "scene_id": 11,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_141.png",
+      "clean_filename": "img_141.png",
+      "scene_id": 12,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_142.png",
+      "clean_filename": "img_142.png",
+      "scene_id": 12,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_143.png",
+      "clean_filename": "img_143.png",
+      "scene_id": 12,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_144.png",
+      "clean_filename": "img_144.png",
+      "scene_id": 12,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_145.png",
+      "clean_filename": "img_145.png",
+      "scene_id": 12,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_146.png",
+      "clean_filename": "img_146.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_147.png",
+      "clean_filename": "img_147.png",
+      "scene_id": 12,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_148.png",
+      "clean_filename": "img_148.png",
+      "scene_id": 12,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_149.png",
+      "clean_filename": "img_149.png",
+      "scene_id": 12,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_150.png",
+      "clean_filename": "img_150.png",
+      "scene_id": 12,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_151.png",
+      "clean_filename": "img_151.png",
+      "scene_id": 12,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_157.png",
+      "clean_filename": "img_157.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_168.png",
+      "clean_filename": "img_168.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_173.png",
+      "clean_filename": "img_173.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_174.png",
+      "clean_filename": "img_174.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_175.png",
+      "clean_filename": "img_175.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_176.png",
+      "clean_filename": "img_176.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_177.png",
+      "clean_filename": "img_177.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_178.png",
+      "clean_filename": "img_178.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_179.png",
+      "clean_filename": "img_179.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_180.png",
+      "clean_filename": "img_180.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_181.png",
+      "clean_filename": "img_181.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_182.png",
+      "clean_filename": "img_182.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_183.png",
+      "clean_filename": "img_183.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_184.png",
+      "clean_filename": "img_184.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_185.png",
+      "clean_filename": "img_185.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_186.png",
+      "clean_filename": "img_186.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_187.png",
+      "clean_filename": "img_187.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_188.png",
+      "clean_filename": "img_188.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_189.png",
+      "clean_filename": "img_189.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_190.png",
+      "clean_filename": "img_190.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_191.png",
+      "clean_filename": "img_191.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_192.png",
+      "clean_filename": "img_192.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_193.png",
+      "clean_filename": "img_193.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_194.png",
+      "clean_filename": "img_194.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_195.png",
+      "clean_filename": "img_195.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_196.png",
+      "clean_filename": "img_196.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_197.png",
+      "clean_filename": "img_197.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_198.png",
+      "clean_filename": "img_198.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_199.png",
+      "clean_filename": "img_199.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_200.png",
+      "clean_filename": "img_200.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_201.png",
+      "clean_filename": "img_201.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_202.png",
+      "clean_filename": "img_202.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_203.png",
+      "clean_filename": "img_203.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_204.png",
+      "clean_filename": "img_204.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_205.png",
+      "clean_filename": "img_205.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_206.png",
+      "clean_filename": "img_206.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_207.png",
+      "clean_filename": "img_207.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_208.png",
+      "clean_filename": "img_208.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_209.png",
+      "clean_filename": "img_209.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_210.png",
+      "clean_filename": "img_210.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_211.png",
+      "clean_filename": "img_211.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_212.png",
+      "clean_filename": "img_212.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_213.png",
+      "clean_filename": "img_213.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_214.png",
+      "clean_filename": "img_214.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_215.png",
+      "clean_filename": "img_215.png",
+      "scene_id": 14,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_223.png",
+      "clean_filename": "img_223.png",
+      "scene_id": 1,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_224.png",
+      "clean_filename": "img_224.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_232.png",
+      "clean_filename": "img_232.png",
+      "scene_id": 16,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_233.png",
+      "clean_filename": "img_233.png",
+      "scene_id": 16,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_234.png",
+      "clean_filename": "img_234.png",
+      "scene_id": 16,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_235.png",
+      "clean_filename": "img_235.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_236.png",
+      "clean_filename": "img_236.png",
+      "scene_id": 16,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_237.png",
+      "clean_filename": "img_237.png",
+      "scene_id": 16,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_238.png",
+      "clean_filename": "img_238.png",
+      "scene_id": 16,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_239.png",
+      "clean_filename": "img_239.png",
+      "scene_id": 17,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_240.png",
+      "clean_filename": "img_240.png",
+      "scene_id": 17,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_241.png",
+      "clean_filename": "img_241.png",
+      "scene_id": 17,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_242.png",
+      "clean_filename": "img_242.png",
+      "scene_id": 17,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_243.png",
+      "clean_filename": "img_243.png",
+      "scene_id": 17,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_244.png",
+      "clean_filename": "img_244.png",
+      "scene_id": 17,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_245.png",
+      "clean_filename": "img_245.png",
+      "scene_id": 17,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_246.png",
+      "clean_filename": "img_246.png",
+      "scene_id": 3,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_247.png",
+      "clean_filename": "img_247.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_248.png",
+      "clean_filename": "img_248.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_249.png",
+      "clean_filename": "img_249.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_250.png",
+      "clean_filename": "img_250.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_251.png",
+      "clean_filename": "img_251.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_252.png",
+      "clean_filename": "img_252.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_253.png",
+      "clean_filename": "img_253.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_254.png",
+      "clean_filename": "img_254.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_255.png",
+      "clean_filename": "img_255.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_256.png",
+      "clean_filename": "img_256.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_257.png",
+      "clean_filename": "img_257.png",
+      "scene_id": 4,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_258.png",
+      "clean_filename": "img_258.png",
+      "scene_id": 18,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_259.png",
+      "clean_filename": "img_259.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_260.png",
+      "clean_filename": "img_260.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_261.png",
+      "clean_filename": "img_261.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_262.png",
+      "clean_filename": "img_262.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_263.png",
+      "clean_filename": "img_263.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_264.png",
+      "clean_filename": "img_264.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_265.png",
+      "clean_filename": "img_265.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_266.png",
+      "clean_filename": "img_266.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_267.png",
+      "clean_filename": "img_267.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_268.png",
+      "clean_filename": "img_268.png",
+      "scene_id": 4,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_269.png",
+      "clean_filename": "img_269.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_270.png",
+      "clean_filename": "img_270.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_271.png",
+      "clean_filename": "img_271.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_272.png",
+      "clean_filename": "img_272.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_273.png",
+      "clean_filename": "img_273.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_274.png",
+      "clean_filename": "img_274.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_275.png",
+      "clean_filename": "img_275.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_276.png",
+      "clean_filename": "img_276.png",
+      "scene_id": 18,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_277.png",
+      "clean_filename": "img_277.png",
+      "scene_id": 19,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_278.png",
+      "clean_filename": "img_278.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_279.png",
+      "clean_filename": "img_279.png",
+      "scene_id": 4,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_280.png",
+      "clean_filename": "img_280.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_281.png",
+      "clean_filename": "img_281.png",
+      "scene_id": 19,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_282.png",
+      "clean_filename": "img_282.png",
+      "scene_id": 19,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_283.png",
+      "clean_filename": "img_283.png",
+      "scene_id": 19,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_284.png",
+      "clean_filename": "img_284.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_285.png",
+      "clean_filename": "img_285.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_286.png",
+      "clean_filename": "img_286.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_287.png",
+      "clean_filename": "img_287.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_288.png",
+      "clean_filename": "img_288.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_289.png",
+      "clean_filename": "img_289.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_290.png",
+      "clean_filename": "img_290.png",
+      "scene_id": 4,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_291.png",
+      "clean_filename": "img_291.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_292.png",
+      "clean_filename": "img_292.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_293.png",
+      "clean_filename": "img_293.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_294.png",
+      "clean_filename": "img_294.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_295.png",
+      "clean_filename": "img_295.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_296.png",
+      "clean_filename": "img_296.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_297.png",
+      "clean_filename": "img_297.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_298.png",
+      "clean_filename": "img_298.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_299.png",
+      "clean_filename": "img_299.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_300.png",
+      "clean_filename": "img_300.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_301.png",
+      "clean_filename": "img_301.png",
+      "scene_id": 4,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_302.png",
+      "clean_filename": "img_302.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_303.png",
+      "clean_filename": "img_303.png",
+      "scene_id": 19,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_312.png",
+      "clean_filename": "img_312.png",
+      "scene_id": 4,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_323.png",
+      "clean_filename": "img_323.png",
+      "scene_id": 4,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_334.png",
+      "clean_filename": "img_334.png",
+      "scene_id": 1,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_335.png",
+      "clean_filename": "img_335.png",
+      "scene_id": 4,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_346.png",
+      "clean_filename": "img_346.png",
+      "scene_id": 5,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_357.png",
+      "clean_filename": "img_357.png",
+      "scene_id": 5,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_361.png",
+      "clean_filename": "img_361.png",
+      "scene_id": 23,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_362.png",
+      "clean_filename": "img_362.png",
+      "scene_id": 23,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_363.png",
+      "clean_filename": "img_363.png",
+      "scene_id": 23,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_364.png",
+      "clean_filename": "img_364.png",
+      "scene_id": 23,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_365.png",
+      "clean_filename": "img_365.png",
+      "scene_id": 23,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_366.png",
+      "clean_filename": "img_366.png",
+      "scene_id": 23,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_367.png",
+      "clean_filename": "img_367.png",
+      "scene_id": 23,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_368.png",
+      "clean_filename": "img_368.png",
+      "scene_id": 5,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_369.png",
+      "clean_filename": "img_369.png",
+      "scene_id": 23,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_370.png",
+      "clean_filename": "img_370.png",
+      "scene_id": 24,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_371.png",
+      "clean_filename": "img_371.png",
+      "scene_id": 24,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_372.png",
+      "clean_filename": "img_372.png",
+      "scene_id": 24,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_373.png",
+      "clean_filename": "img_373.png",
+      "scene_id": 24,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_374.png",
+      "clean_filename": "img_374.png",
+      "scene_id": 24,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_375.png",
+      "clean_filename": "img_375.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_376.png",
+      "clean_filename": "img_376.png",
+      "scene_id": 25,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_377.png",
+      "clean_filename": "img_377.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_378.png",
+      "clean_filename": "img_378.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_379.png",
+      "clean_filename": "img_379.png",
+      "scene_id": 5,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_380.png",
+      "clean_filename": "img_380.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_381.png",
+      "clean_filename": "img_381.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_382.png",
+      "clean_filename": "img_382.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_383.png",
+      "clean_filename": "img_383.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_384.png",
+      "clean_filename": "img_384.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_385.png",
+      "clean_filename": "img_385.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_386.png",
+      "clean_filename": "img_386.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_387.png",
+      "clean_filename": "img_387.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_388.png",
+      "clean_filename": "img_388.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_389.png",
+      "clean_filename": "img_389.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_390.png",
+      "clean_filename": "img_390.png",
+      "scene_id": 5,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_391.png",
+      "clean_filename": "img_391.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_392.png",
+      "clean_filename": "img_392.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_393.png",
+      "clean_filename": "img_393.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_394.png",
+      "clean_filename": "img_394.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_395.png",
+      "clean_filename": "img_395.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_396.png",
+      "clean_filename": "img_396.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_397.png",
+      "clean_filename": "img_397.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_398.png",
+      "clean_filename": "img_398.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_399.png",
+      "clean_filename": "img_399.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_400.png",
+      "clean_filename": "img_400.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_401.png",
+      "clean_filename": "img_401.png",
+      "scene_id": 5,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_402.png",
+      "clean_filename": "img_402.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_403.png",
+      "clean_filename": "img_403.png",
+      "scene_id": 25,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_404.png",
+      "clean_filename": "img_404.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_405.png",
+      "clean_filename": "img_405.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_406.png",
+      "clean_filename": "img_406.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_407.png",
+      "clean_filename": "img_407.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_408.png",
+      "clean_filename": "img_408.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_409.png",
+      "clean_filename": "img_409.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_410.png",
+      "clean_filename": "img_410.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_411.png",
+      "clean_filename": "img_411.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_412.png",
+      "clean_filename": "img_412.png",
+      "scene_id": 5,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_413.png",
+      "clean_filename": "img_413.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_414.png",
+      "clean_filename": "img_414.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_415.png",
+      "clean_filename": "img_415.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_416.png",
+      "clean_filename": "img_416.png",
+      "scene_id": 25,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_417.png",
+      "clean_filename": "img_417.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_418.png",
+      "clean_filename": "img_418.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_419.png",
+      "clean_filename": "img_419.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_420.png",
+      "clean_filename": "img_420.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_421.png",
+      "clean_filename": "img_421.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_422.png",
+      "clean_filename": "img_422.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_423.png",
+      "clean_filename": "img_423.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_424.png",
+      "clean_filename": "img_424.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_425.png",
+      "clean_filename": "img_425.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_426.png",
+      "clean_filename": "img_426.png",
+      "scene_id": 26,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_427.png",
+      "clean_filename": "img_427.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_428.png",
+      "clean_filename": "img_428.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_429.png",
+      "clean_filename": "img_429.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_430.png",
+      "clean_filename": "img_430.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_431.png",
+      "clean_filename": "img_431.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_432.png",
+      "clean_filename": "img_432.png",
+      "scene_id": 27,
+      "near_dup_group_id": "4",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_433.png",
+      "clean_filename": "img_433.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_434.png",
+      "clean_filename": "img_434.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_435.png",
+      "clean_filename": "img_435.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_436.png",
+      "clean_filename": "img_436.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_437.png",
+      "clean_filename": "img_437.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_438.png",
+      "clean_filename": "img_438.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_439.png",
+      "clean_filename": "img_439.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_440.png",
+      "clean_filename": "img_440.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_441.png",
+      "clean_filename": "img_441.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_442.png",
+      "clean_filename": "img_442.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_443.png",
+      "clean_filename": "img_443.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_444.png",
+      "clean_filename": "img_444.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_445.png",
+      "clean_filename": "img_445.png",
+      "scene_id": 1,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_446.png",
+      "clean_filename": "img_446.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_447.png",
+      "clean_filename": "img_447.png",
+      "scene_id": 27,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_448.png",
+      "clean_filename": "img_448.png",
+      "scene_id": 27,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_449.png",
+      "clean_filename": "img_449.png",
+      "scene_id": 27,
+      "near_dup_group_id": "5",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_512.png",
+      "clean_filename": "img_512.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_549.png",
+      "clean_filename": "img_549.png",
+      "scene_id": 28,
+      "near_dup_group_id": "6",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_550.png",
+      "clean_filename": "img_550.png",
+      "scene_id": 28,
+      "near_dup_group_id": "6",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_551.png",
+      "clean_filename": "img_551.png",
+      "scene_id": 28,
+      "near_dup_group_id": "6",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_552.png",
+      "clean_filename": "img_552.png",
+      "scene_id": 28,
+      "near_dup_group_id": "6",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_553.png",
+      "clean_filename": "img_553.png",
+      "scene_id": 28,
+      "near_dup_group_id": "6",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_556.png",
+      "clean_filename": "img_556.png",
+      "scene_id": 1,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_557.png",
+      "clean_filename": "img_557.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_568.png",
+      "clean_filename": "img_568.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_579.png",
+      "clean_filename": "img_579.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_590.png",
+      "clean_filename": "img_590.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_598.png",
+      "clean_filename": "img_598.png",
+      "scene_id": 34,
+      "near_dup_group_id": "9",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_599.png",
+      "clean_filename": "img_599.png",
+      "scene_id": 34,
+      "near_dup_group_id": "9",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_600.png",
+      "clean_filename": "img_600.png",
+      "scene_id": 34,
+      "near_dup_group_id": "9",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_601.png",
+      "clean_filename": "img_601.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_602.png",
+      "clean_filename": "img_602.png",
+      "scene_id": 34,
+      "near_dup_group_id": "9",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_603.png",
+      "clean_filename": "img_603.png",
+      "scene_id": 34,
+      "near_dup_group_id": "9",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_604.png",
+      "clean_filename": "img_604.png",
+      "scene_id": 34,
+      "near_dup_group_id": "9",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_605.png",
+      "clean_filename": "img_605.png",
+      "scene_id": 35,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_606.png",
+      "clean_filename": "img_606.png",
+      "scene_id": 35,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_607.png",
+      "clean_filename": "img_607.png",
+      "scene_id": 35,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_608.png",
+      "clean_filename": "img_608.png",
+      "scene_id": 35,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_609.png",
+      "clean_filename": "img_609.png",
+      "scene_id": 35,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_610.png",
+      "clean_filename": "img_610.png",
+      "scene_id": 35,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_611.png",
+      "clean_filename": "img_611.png",
+      "scene_id": 35,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_612.png",
+      "clean_filename": "img_612.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_613.png",
+      "clean_filename": "img_613.png",
+      "scene_id": 35,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_614.png",
+      "clean_filename": "img_614.png",
+      "scene_id": 36,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_615.png",
+      "clean_filename": "img_615.png",
+      "scene_id": 36,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_616.png",
+      "clean_filename": "img_616.png",
+      "scene_id": 36,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_617.png",
+      "clean_filename": "img_617.png",
+      "scene_id": 36,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_618.png",
+      "clean_filename": "img_618.png",
+      "scene_id": 36,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_619.png",
+      "clean_filename": "img_619.png",
+      "scene_id": 36,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_620.png",
+      "clean_filename": "img_620.png",
+      "scene_id": 36,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_621.png",
+      "clean_filename": "img_621.png",
+      "scene_id": 36,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_622.png",
+      "clean_filename": "img_622.png",
+      "scene_id": 37,
+      "near_dup_group_id": "12",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_623.png",
+      "clean_filename": "img_623.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_624.png",
+      "clean_filename": "img_624.png",
+      "scene_id": 37,
+      "near_dup_group_id": "12",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_625.png",
+      "clean_filename": "img_625.png",
+      "scene_id": 37,
+      "near_dup_group_id": "12",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_626.png",
+      "clean_filename": "img_626.png",
+      "scene_id": 37,
+      "near_dup_group_id": "12",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_627.png",
+      "clean_filename": "img_627.png",
+      "scene_id": 37,
+      "near_dup_group_id": "12",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_628.png",
+      "clean_filename": "img_628.png",
+      "scene_id": 37,
+      "near_dup_group_id": "12",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_629.png",
+      "clean_filename": "img_629.png",
+      "scene_id": 37,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_630.png",
+      "clean_filename": "img_630.png",
+      "scene_id": 37,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_631.png",
+      "clean_filename": "img_631.png",
+      "scene_id": 37,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_632.png",
+      "clean_filename": "img_632.png",
+      "scene_id": 37,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_633.png",
+      "clean_filename": "img_633.png",
+      "scene_id": 37,
+      "near_dup_group_id": "10",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_634.png",
+      "clean_filename": "img_634.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_635.png",
+      "clean_filename": "img_635.png",
+      "scene_id": 38,
+      "near_dup_group_id": "13",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_636.png",
+      "clean_filename": "img_636.png",
+      "scene_id": 38,
+      "near_dup_group_id": "13",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_637.png",
+      "clean_filename": "img_637.png",
+      "scene_id": 38,
+      "near_dup_group_id": "13",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_638.png",
+      "clean_filename": "img_638.png",
+      "scene_id": 38,
+      "near_dup_group_id": "13",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_639.png",
+      "clean_filename": "img_639.png",
+      "scene_id": 38,
+      "near_dup_group_id": "13",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_640.png",
+      "clean_filename": "img_640.png",
+      "scene_id": 38,
+      "near_dup_group_id": "13",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_641.png",
+      "clean_filename": "img_641.png",
+      "scene_id": 38,
+      "near_dup_group_id": "13",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_642.png",
+      "clean_filename": "img_642.png",
+      "scene_id": 38,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_643.png",
+      "clean_filename": "img_643.png",
+      "scene_id": 38,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_644.png",
+      "clean_filename": "img_644.png",
+      "scene_id": 38,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_645.png",
+      "clean_filename": "img_645.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_646.png",
+      "clean_filename": "img_646.png",
+      "scene_id": 38,
+      "near_dup_group_id": "14",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_647.png",
+      "clean_filename": "img_647.png",
+      "scene_id": 38,
+      "near_dup_group_id": "14",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_648.png",
+      "clean_filename": "img_648.png",
+      "scene_id": 38,
+      "near_dup_group_id": "14",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_649.png",
+      "clean_filename": "img_649.png",
+      "scene_id": 38,
+      "near_dup_group_id": "14",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_650.png",
+      "clean_filename": "img_650.png",
+      "scene_id": 38,
+      "near_dup_group_id": "14",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_651.png",
+      "clean_filename": "img_651.png",
+      "scene_id": 38,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_652.png",
+      "clean_filename": "img_652.png",
+      "scene_id": 38,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_653.png",
+      "clean_filename": "img_653.png",
+      "scene_id": 38,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_654.png",
+      "clean_filename": "img_654.png",
+      "scene_id": 38,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_655.png",
+      "clean_filename": "img_655.png",
+      "scene_id": 38,
+      "near_dup_group_id": "11",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_656.png",
+      "clean_filename": "img_656.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_667.png",
+      "clean_filename": "img_667.png",
+      "scene_id": 1,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_668.png",
+      "clean_filename": "img_668.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_679.png",
+      "clean_filename": "img_679.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_706.png",
+      "clean_filename": "img_706.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_707.png",
+      "clean_filename": "img_707.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_708.png",
+      "clean_filename": "img_708.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_709.png",
+      "clean_filename": "img_709.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_710.png",
+      "clean_filename": "img_710.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_711.png",
+      "clean_filename": "img_711.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_712.png",
+      "clean_filename": "img_712.png",
+      "scene_id": 1,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_713.png",
+      "clean_filename": "img_713.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_714.png",
+      "clean_filename": "img_714.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_715.png",
+      "clean_filename": "img_715.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_716.png",
+      "clean_filename": "img_716.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_717.png",
+      "clean_filename": "img_717.png",
+      "scene_id": 6,
+      "near_dup_group_id": "2",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_718.png",
+      "clean_filename": "img_718.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_719.png",
+      "clean_filename": "img_719.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_720.png",
+      "clean_filename": "img_720.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_721.png",
+      "clean_filename": "img_721.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_722.png",
+      "clean_filename": "img_722.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_724.png",
+      "clean_filename": "img_724.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_725.png",
+      "clean_filename": "img_725.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_726.png",
+      "clean_filename": "img_726.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_727.png",
+      "clean_filename": "img_727.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_728.png",
+      "clean_filename": "img_728.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_729.png",
+      "clean_filename": "img_729.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_730.png",
+      "clean_filename": "img_730.png",
+      "scene_id": 6,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_731.png",
+      "clean_filename": "img_731.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_732.png",
+      "clean_filename": "img_732.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_733.png",
+      "clean_filename": "img_733.png",
+      "scene_id": 7,
+      "near_dup_group_id": "1",
+      "split": "TRAIN",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_045.png",
+      "clean_filename": "img_045.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_047.png",
+      "clean_filename": "img_047.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_048.png",
+      "clean_filename": "img_048.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_049.png",
+      "clean_filename": "img_049.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_050.png",
+      "clean_filename": "img_050.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_051.png",
+      "clean_filename": "img_051.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_052.png",
+      "clean_filename": "img_052.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_053.png",
+      "clean_filename": "img_053.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_054.png",
+      "clean_filename": "img_054.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_055.png",
+      "clean_filename": "img_055.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_056.png",
+      "clean_filename": "img_056.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_058.png",
+      "clean_filename": "img_058.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_059.png",
+      "clean_filename": "img_059.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_060.png",
+      "clean_filename": "img_060.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_061.png",
+      "clean_filename": "img_061.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_062.png",
+      "clean_filename": "img_062.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_063.png",
+      "clean_filename": "img_063.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_064.png",
+      "clean_filename": "img_064.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_065.png",
+      "clean_filename": "img_065.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_066.png",
+      "clean_filename": "img_066.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_067.png",
+      "clean_filename": "img_067.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_069.png",
+      "clean_filename": "img_069.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_070.png",
+      "clean_filename": "img_070.png",
+      "scene_id": 8,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_071.png",
+      "clean_filename": "img_071.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_072.png",
+      "clean_filename": "img_072.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_073.png",
+      "clean_filename": "img_073.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_074.png",
+      "clean_filename": "img_074.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_075.png",
+      "clean_filename": "img_075.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_076.png",
+      "clean_filename": "img_076.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_077.png",
+      "clean_filename": "img_077.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_080.png",
+      "clean_filename": "img_080.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_081.png",
+      "clean_filename": "img_081.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_082.png",
+      "clean_filename": "img_082.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_083.png",
+      "clean_filename": "img_083.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_084.png",
+      "clean_filename": "img_084.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_085.png",
+      "clean_filename": "img_085.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_086.png",
+      "clean_filename": "img_086.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_087.png",
+      "clean_filename": "img_087.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_088.png",
+      "clean_filename": "img_088.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_089.png",
+      "clean_filename": "img_089.png",
+      "scene_id": 9,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_216.png",
+      "clean_filename": "img_216.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_217.png",
+      "clean_filename": "img_217.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_218.png",
+      "clean_filename": "img_218.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_219.png",
+      "clean_filename": "img_219.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_220.png",
+      "clean_filename": "img_220.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_221.png",
+      "clean_filename": "img_221.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_222.png",
+      "clean_filename": "img_222.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_225.png",
+      "clean_filename": "img_225.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_226.png",
+      "clean_filename": "img_226.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_227.png",
+      "clean_filename": "img_227.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_228.png",
+      "clean_filename": "img_228.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_229.png",
+      "clean_filename": "img_229.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_230.png",
+      "clean_filename": "img_230.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_231.png",
+      "clean_filename": "img_231.png",
+      "scene_id": 15,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_307.png",
+      "clean_filename": "img_307.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_308.png",
+      "clean_filename": "img_308.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_309.png",
+      "clean_filename": "img_309.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_310.png",
+      "clean_filename": "img_310.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_311.png",
+      "clean_filename": "img_311.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_313.png",
+      "clean_filename": "img_313.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_314.png",
+      "clean_filename": "img_314.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_315.png",
+      "clean_filename": "img_315.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_316.png",
+      "clean_filename": "img_316.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_317.png",
+      "clean_filename": "img_317.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_318.png",
+      "clean_filename": "img_318.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_319.png",
+      "clean_filename": "img_319.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_320.png",
+      "clean_filename": "img_320.png",
+      "scene_id": 21,
+      "near_dup_group_id": "1",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_561.png",
+      "clean_filename": "img_561.png",
+      "scene_id": 30,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_562.png",
+      "clean_filename": "img_562.png",
+      "scene_id": 30,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_563.png",
+      "clean_filename": "img_563.png",
+      "scene_id": 30,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_564.png",
+      "clean_filename": "img_564.png",
+      "scene_id": 30,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_565.png",
+      "clean_filename": "img_565.png",
+      "scene_id": 30,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_566.png",
+      "clean_filename": "img_566.png",
+      "scene_id": 30,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_567.png",
+      "clean_filename": "img_567.png",
+      "scene_id": 30,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_569.png",
+      "clean_filename": "img_569.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_570.png",
+      "clean_filename": "img_570.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_571.png",
+      "clean_filename": "img_571.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_572.png",
+      "clean_filename": "img_572.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_573.png",
+      "clean_filename": "img_573.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_574.png",
+      "clean_filename": "img_574.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_575.png",
+      "clean_filename": "img_575.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_576.png",
+      "clean_filename": "img_576.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_577.png",
+      "clean_filename": "img_577.png",
+      "scene_id": 31,
+      "near_dup_group_id": "8",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_680.png",
+      "clean_filename": "img_680.png",
+      "scene_id": 40,
+      "near_dup_group_id": "17",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_681.png",
+      "clean_filename": "img_681.png",
+      "scene_id": 40,
+      "near_dup_group_id": "17",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_682.png",
+      "clean_filename": "img_682.png",
+      "scene_id": 40,
+      "near_dup_group_id": "18",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_683.png",
+      "clean_filename": "img_683.png",
+      "scene_id": 40,
+      "near_dup_group_id": "18",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_684.png",
+      "clean_filename": "img_684.png",
+      "scene_id": 40,
+      "near_dup_group_id": "17",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_685.png",
+      "clean_filename": "img_685.png",
+      "scene_id": 40,
+      "near_dup_group_id": "18",
+      "split": "VAL",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_002.png",
+      "clean_filename": "img_002.png",
+      "scene_id": 2,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_013.png",
+      "clean_filename": "img_013.png",
+      "scene_id": 2,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_024.png",
+      "clean_filename": "img_024.png",
+      "scene_id": 2,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_035.png",
+      "clean_filename": "img_035.png",
+      "scene_id": 2,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_046.png",
+      "clean_filename": "img_046.png",
+      "scene_id": 2,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_057.png",
+      "clean_filename": "img_057.png",
+      "scene_id": 2,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_152.png",
+      "clean_filename": "img_152.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_153.png",
+      "clean_filename": "img_153.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_154.png",
+      "clean_filename": "img_154.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_155.png",
+      "clean_filename": "img_155.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_156.png",
+      "clean_filename": "img_156.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_158.png",
+      "clean_filename": "img_158.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_159.png",
+      "clean_filename": "img_159.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_160.png",
+      "clean_filename": "img_160.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_161.png",
+      "clean_filename": "img_161.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_162.png",
+      "clean_filename": "img_162.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_163.png",
+      "clean_filename": "img_163.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_164.png",
+      "clean_filename": "img_164.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_165.png",
+      "clean_filename": "img_165.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_166.png",
+      "clean_filename": "img_166.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_167.png",
+      "clean_filename": "img_167.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_169.png",
+      "clean_filename": "img_169.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_170.png",
+      "clean_filename": "img_170.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_171.png",
+      "clean_filename": "img_171.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_172.png",
+      "clean_filename": "img_172.png",
+      "scene_id": 13,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_304.png",
+      "clean_filename": "img_304.png",
+      "scene_id": 20,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_305.png",
+      "clean_filename": "img_305.png",
+      "scene_id": 20,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_306.png",
+      "clean_filename": "img_306.png",
+      "scene_id": 20,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_321.png",
+      "clean_filename": "img_321.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_322.png",
+      "clean_filename": "img_322.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_324.png",
+      "clean_filename": "img_324.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_325.png",
+      "clean_filename": "img_325.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_326.png",
+      "clean_filename": "img_326.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_327.png",
+      "clean_filename": "img_327.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_328.png",
+      "clean_filename": "img_328.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_329.png",
+      "clean_filename": "img_329.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_330.png",
+      "clean_filename": "img_330.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_331.png",
+      "clean_filename": "img_331.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_332.png",
+      "clean_filename": "img_332.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_333.png",
+      "clean_filename": "img_333.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_336.png",
+      "clean_filename": "img_336.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_337.png",
+      "clean_filename": "img_337.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_338.png",
+      "clean_filename": "img_338.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_339.png",
+      "clean_filename": "img_339.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_340.png",
+      "clean_filename": "img_340.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_341.png",
+      "clean_filename": "img_341.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_342.png",
+      "clean_filename": "img_342.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_343.png",
+      "clean_filename": "img_343.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_344.png",
+      "clean_filename": "img_344.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_345.png",
+      "clean_filename": "img_345.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_347.png",
+      "clean_filename": "img_347.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_348.png",
+      "clean_filename": "img_348.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_349.png",
+      "clean_filename": "img_349.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_350.png",
+      "clean_filename": "img_350.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_351.png",
+      "clean_filename": "img_351.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_352.png",
+      "clean_filename": "img_352.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_353.png",
+      "clean_filename": "img_353.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_354.png",
+      "clean_filename": "img_354.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_355.png",
+      "clean_filename": "img_355.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_356.png",
+      "clean_filename": "img_356.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_358.png",
+      "clean_filename": "img_358.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_359.png",
+      "clean_filename": "img_359.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_360.png",
+      "clean_filename": "img_360.png",
+      "scene_id": 22,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_554.png",
+      "clean_filename": "img_554.png",
+      "scene_id": 29,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_555.png",
+      "clean_filename": "img_555.png",
+      "scene_id": 29,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_558.png",
+      "clean_filename": "img_558.png",
+      "scene_id": 29,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_559.png",
+      "clean_filename": "img_559.png",
+      "scene_id": 29,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_560.png",
+      "clean_filename": "img_560.png",
+      "scene_id": 29,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_578.png",
+      "clean_filename": "img_578.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_580.png",
+      "clean_filename": "img_580.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_581.png",
+      "clean_filename": "img_581.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_582.png",
+      "clean_filename": "img_582.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_583.png",
+      "clean_filename": "img_583.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_584.png",
+      "clean_filename": "img_584.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_585.png",
+      "clean_filename": "img_585.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_586.png",
+      "clean_filename": "img_586.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_587.png",
+      "clean_filename": "img_587.png",
+      "scene_id": 32,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_588.png",
+      "clean_filename": "img_588.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_589.png",
+      "clean_filename": "img_589.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_591.png",
+      "clean_filename": "img_591.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_592.png",
+      "clean_filename": "img_592.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_593.png",
+      "clean_filename": "img_593.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_594.png",
+      "clean_filename": "img_594.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_595.png",
+      "clean_filename": "img_595.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_596.png",
+      "clean_filename": "img_596.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_597.png",
+      "clean_filename": "img_597.png",
+      "scene_id": 33,
+      "near_dup_group_id": "7",
+      "split": "TEST",
+      "annotation_status": "pending"
+    },
+    {
+      "source_filename": "img_723.png",
+      "clean_filename": "img_723.png",
+      "scene_id": 2,
+      "near_dup_group_id": "1",
+      "split": "TEST",
+      "annotation_status": "pending"
+    }
+  ]
+}

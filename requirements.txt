@@ -9,3 +9,8 @@ pillow
 # optional: system-wide CPU and RAM in the performance panel.
 # Without it those two readings are blank; everything else still works.
 psutil
+
+# optional: only for the Stage 2 YOLO scripts (yolo_stage2_train.py, yolo_train.py,
+# stage2_dataset/validate_yolo_export.py). Kept as a comment on purpose: run.bat installs
+# this file, and ultralytics is large and can pull in its own torch requirements.
+#   pip install ultralytics==8.1.0

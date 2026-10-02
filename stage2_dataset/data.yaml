@@ -1,0 +1,22 @@
+# Stage 2 detection dataset -- PORTABLE data.yaml (no absolute paths).
+#
+# stage2_dataset/yolo_export/data.yaml is the generated original (written by
+# export_yolo.py with an absolute path, and the file the committed training run
+# used). This copy is for use on any other machine or checkout.
+#
+# There is deliberately no `path:` key: Ultralytics then resolves the entries
+# below against the folder containing this file. Pass it to Ultralytics as an
+# ABSOLUTE path (e.g. str(Path("stage2_dataset/data.yaml").resolve())); a
+# relative yaml path is resolved against Ultralytics' own datasets_dir instead.
+#
+# The images/labels are NOT in git. Rebuild them with
+#   python stage2_dataset/export_yolo.py
+# from annotations.json + split.json (see models/stage2_yolo/MODEL_PROVENANCE.json
+# for the hash of the export the trained model used).
+
+train: yolo_export/images/train
+val: yolo_export/images/val
+test: yolo_export/images/test
+
+nc: 3
+names: ['bottle', 'cap', 'label']

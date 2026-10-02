@@ -1,0 +1,235 @@
+========================================================================
+STAGE 2 DETECTION — FINAL ANNOTATION QUALITY AUDIT REPORT
+========================================================================
+Generated: 2026-09-30  |  Read-only audit  |  No files modified
+Annotation file: stage2_dataset/annotations.json
+Image directory: stage2_dataset/clean/
+
+SECTION 1: OVERALL ANNOTATION STATISTICS
+--------------------------------------------------------
+  Total images in annotations.json : 594
+  Expected KEEP images (manifest)  : 594
+  Total bounding boxes             : 1994
+  All images reviewed=True         : YES
+  Images with zero boxes           : 0
+  Images with 1+ boxes             : 594
+  Average boxes per image          : 3.36
+
+  Boxes per class:
+    bottle : 739
+    cap    : 709
+    label  : 546
+    TOTAL  : 1994
+
+  Boxes per split:
+  Split     Images   bottle    cap   label   total
+  --------------------------------------------------
+  TRAIN        418      446    435     350    1231
+  VAL           89      137    131      99     367
+  TEST          87      156    143      97     396
+
+SECTION 2: ANNOTATION INTEGRITY CHECKS
+--------------------------------------------------------
+  Invalid class names       : NONE
+  Negative width/height     : NONE
+  Zero/negative dimensions  : NONE
+  NaN / Inf coordinate vals : NONE
+  Duplicate boxes           : NONE
+  Missing image files       : NONE
+
+SECTION 3: DATASET CONSISTENCY
+--------------------------------------------------------
+  Total images                   : 594  (expected 594)  OK
+  TRAIN split count              : 418  (expected 418)  OK
+  VAL split count                : 89  (expected  89)  OK
+  TEST split count               : 87  (expected  87)  OK
+  Missing from annotations       : 0  OK
+  Unexpected in annotations      : 0  OK
+  Rejected images present        : 0  OK
+  img_670.png present (must not) : False  OK
+  Unreviewed images              : 0  OK
+  Zero-box images                : 0  OK
+
+  Scene leakage check:
+    No scene leakage detected across TRAIN/VAL/TEST  OK
+
+SECTION 4: LARGE BOX ANALYSIS  (threshold: side > 0.95)
+--------------------------------------------------------
+  Total large boxes        : 4
+  VALID_CLOSEUP            : 4
+  NEEDS_FIX                : 0
+  UNCERTAIN                : 0
+
+  Detail:
+  Image                      Idx Class         w      h  Classification      Reason
+  --------------------------------------------------------------------------------------------------------------
+  img_344.png                  0 bottle   0.1947 0.9567  VALID_CLOSEUP       single bottle close-up (img_344)
+  img_591.png                  7 bottle   0.1355 0.9637  VALID_CLOSEUP       multi-bottle/label close scene (img_591, img_595)
+  img_683.png                  1 label    0.1658 0.9637  VALID_CLOSEUP       single bottle+label close-up (img_683, img_685)
+  img_685.png                  1 label    0.1829 0.9603  VALID_CLOSEUP       single bottle+label close-up (img_683, img_685)
+
+SECTION 5: OUT-OF-BOUNDS BOX ANALYSIS  (tolerance: 0.001)
+--------------------------------------------------------
+  Total OOB boxes          : 91
+  VALID_EDGE_CROP          : 91
+  NEEDS_FIX                : 0
+  UNCERTAIN                : 0
+
+  Per-image summary:
+  Image                     Boxes  Classification      Reason
+  ------------------------------------------------------------------------------------------
+  img_187.png                   1  VALID_EDGE_CROP     Tall bottle; bottom of bottle extends slightly below frame (
+  img_207.png                   1  VALID_EDGE_CROP     Tall bottle; bottom of bottle extends slightly below frame (
+  img_208.png                   1  VALID_EDGE_CROP     Tall bottle; bottom of bottle extends slightly below frame (
+  img_297.png                   1  VALID_EDGE_CROP     Tall bottle; bottom of bottle extends slightly below frame (
+  img_344.png                   1  VALID_EDGE_CROP     Close-up scene; object extends slightly beyond frame (single
+  img_422.png                   1  VALID_EDGE_CROP     Tall bottle; bottom of bottle extends slightly below frame (
+  img_429.png                   1  VALID_EDGE_CROP     Tall bottle; bottom of bottle extends slightly below frame (
+  img_549.png                   2  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_550.png                   2  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_551.png                   6  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_553.png                   3  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_555.png                   3  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_559.png                   3  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_560.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_561.png                   4  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_563.png                   4  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_564.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_566.png                   4  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_567.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_569.png                   4  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_571.png                   4  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_572.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_573.png                   4  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_574.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_575.png                   3  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_577.png                   4  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_578.png                   3  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_581.png                   2  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_583.png                   2  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_584.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_585.png                   2  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_587.png                   3  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_589.png                   2  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_592.png                   3  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_593.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_594.png                   2  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_597.png                   3  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_598.png                   2  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_600.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_602.png                   1  VALID_EDGE_CROP     Multi-bottle scene; edge bottles are cropped by frame bounda
+  img_685.png                   1  VALID_EDGE_CROP     Close-up scene; object extends slightly beyond frame (single
+
+SECTION 6: OBJECT / CLASS COVERAGE SUMMARY
+--------------------------------------------------------
+  Images with NO bottle (has other boxes) : 0
+  Images with NO cap (has bottle)         : 31
+  Images with NO label (has bottle)       : 140
+
+  Note: A bottle is NOT mandatory in every image.
+        Cap-only and label-only images are valid per project rules.
+        These counts are informational only, not errors.
+
+  Images with no bottle annotation:
+
+SECTION 7: CLASS COMPOSITION BREAKDOWN
+--------------------------------------------------------
+  bottle only               : 22
+  cap only                  : 0
+  label only                : 0
+  bottle + cap              : 118
+  bottle + label            : 9
+  cap + label               : 0
+  bottle + cap + label      : 445
+  other/empty combinations  : 0
+
+  Images with multiple bottles (>1): 51
+    img_549.png               n=4  split=TRAIN
+    img_550.png               n=4  split=TRAIN
+    img_551.png               n=4  split=TRAIN
+    img_552.png               n=4  split=TRAIN
+    img_553.png               n=4  split=TRAIN
+    img_561.png               n=4  split=VAL
+    img_562.png               n=4  split=VAL
+    img_563.png               n=4  split=VAL
+    img_564.png               n=4  split=VAL
+    img_565.png               n=4  split=VAL
+    img_566.png               n=4  split=VAL
+    img_567.png               n=4  split=VAL
+    img_569.png               n=4  split=VAL
+    img_570.png               n=4  split=VAL
+    img_571.png               n=4  split=VAL
+    img_572.png               n=4  split=VAL
+    img_573.png               n=4  split=VAL
+    img_574.png               n=4  split=VAL
+    img_575.png               n=4  split=VAL
+    img_576.png               n=4  split=VAL
+    img_577.png               n=4  split=VAL
+    img_554.png               n=4  split=TEST
+    img_555.png               n=4  split=TEST
+    img_558.png               n=4  split=TEST
+    img_559.png               n=4  split=TEST
+    img_560.png               n=4  split=TEST
+    img_578.png               n=4  split=TEST
+    img_580.png               n=4  split=TEST
+    img_581.png               n=4  split=TEST
+    img_582.png               n=4  split=TEST
+    img_583.png               n=4  split=TEST
+    img_584.png               n=4  split=TEST
+    img_585.png               n=4  split=TEST
+    img_586.png               n=4  split=TEST
+    img_587.png               n=4  split=TEST
+    img_588.png               n=4  split=TEST
+    img_589.png               n=4  split=TEST
+    img_591.png               n=4  split=TEST
+    img_592.png               n=4  split=TEST
+    img_593.png               n=4  split=TEST
+    img_594.png               n=4  split=TEST
+    img_595.png               n=4  split=TEST
+    img_596.png               n=4  split=TEST
+    img_597.png               n=4  split=TEST
+    img_598.png               n=3  split=TRAIN
+    img_599.png               n=3  split=TRAIN
+    img_600.png               n=3  split=TRAIN
+    img_602.png               n=3  split=TRAIN
+    img_603.png               n=3  split=TRAIN
+    img_604.png               n=3  split=TRAIN
+    img_399.png               n=2  split=TRAIN
+
+SECTION 8: FAILURE & WARNING SUMMARY
+--------------------------------------------------------
+  Hard Failures: 0
+    None — all hard integrity checks passed.
+
+  Warnings: 0
+    None.
+
+========================================================================
+SECTION 10: FINAL READINESS DECISION
+========================================================================
+
+  ************************************************************
+  VERDICT: READY_FOR_YOLO_TRAINING
+  ************************************************************
+
+  All hard integrity checks PASSED.
+  No blocking issues detected.
+  Dataset is CLEARED for YOLO export and training.
+
+  Checklist for YOLO export clearance:
+    [X] 594 images present
+    [X] 418 TRAIN / 89 VAL / 87 TEST
+    [X] No missing image files
+    [X] No invalid class names
+    [X] No negative/zero dimensions
+    [X] No NaN/Inf values
+    [X] No duplicate boxes
+    [X] No rejected images in set
+    [X] img_670.png absent
+    [X] All images reviewed=True
+    [X] Large boxes assessed (all VALID_CLOSEUP or UNCERTAIN)
+    [X] OOB boxes assessed (all VALID_EDGE_CROP or UNCERTAIN)
+
+========================================================================
+END OF FINAL AUDIT REPORT
+========================================================================

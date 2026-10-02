@@ -1,0 +1,267 @@
+{
+  "schema": "model-provenance/1",
+  "purpose": "Links the Stage 2 detector checkpoint back to the dataset, annotations, split, export, training configuration and evaluations that produced it. All values are copied from existing artifacts; nothing here was re-measured.",
+  "status": "DEPLOYMENT CANDIDATE - not deployed, not integrated into the inspection runtime, no hardware validation",
+  "generated_from": [
+    "models/stage2_yolo/training_metadata.json",
+    "models/stage2_yolo/run_yolov8n/results.csv",
+    "models/stage2_yolo/run_yolov8n/args.yaml",
+    "stage2_dataset/split.json",
+    "stage2_dataset/annotations.json"
+  ],
+  "dataset": {
+    "name": "Stage 2 detection dataset",
+    "classes": [
+      "bottle",
+      "cap",
+      "label"
+    ],
+    "images": {
+      "total": 594,
+      "train": 418,
+      "val": 89,
+      "test": 87
+    },
+    "scenes": {
+      "total": 39,
+      "train": 25,
+      "val": 7,
+      "test": 7
+    },
+    "split_method": "scene_based (whole scenes assigned to one split; no scene appears in two splits)",
+    "boxes": {
+      "total": 1994,
+      "per_class": {
+        "bottle": 739,
+        "cap": 709,
+        "label": 546
+      },
+      "per_split": {
+        "train": {
+          "bottle": 446,
+          "cap": 435,
+          "label": 350,
+          "total": 1231
+        },
+        "val": {
+          "bottle": 137,
+          "cap": 131,
+          "label": 99,
+          "total": 367
+        },
+        "test": {
+          "bottle": 156,
+          "cap": 143,
+          "label": 97,
+          "total": 396
+        }
+      }
+    },
+    "annotation_schema": {
+      "file": "stage2_dataset/annotations.json",
+      "schema_version": 1,
+      "task": "detection",
+      "sha256": "e4916747f1690adde030e05b2e3fe02d4bee8a378ce86e0985f6b9c08341dcd3",
+      "all_images_reviewed": true,
+      "polygons_used": 0
+    },
+    "split_file": {
+      "file": "stage2_dataset/split.json",
+      "sha256": "c0fce3cdd5a70f829c88fe47b05a79260b6d0ed35873441428b086fad8eb834b"
+    },
+    "scene_map": {
+      "file": "stage2_dataset/scene_map.json",
+      "sha256": "d5a87690ec981f67af7f9da124c6113d9c1827d024ff2e803af0800a55adf6ce"
+    },
+    "review_manifest": {
+      "file": "stage2_dataset/review_manifest.csv",
+      "sha256": "cbae48e83c38c83c50a9284fc63f84ff9083fdc9750abe53ff6b9841619930d6"
+    },
+    "yolo_export": {
+      "generator": "stage2_dataset/export_yolo.py",
+      "tree_sha256": "11db7388e499dd4930dd402316341c46be8eccfb65813b3f2efebd030b823bd9",
+      "tree_hash_definition": "sha256 over (relative path, sha256(file)) of every file under stage2_dataset/yolo_export except *.cache, sorted by path",
+      "unchanged_by_training": true,
+      "validated": {
+        "script": "stage2_dataset/validate_yolo_export.py",
+        "checks_passed": "19/19",
+        "re_run_on": "2026-10-02 (report written to scratch; export tree hash unchanged)"
+      },
+      "images_in_git": false,
+      "how_to_rebuild": "python stage2_dataset/export_yolo.py (needs the clean/ images, which are not in git)"
+    },
+    "portable_data_yaml": "stage2_dataset/data.yaml",
+    "known_limits": [
+      "Test set is 7 scenes / 87 images: small, so the test metrics carry wide uncertainty.",
+      "Whether the images come from the production line camera is not recorded in the repository.",
+      "Cap (709) and label (546) box totals are below bottle (739); whether the difference is absent objects or unlabeled ones is not recorded."
+    ]
+  },
+  "model": {
+    "architecture": "YOLOv8n (Ultralytics)",
+    "pretrained_from": "yolov8n.pt (COCO)",
+    "classes": [
+      "bottle",
+      "cap",
+      "label"
+    ],
+    "parameters": 3006233,
+    "checkpoint": {
+      "path": "models/stage2_yolo/stage2_best.pt",
+      "in_git": false,
+      "reason_not_in_git": "repository policy: weights are never pushed (*.pt ignored); the repository is public",
+      "size_bytes": 6226585,
+      "sha256": "b7202b92f95a498d2de7d26568bfffe48118d0640eb56797f123dd9f51a534f2",
+      "identical_to": "models/stage2_yolo/run_yolov8n/weights/best.pt",
+      "how_to_obtain": "copy the file from the training machine and verify the sha256, or reproduce with: python yolo_stage2_train.py --candidates yolov8n.pt --workers 2 (not guaranteed bit-identical across hardware)"
+    }
+  },
+  "training": {
+    "script": "yolo_stage2_train.py",
+    "date": "2026-10-02 14:20:31",
+    "seed": 0,
+    "deterministic": true,
+    "epochs_max": 80,
+    "epochs_run": 53,
+    "early_stopping_patience": 20,
+    "best_epoch": 33,
+    "best_epoch_selection": "Ultralytics fitness = 0.1*mAP50 + 0.9*mAP50-95 on the validation split",
+    "image_size": 640,
+    "batch": 8,
+    "workers": 2,
+    "optimizer": "auto",
+    "lr0": 0.01,
+    "amp": true,
+    "device": "cuda:0",
+    "train_minutes": 14.8,
+    "train_split_only": true,
+    "model_selection_split": "validation",
+    "candidates_requested": [
+      "yolov8n.pt",
+      "yolov8s.pt"
+    ],
+    "candidates_trained": [
+      "yolov8n.pt"
+    ],
+    "candidates_skipped": {
+      "yolov8s.pt": {
+        "reason": "insufficient memory before launch",
+        "mem": {
+          "free_ram_mb": 1841,
+          "free_commit_mb": 410,
+          "total_ram_mb": 16004
+        },
+        "min_free_ram_mb": 3000,
+        "min_free_commit_mb": 4000
+      }
+    },
+    "attempt_history": "Earlier attempts in this folder (train_run_*.log, not committed) crashed or hung on Windows memory exhaustion (dataloader workers / validation workers). The committed result is from the final, complete run."
+  },
+  "validation": {
+    "split": "val",
+    "images": 89,
+    "scenes": 7,
+    "map50": 0.9763506823884894,
+    "map50_95": 0.72978087133532,
+    "precision": 0.9978769501105326,
+    "recall": 0.9651994396519944,
+    "per_class": {
+      "bottle": {
+        "precision": 0.9983453728382731,
+        "recall": 0.9562043795620438,
+        "map50": 0.9886234063887694,
+        "map50_95": 0.7845467754624835
+      },
+      "cap": {
+        "precision": 0.9975317750623783,
+        "recall": 1.0,
+        "map50": 0.995,
+        "map50_95": 0.6497967240724525
+      },
+      "label": {
+        "precision": 0.9977537024309461,
+        "recall": 0.9393939393939394,
+        "map50": 0.9454286407766991,
+        "map50_95": 0.7549991144710235
+      }
+    },
+    "note": "results.csv records mAP50-95 0.72955 at the best epoch (33); the post-training re-evaluation of best.pt gives 0.7298. The small difference is Ultralytics' in-training vs final validation pass."
+  },
+  "test": {
+    "split": "test",
+    "images": 87,
+    "scenes": 7,
+    "evaluated": "once, for the chosen model, after selection; not used for tuning",
+    "map50": 0.9681920685683988,
+    "map50_95": 0.65999500096815,
+    "precision": 0.9361644876972104,
+    "recall": 0.968208652145044,
+    "per_class": {
+      "bottle": {
+        "precision": 0.9984373137189647,
+        "recall": 1.0,
+        "map50": 0.995,
+        "map50_95": 0.8159831646080098
+      },
+      "cap": {
+        "precision": 0.901795146468352,
+        "recall": 0.986013986013986,
+        "map50": 0.9870753390657455,
+        "map50_95": 0.5934754093836023
+      },
+      "label": {
+        "precision": 0.9082610029043147,
+        "recall": 0.9186119704211461,
+        "map50": 0.9225008666394507,
+        "map50_95": 0.570526428912838
+      }
+    },
+    "limitation": "Small, scene-based held-out set (7 scenes, 87 images, 396 boxes). Treat the test numbers as indicative, not as a production accuracy guarantee."
+  },
+  "benchmark": {
+    "note": "batch 1, 87 test images, end-to-end predict() including preprocessing and NMS, conf=0.001. Measured while the machine was under memory pressure, so likely pessimistic.",
+    "gpu": {
+      "n_images": 87,
+      "device": "0",
+      "batch": 1,
+      "latency_ms_mean": 29.30897011493868,
+      "latency_ms_p50": 28.73239999996713,
+      "latency_ms_p95": 37.111229999970874,
+      "fps_end_to_end": 34.119247318427725,
+      "model_inference_ms_mean": 18.9466860102511,
+      "fps_model_only": 52.77967869731679
+    },
+    "cpu": {
+      "n_images": 87,
+      "device": "cpu",
+      "batch": 1,
+      "latency_ms_mean": 247.92213218390955,
+      "latency_ms_p50": 214.0150000000176,
+      "latency_ms_p95": 439.03138000001724,
+      "fps_end_to_end": 4.0335245231684125,
+      "model_inference_ms_mean": 237.2183991574693,
+      "fps_model_only": 4.215524611715233
+    }
+  },
+  "environment": {
+    "ultralytics": "8.1.0",
+    "torch": "2.4.1+cu124",
+    "cuda": "12.4",
+    "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU",
+    "python": "3.8.0"
+  },
+  "evidence_files": [
+    "models/stage2_yolo/training_metadata.json",
+    "models/stage2_yolo/run_yolov8n/results.csv",
+    "models/stage2_yolo/run_yolov8n/results.png",
+    "models/stage2_yolo/run_yolov8n/PR_curve.png",
+    "models/stage2_yolo/run_yolov8n/confusion_matrix_normalized.png",
+    "models/stage2_yolo/test_eval/PR_curve.png",
+    "models/stage2_yolo/test_eval/confusion_matrix_normalized.png"
+  ],
+  "not_verified": [
+    "Behaviour on frames from the production camera and lighting",
+    "Runtime integration (infer.py loads only the Stage 1 classifier)",
+    "Any hardware or line testing"
+  ]
+}

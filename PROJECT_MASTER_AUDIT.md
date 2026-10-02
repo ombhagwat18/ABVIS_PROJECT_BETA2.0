@@ -1,3 +1,15 @@
+> **HISTORICAL SNAPSHOT -- written the morning of 2026-10-02, before the baseline cleanup. Not the current status.**
+> Current, maintained documents: [`SYSTEM_ROADMAP/CURRENT_SYSTEM.md`](SYSTEM_ROADMAP/CURRENT_SYSTEM.md) and [`SYSTEM_ROADMAP/FEATURE_STATUS.md`](SYSTEM_ROADMAP/FEATURE_STATUS.md).
+>
+> Statements below that are **no longer true**:
+> - "No YOLO detector has been trained" / "YOLO training on stage2 ... Not done" -- **a YOLOv8n detector has since been trained and test-evaluated** (val mAP50-95 0.730; held-out test mAP50 0.968, mAP50-95 0.660; see [`models/stage2_yolo/MODEL_PROVENANCE.json`](models/stage2_yolo/MODEL_PROVENANCE.json)). It is still **not** integrated into the inspection runtime.
+> - "Repo hygiene: one commit, nearly everything untracked; `.gitignore` ..." -- `.gitignore` was rewritten; the Stage 2 provenance (scripts, annotations, split) is now tracked.
+> - Camera safety: the fail-open PASS paths described here were removed (tri-state PASS/REJECT/FAULT), and frame/session/sequence metadata and an in-memory `InspectionRecord`/`TraceStore` were added.
+> - "CLAUDE.md says not a git repo", PLC "`sell.isp`", and the schedule/day counts reflect that morning only.
+> - The suggested "days 1-4: train a YOLOv8 detector" step is done.
+>
+> Unchanged and still valid: nothing in the repository has been tested on physical hardware; PLC addresses remain unverified.
+
 # PROJECT MASTER AUDIT
 
 Date: 2026-10-02. Root: `E:\MACHINE LEARNING PROJECT\Datasets\Bottle-train-OpenCV-main_vesion two`.

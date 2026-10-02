@@ -1332,12 +1332,13 @@ class LiveTab:
                 self._imgs[cam.name] = img       # Tk drops unreferenced images
                 lab.configure(image=img, text="")
 
-        ok, by_cam = self.app.cams.combined()
-        if live:
-            self.verdict.configure(
-                text="PASS" if ok else "REJECT — " + "; ".join(
-                    f"{k}: {', '.join(v)}" for k, v in by_cam.items()),
-                text_color=ACC if ok else BAD)
+        # Always refresh, even with no live camera: a dead camera must show FAULT,
+        # not keep whatever verdict was on screen when it died.
+        state, by_cam = self.app.cams.combined()
+        detail = "; ".join(f"{k}: {', '.join(v)}" for k, v in by_cam.items())
+        self.verdict.configure(
+            text=state if state == infer.PASS else f"{state} — {detail}",
+            text_color={infer.PASS: ACC, infer.REJECT: BAD}.get(state, WARN))
         self.app.after(50, self.tick)
         self.update_perf()
 
@@ -2155,6 +2156,11 @@ def selftest():
     app.tab_live.build_panes(["Camera 0", "Camera 1"])
     app.update()
     assert len(app.tab_live.panes) == 2, app.tab_live.panes
+    # No camera is armed here: the verdict line must say FAULT, never PASS or blank.
+    app.tab_live.running = True
+    app.tab_live.tick()
+    shown = app.tab_live.verdict.cget("text")
+    assert shown.startswith("FAULT") and "PASS" not in shown, shown
     app.tab_live.stop()
     app.update()
     assert not app.tab_live.panes

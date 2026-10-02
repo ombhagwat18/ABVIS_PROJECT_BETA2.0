@@ -1,3 +1,6 @@
+> **HISTORICAL -- last updated 2026-08-23. Not the current status.** It tracks progress against the original web-dashboard architecture document. For the current state see [`SYSTEM_ROADMAP/FEATURE_STATUS.md`](SYSTEM_ROADMAP/FEATURE_STATUS.md).
+> Since this was written: the project moved to a Stage 2 YOLO detection path (YOLOv8n trained and test-evaluated); PASS/REJECT/FAULT safety, frame metadata and an in-memory inspection record were added; the dataset now has 1,143 images and 8 defect classes. Its two "open decisions" are resolved -- the machine path uses a detector, and the desktop app is the application (`app.py`/`index.html` are unused).
+
 # Progress
 
 Against `Bottle_Defect_Detection_Web_Dashboard_Architecture.docx`.
