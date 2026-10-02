@@ -1,0 +1,29 @@
+# Datasets, media and weights are never pushed.
+#
+# Whitelist, not blacklist. Everything a project owns lives under
+# projects/<slug>/, and the failure mode here is committing a gigabyte of JPEGs
+# by adding one folder nobody remembered to list. So ignore all of it and name
+# the handful of small text files that come back.
+projects/**
+!projects/*/
+!projects/*/project.json
+!projects/*/labels.csv
+!projects/*/config.json
+
+sample/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# per-machine preferences (font size, probe depth), not project state
+settings.json
+
+# legacy datasets, generated datasets, logs
+All Datasets/
+stage2_dataset/
+yolo_detection_dataset/
+YOLO_EXPORT/
+*.log
+*.pt

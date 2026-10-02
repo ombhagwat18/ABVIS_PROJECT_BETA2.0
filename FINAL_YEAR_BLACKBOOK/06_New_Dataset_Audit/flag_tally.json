@@ -1,0 +1,155 @@
+{
+  "likely_good_normal_candidate": {
+    "count": 390,
+    "examples": [
+      "img_001.png",
+      "img_002.png",
+      "img_003.png",
+      "img_004.png",
+      "img_005.png",
+      "img_006.png",
+      "img_007.png",
+      "img_008.png",
+      "img_009.png",
+      "img_010.png",
+      "img_011.png",
+      "img_012.png",
+      "img_013.png",
+      "img_014.png",
+      "img_015.png"
+    ]
+  },
+  "likely_tilted_cap": {
+    "count": 30,
+    "examples": [
+      "img_045.png",
+      "img_047.png",
+      "img_048.png",
+      "img_049.png",
+      "img_066.png",
+      "img_067.png",
+      "img_069.png",
+      "img_070.png",
+      "img_099.png",
+      "img_100.png",
+      "img_102.png",
+      "img_103.png",
+      "img_105.png",
+      "img_111.png",
+      "img_127.png"
+    ]
+  },
+  "likely_skewed_label": {
+    "count": 47,
+    "examples": [
+      "img_045.png",
+      "img_071.png",
+      "img_072.png",
+      "img_073.png",
+      "img_074.png",
+      "img_075.png",
+      "img_076.png",
+      "img_133.png",
+      "img_141.png",
+      "img_142.png",
+      "img_143.png",
+      "img_144.png",
+      "img_152.png",
+      "img_153.png",
+      "img_154.png"
+    ]
+  },
+  "likely_damaged_label": {
+    "count": 50,
+    "examples": [
+      "img_160.png",
+      "img_161.png",
+      "img_257.png",
+      "img_259.png",
+      "img_260.png",
+      "img_261.png",
+      "img_262.png",
+      "img_263.png",
+      "img_264.png",
+      "img_265.png",
+      "img_266.png",
+      "img_267.png",
+      "img_269.png",
+      "img_270.png",
+      "img_272.png"
+    ]
+  },
+  "likely_close_up_view": {
+    "count": 65,
+    "examples": [
+      "img_342.png",
+      "img_343.png",
+      "img_344.png",
+      "img_347.png",
+      "img_348.png",
+      "img_349.png",
+      "img_350.png",
+      "img_351.png",
+      "img_352.png",
+      "img_353.png",
+      "img_354.png",
+      "img_605.png",
+      "img_606.png",
+      "img_607.png",
+      "img_608.png"
+    ]
+  },
+  "candidate_black_marker_marking": {
+    "count": 20,
+    "examples": [
+      "img_423.png",
+      "img_434.png",
+      "img_446.png",
+      "img_512.png",
+      "img_554.png",
+      "img_555.png",
+      "img_558.png",
+      "img_559.png",
+      "img_560.png",
+      "img_561.png",
+      "img_562.png",
+      "img_563.png",
+      "img_564.png",
+      "img_565.png",
+      "img_566.png"
+    ]
+  },
+  "likely_multiple_bottles": {
+    "count": 50,
+    "examples": [
+      "img_549.png",
+      "img_550.png",
+      "img_551.png",
+      "img_552.png",
+      "img_553.png",
+      "img_554.png",
+      "img_555.png",
+      "img_558.png",
+      "img_559.png",
+      "img_560.png",
+      "img_561.png",
+      "img_562.png",
+      "img_563.png",
+      "img_564.png",
+      "img_565.png"
+    ]
+  },
+  "frame_cropped_top": {
+    "count": 8,
+    "examples": [
+      "img_671.png",
+      "img_672.png",
+      "img_673.png",
+      "img_674.png",
+      "img_675.png",
+      "img_676.png",
+      "img_677.png",
+      "img_678.png"
+    ]
+  }
+}
