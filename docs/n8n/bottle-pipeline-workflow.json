@@ -1,0 +1,265 @@
+{
+  "name": "Bottle Defect Classifier - System Workflow (Documentation)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Bottle Defect Classifier - End-to-End Workflow\n\nThis n8n graph is a **documentation / visualization artifact**, not a runnable automation.\nIt mirrors the real pipeline implemented across `calibrate.py`, `dataset.py`, `train.py`,\n`infer.py`, `bench.py` and the `gui.py` tabs (Label, Defects, Train, Analysis, Live,\nCamera, Data health, Settings).\n\nEach node's *Notes* field cites the exact file/function/line that implements that step,\nso this file can be read alongside CLAUDE.md as a visual index of the system.\n\nData backbone: `projects/<slug>/labels.csv` (source of truth) + `config.json`\n(ROI, thresholds) + `models/<stamp>/` (checkpoints). See `dataset.py` module globals.",
+        "height": 340,
+        "width": 620,
+        "color": 5
+      },
+      "id": "note-overview",
+      "name": "Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-620, 40]
+    },
+    {
+      "parameters": {},
+      "id": "start",
+      "name": "New / Open Project",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-300, 320],
+      "notes": "gui.py new_project()/switch_project() (gui.py:148-159). Calls dataset.use_project(name), which rebinds every D.* path constant to projects/<slug>/... and persists the choice to projects/active.txt. Always stops running cameras first."
+    },
+    {
+      "parameters": {
+        "content": "Calibrate ROI\n(one-time per camera setup)",
+        "color": 3
+      },
+      "id": "calibrate",
+      "name": "Calibrate ROI",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [-60, 320],
+      "notes": "calibrate.py, invoked standalone on first run or via DataTab 'Re-measure' (gui.py:1150, calibrate.run()). Measures the bottle crop box using Sobel edge-energy row/column profiles (_span, calibrate.py:22), thresholded relative to their own floor/peak. Unions the middle 95% of ~60 sampled frames to avoid one bad frame blowing out the box. Writes roi=[x,y,w,h] + roi_frame=[W,H] into projects/<slug>/config.json."
+    },
+    {
+      "parameters": {
+        "content": "Label Images\n(Label tab)",
+        "color": 4
+      },
+      "id": "label",
+      "name": "Label Images",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [180, 320],
+      "notes": "gui.py LabelTab (gui.py:198). Paginated thumbnail grid, filter by mode (all/inbox/good/defective/pos/neg), multi-select with keyboard shortcuts (1-9 toggle defect, g=good, a=select page, Esc=clear). Bulk apply/clear/delete via D.apply_labels/D.delete_images. On load, dataset.sync_new_images (dataset.py:245) reconciles the images/ folders into labels.csv WITHOUT ever overwriting an existing row, so folder position only seeds a label the first time an image is imported."
+    },
+    {
+      "parameters": {
+        "content": "Manage Defect Classes\n(Defects tab)",
+        "color": 4
+      },
+      "id": "defects",
+      "name": "Manage Defect Classes",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [420, 320],
+      "notes": "gui.py DefectsTab (gui.py:442). Add/rename/delete defect classes = add/rename/delete a -ve/<Class>/ folder = add/rename/delete a labels.csv column. rename_defect() renames the folder and the column together (a stale folder resurrects the old label on rescan otherwise). Deleting a class drops the column and moves its images to _inbox/ (reviewed=0), never to 'good'. Shows per-class counts with a 'thin - aim for 100+' warning."
+    },
+    {
+      "parameters": {
+        "content": "Train Model\n(train.py)",
+        "color": 7
+      },
+      "id": "train",
+      "name": "Train Model",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [660, 320],
+      "notes": "TrainTab 'Train now' (gui.py:601) spawns a thread calling train.run(epochs, log=emit). EfficientNet-B0 backbone (ImageNet-pretrained), one multi-label linear head, BCEWithLogitsLoss with per-column pos_weight=clip(neg/pos,1,50). Augmentation: rotation/scale/brightness/contrast jitter, NO horizontal flip (would mirror label text / invert skew direction). Split is by detected scene (dataset.scene_map/split_train_val, dataset.py:630-704), not random, to avoid near-duplicate frame leakage between train/val. A defect with 0 training positives gets threshold=1.01 (unreachable) and is disabled. Writes projects/<slug>/models/<stamp>/{model.pt, labels.csv snapshot, metrics.json (incl. val_paths)}."
+    },
+    {
+      "parameters": {
+        "content": "Evaluate & Compare\n(Analysis tab)",
+        "color": 7
+      },
+      "id": "analysis",
+      "name": "Evaluate & Compare Checkpoints",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 320],
+      "notes": "gui.py AnalysisTab (gui.py:1303), charts drawn on a plain Tk Canvas (charts.py, no matplotlib). Loss/macro-F1 curves, per-defect recall bars, confusion matrix per defect. compare()/show_compare() re-tests every saved checkpoint against today's labels.csv via train.score_checkpoint(), which refuses to score a checkpoint that never recorded val_paths, and flags checkpoints that predate the current val split as 'needs retrain' vs honestly re-scored."
+    },
+    {
+      "parameters": {
+        "content": "Activate Checkpoint\n('Use' button)",
+        "color": 7
+      },
+      "id": "activate",
+      "name": "Activate Checkpoint",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1140, 320],
+      "notes": "TrainTab activate() (gui.py:726). Selects a models/<stamp>/ checkpoint as the live one and derives per-defect thresholds from that checkpoint's own metrics.json. infer.Model (infer.py:77) always crops using the ROI/input size baked INTO the checkpoint, not the project's live config.json - this is what makes rolling back to an older model safe even if the camera/ROI has since changed."
+    },
+    {
+      "parameters": {
+        "content": "Live Multi-Camera\nInference (Live tab)",
+        "color": 6
+      },
+      "id": "live",
+      "name": "Live Multi-Camera Inference",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1380, 320],
+      "notes": "gui.py LiveTab (gui.py:772). infer.CameraSet (infer.py:292) shares one Model across N cameras, one background grab thread each, always infers on the NEWEST frame (mid-inference arrivals are dropped and counted, never queued -> bounded latency). Capped ~15Hz per camera regardless of source FPS. Per-camera PASS/FAIL overlay + real-time FPS/latency/drop% (Camera.stats() + bench.system_stats()). Per-defect threshold sliders bound live to config.json."
+    },
+    {
+      "parameters": {
+        "content": "Combined Verdict\nPASS / FAIL",
+        "color": 2
+      },
+      "id": "verdict",
+      "name": "Combined Verdict (PASS/FAIL)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1620, 320],
+      "notes": "infer.CameraSet.combined() (infer.py:360): REJECT if ANY camera rejects. Rationale: multiple angles of the same physical bottle share one verdict - a defect only one angle can see is still a defect. (If cameras instead watch independent lines, use each camera's own verdict rather than combined())."
+    },
+    {
+      "parameters": {
+        "content": "Snapshot -> Inbox\n(capture panel)",
+        "color": 6
+      },
+      "id": "snapshot",
+      "name": "Snapshot Capture -> Inbox",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1380, 560],
+      "notes": "LiveTab's snapshot-into-a-label capture panel (gui.py:772). Operator captures an interesting live frame straight into a project's images/_inbox/ (reviewed=0), closing the loop back into Label Images for the next training round - this is how the model improves over time on real line traffic."
+    },
+    {
+      "parameters": {
+        "content": "Data Health Monitor\n(Data tab)",
+        "color": 3
+      },
+      "id": "datahealth",
+      "name": "Data Health Monitor",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [420, 560],
+      "notes": "gui.py DataTab 'Data health' (gui.py:1150). ROI editing (manual + Re-measure), near-duplicate-frame scan (dataset.scene_map) reporting how many DISTINCT bottles N images actually represent, plus dataset health counts (per-class thin warnings, unreviewed backlog, etc). Feeds back into deciding what still needs labeling."
+    },
+    {
+      "parameters": {
+        "content": "Camera Benchmark\n(Camera/Bench tab)",
+        "color": 3
+      },
+      "id": "bench",
+      "name": "Camera Benchmark",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1140, 560],
+      "notes": "gui.py BenchTab 'Camera' tab (gui.py:1552). bench.benchmark_camera() sweeps resolution/FPS combos, measures ACTUAL delivered FPS/latency/jitter/sharpness/inference-time (OpenCV reports the requested mode, not the achieved one). bench.best_combo() recommends a setting picked by SHARPNESS, not raw FPS - a defect the camera can't resolve is invisible at any frame rate. Guarded against running concurrently with LiveTab's cameras."
+    },
+    {
+      "parameters": {
+        "content": "Settings\n(font scale, probe depth,\nbench duration, page size)",
+        "color": 0
+      },
+      "id": "settings",
+      "name": "Settings (global)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [180, 560],
+      "notes": "gui.py SettingsTab (gui.py:1712). App-wide UI preferences persisted to top-level settings.json (D.load_settings/save_settings, dataset.py:149-171) - NOT per-project, unlike labels.csv/config.json which live under projects/<slug>/."
+    }
+  ],
+  "connections": {
+    "New / Open Project": {
+      "main": [
+        [
+          { "node": "Calibrate ROI", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Calibrate ROI": {
+      "main": [
+        [
+          { "node": "Label Images", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Label Images": {
+      "main": [
+        [
+          { "node": "Manage Defect Classes", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Manage Defect Classes": {
+      "main": [
+        [
+          { "node": "Train Model", "type": "main", "index": 0 },
+          { "node": "Data Health Monitor", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Train Model": {
+      "main": [
+        [
+          { "node": "Evaluate & Compare Checkpoints", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Evaluate & Compare Checkpoints": {
+      "main": [
+        [
+          { "node": "Activate Checkpoint", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Activate Checkpoint": {
+      "main": [
+        [
+          { "node": "Live Multi-Camera Inference", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Live Multi-Camera Inference": {
+      "main": [
+        [
+          { "node": "Combined Verdict (PASS/FAIL)", "type": "main", "index": 0 },
+          { "node": "Snapshot Capture -> Inbox", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Snapshot Capture -> Inbox": {
+      "main": [
+        [
+          { "node": "Label Images", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Data Health Monitor": {
+      "main": [
+        [
+          { "node": "Label Images", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Camera Benchmark": {
+      "main": [
+        [
+          { "node": "Calibrate ROI", "type": "main", "index": 0 },
+          { "node": "Live Multi-Camera Inference", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Settings (global)": {
+      "main": [
+        [
+          { "node": "Label Images", "type": "main", "index": 0 },
+          { "node": "Camera Benchmark", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "bottle-defect-classifier-docs"
+  }
+}

@@ -1,0 +1,11 @@
+# torch/torchvision: install the CUDA build first, it is not on plain PyPI
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+torch
+torchvision
+opencv-python
+customtkinter
+pillow
+
+# optional: system-wide CPU and RAM in the performance panel.
+# Without it those two readings are blank; everything else still works.
+psutil

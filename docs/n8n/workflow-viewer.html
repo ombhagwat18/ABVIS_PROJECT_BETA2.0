@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bottle Defect Classifier — Pipeline Workflow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --surface: #161b22; --surface2: #1c2333;
+      --border: #30363d; --text: #e6edf3; --text-muted: #8b949e;
+      --accent: #58a6ff; --green: #3fb950; --orange: #f0883e;
+      --purple: #bc8cff; --red: #f85149;
+    }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header {
+      background: linear-gradient(135deg, #0d1117 0%, #161b22 60%, #1c2333 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 28px 40px 24px;
+      display: flex; align-items: center; gap: 18px;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-icon {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, #58a6ff, #bc8cff);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; flex-shrink: 0;
+      box-shadow: 0 0 20px rgba(88,166,255,0.3);
+    }
+    header h1 {
+      font-size: 1.25rem; font-weight: 600;
+      background: linear-gradient(90deg, #58a6ff, #bc8cff);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    header p { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+    .badge {
+      margin-left: auto;
+      background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.3);
+      color: var(--accent); font-size: 0.7rem; font-weight: 500;
+      padding: 4px 10px; border-radius: 20px; white-space: nowrap;
+    }
+    .overview {
+      margin: 32px 40px 0;
+      background: linear-gradient(135deg, rgba(88,166,255,0.07), rgba(188,140,255,0.07));
+      border: 1px solid rgba(88,166,255,0.2); border-radius: 12px; padding: 24px 28px;
+    }
+    .overview h2 { font-size: 1rem; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+    .overview p { font-size: 0.85rem; color: var(--text-muted); line-height: 1.7; }
+    .overview code {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;
+      background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px; color: #f0883e;
+    }
+    .flow-section { padding: 36px 40px 20px; }
+    .flow-section h2 {
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 24px;
+    }
+    .flow-diagram {
+      display: flex; align-items: flex-start; gap: 0;
+      overflow-x: auto; padding-bottom: 12px; flex-wrap: nowrap;
+    }
+    .flow-step { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
+    .flow-node {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      cursor: pointer; transition: transform 0.2s ease;
+    }
+    .flow-node:hover { transform: translateY(-3px); }
+    .flow-node-box {
+      width: 110px; padding: 12px 10px; border-radius: 10px; border: 1.5px solid;
+      text-align: center; font-size: 0.72rem; font-weight: 600; line-height: 1.4;
+      transition: box-shadow 0.2s;
+    }
+    .flow-node:hover .flow-node-box { box-shadow: 0 0 20px rgba(88,166,255,0.3); }
+    .flow-node-label { font-size: 0.6rem; color: var(--text-muted); text-align: center; max-width: 110px; }
+    .arrow {
+      width: 36px; height: 2px;
+      background: linear-gradient(90deg, var(--border), rgba(88,166,255,0.4));
+      position: relative; flex-shrink: 0; margin-top: -20px;
+    }
+    .arrow::after {
+      content: ''; position: absolute; right: -1px; top: -4px;
+      border: 5px solid transparent; border-left-color: rgba(88,166,255,0.5);
+    }
+    .node-trigger { background: rgba(63,185,80,0.1);  border-color: #3fb950; color: #3fb950; }
+    .node-data    { background: rgba(240,136,62,0.1); border-color: #f0883e; color: #f0883e; }
+    .node-train   { background: rgba(188,140,255,0.1);border-color: #bc8cff; color: #bc8cff; }
+    .node-live    { background: rgba(88,166,255,0.1); border-color: #58a6ff; color: #58a6ff; }
+    .node-verdict { background: rgba(248,81,73,0.12); border-color: #f85149; color: #f85149; }
+    .node-util    { background: rgba(139,148,158,0.1);border-color: #8b949e; color: #8b949e; }
+    .cards-section { padding: 8px 40px 40px; }
+    .cards-section h2 {
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 20px;
+    }
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      overflow: hidden; transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s; cursor: pointer;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.4); }
+    .card-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .card-icon {
+      width: 34px; height: 34px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .card-title { font-size: 0.88rem; font-weight: 600; }
+    .card-type {
+      margin-left: auto; font-size: 0.65rem; font-weight: 500;
+      padding: 3px 8px; border-radius: 12px; white-space: nowrap;
+    }
+    .card-body { padding: 14px 16px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.7; }
+    .card-body code {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+      background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; color: #f0883e;
+    }
+    .card-body.collapsed {
+      max-height: 72px; overflow: hidden;
+      mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+    }
+    .card-footer { padding: 8px 16px 12px; display: flex; justify-content: flex-end; }
+    .expand-btn {
+      font-size: 0.7rem; color: var(--accent); background: none; border: none;
+      cursor: pointer; padding: 2px 0; font-family: 'Inter', sans-serif;
+    }
+    .expand-btn:hover { text-decoration: underline; }
+    .conn-section { padding: 0 40px 40px; }
+    .conn-section h2 {
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 20px;
+    }
+    .conn-list { display: flex; flex-direction: column; gap: 8px; }
+    .conn-row {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; font-size: 0.8rem;
+    }
+    .conn-from { color: var(--text); font-weight: 500; }
+    .conn-arrow { color: var(--accent); font-size: 1rem; }
+    .conn-to {
+      background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.25);
+      color: var(--accent); padding: 2px 9px; border-radius: 20px;
+      font-size: 0.73rem; font-weight: 500;
+    }
+    footer { text-align: center; padding: 24px; font-size: 0.72rem; color: var(--text-muted); border-top: 1px solid var(--border); }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-icon">🍶</div>
+  <div>
+    <h1>Bottle Defect Classifier — Pipeline Workflow</h1>
+    <p>Documentation artifact · mirrors the real Python pipeline</p>
+  </div>
+  <span class="badge">n8n · Documentation Only</span>
+</header>
+
+<div class="overview">
+  <h2>📋 Overview</h2>
+  <p>
+    This graph is a <strong>documentation / visualization artifact</strong>, not a runnable automation.
+    It mirrors the real pipeline implemented across <code>calibrate.py</code>, <code>dataset.py</code>,
+    <code>train.py</code>, <code>infer.py</code>, <code>bench.py</code> and the <code>gui.py</code>
+    tabs (Label, Defects, Train, Analysis, Live, Camera, Data health, Settings).<br/><br/>
+    Data backbone: <code>projects/&lt;slug&gt;/labels.csv</code> (source of truth) +
+    <code>config.json</code> (ROI, thresholds) + <code>models/&lt;stamp&gt;/</code> (checkpoints).
+  </p>
+</div>
+
+<div class="flow-section">
+  <h2>⚡ Pipeline Flow</h2>
+  <div class="flow-diagram">
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('start')">
+        <div class="flow-node-box node-trigger">🚀 New / Open Project</div>
+        <div class="flow-node-label">gui.py:148</div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('calibrate')">
+        <div class="flow-node-box node-data">📐 Calibrate ROI</div>
+        <div class="flow-node-label">calibrate.py</div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('label')">
+        <div class="flow-node-box node-data">🏷️ Label Images</div>
+        <div class="flow-node-label">gui.py LabelTab</div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('defects')">
+        <div class="flow-node-box node-data">🔍 Manage Defects</div>
+        <div class="flow-node-label">gui.py DefectsTab</div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('train')">
+        <div class="flow-node-box node-train">🧠 Train Model</div>
+        <div class="flow-node-label">train.py · EfficientNet-B0</div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('analysis')">
+        <div class="flow-node-box node-train">📊 Evaluate</div>
+        <div class="flow-node-label">AnalysisTab · charts.py</div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('activate')">
+        <div class="flow-node-box node-train">✅ Activate Checkpoint</div>
+        <div class="flow-node-label">gui.py:726</div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('live')">
+        <div class="flow-node-box node-live">📷 Live Inference</div>
+        <div class="flow-node-label">infer.CameraSet</div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="flow-step">
+      <div class="flow-node" onclick="scrollToCard('verdict')">
+        <div class="flow-node-box node-verdict">🔴 PASS / FAIL</div>
+        <div class="flow-node-label">infer.py:360</div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:18px;font-size:0.75rem;color:var(--text-muted);">
+    <span style="color:#58a6ff;">↩</span> Snapshot → Inbox → Label Images <em>(continuous improvement loop)</em>
+    &nbsp;|&nbsp;
+    <span style="color:#f0883e;">↩</span> Data Health Monitor → Label Images
+    &nbsp;|&nbsp;
+    <span style="color:#8b949e;">↩</span> Camera Benchmark → Calibrate ROI / Live
+  </div>
+</div>
+
+<div class="cards-section">
+  <h2>🗂 Node Details — click any node in the flow above to jump to its card</h2>
+  <div class="cards-grid" id="cards-grid"></div>
+</div>
+
+<div class="conn-section">
+  <h2>🔗 Connections</h2>
+  <div class="conn-list" id="conn-list"></div>
+</div>
+
+<footer>Bottle Defect Classifier · n8n Documentation Workflow Viewer · Generated from bottle-pipeline-workflow.json</footer>
+
+<script>
+const nodes = [
+  { id:"start",    name:"New / Open Project",           icon:"🚀", badgeBg:"rgba(63,185,80,0.15)",   badgeColor:"#3fb950", typeBadge:"Manual Trigger",
+    notes:"gui.py new_project()/switch_project() (gui.py:148-159). Calls dataset.use_project(name), which rebinds every D.* path constant to projects/<slug>/... and persists the choice to projects/active.txt. Always stops running cameras first." },
+  { id:"calibrate",name:"Calibrate ROI",                icon:"📐", badgeBg:"rgba(240,136,62,0.15)",  badgeColor:"#f0883e", typeBadge:"One-time Setup",
+    notes:"calibrate.py, invoked standalone on first run or via DataTab 'Re-measure' (gui.py:1150, calibrate.run()). Measures the bottle crop box using Sobel edge-energy row/column profiles (_span, calibrate.py:22), thresholded relative to their own floor/peak. Unions the middle 95% of ~60 sampled frames to avoid one bad frame blowing out the box. Writes roi=[x,y,w,h] + roi_frame=[W,H] into projects/<slug>/config.json." },
+  { id:"label",    name:"Label Images",                 icon:"🏷️", badgeBg:"rgba(240,136,62,0.15)",  badgeColor:"#f0883e", typeBadge:"Label Tab",
+    notes:"gui.py LabelTab (gui.py:198). Paginated thumbnail grid, filter by mode (all/inbox/good/defective/pos/neg), multi-select with keyboard shortcuts (1-9 toggle defect, g=good, a=select page, Esc=clear). Bulk apply/clear/delete via D.apply_labels/D.delete_images. On load, dataset.sync_new_images (dataset.py:245) reconciles the images/ folders into labels.csv WITHOUT ever overwriting an existing row, so folder position only seeds a label the first time an image is imported." },
+  { id:"defects",  name:"Manage Defect Classes",        icon:"🔍", badgeBg:"rgba(240,136,62,0.15)",  badgeColor:"#f0883e", typeBadge:"Defects Tab",
+    notes:"gui.py DefectsTab (gui.py:442). Add/rename/delete defect classes = add/rename/delete a -ve/<Class>/ folder = add/rename/delete a labels.csv column. rename_defect() renames the folder and the column together (a stale folder resurrects the old label on rescan otherwise). Deleting a class drops the column and moves its images to _inbox/ (reviewed=0), never to 'good'. Shows per-class counts with a 'thin - aim for 100+' warning." },
+  { id:"train",    name:"Train Model",                  icon:"🧠", badgeBg:"rgba(188,140,255,0.15)", badgeColor:"#bc8cff", typeBadge:"train.py",
+    notes:"TrainTab 'Train now' (gui.py:601) spawns a thread calling train.run(epochs, log=emit). EfficientNet-B0 backbone (ImageNet-pretrained), one multi-label linear head, BCEWithLogitsLoss with per-column pos_weight=clip(neg/pos,1,50). Augmentation: rotation/scale/brightness/contrast jitter, NO horizontal flip (would mirror label text / invert skew direction). Split is by detected scene (dataset.scene_map/split_train_val, dataset.py:630-704), not random, to avoid near-duplicate frame leakage between train/val. A defect with 0 training positives gets threshold=1.01 (unreachable) and is disabled. Writes projects/<slug>/models/<stamp>/{model.pt, labels.csv snapshot, metrics.json (incl. val_paths)}." },
+  { id:"analysis", name:"Evaluate & Compare Checkpoints",icon:"📊",badgeBg:"rgba(188,140,255,0.15)", badgeColor:"#bc8cff", typeBadge:"Analysis Tab",
+    notes:"gui.py AnalysisTab (gui.py:1303), charts drawn on a plain Tk Canvas (charts.py, no matplotlib). Loss/macro-F1 curves, per-defect recall bars, confusion matrix per defect. compare()/show_compare() re-tests every saved checkpoint against today's labels.csv via train.score_checkpoint(), which refuses to score a checkpoint that never recorded val_paths, and flags checkpoints that predate the current val split as 'needs retrain' vs honestly re-scored." },
+  { id:"activate", name:"Activate Checkpoint",          icon:"✅", badgeBg:"rgba(188,140,255,0.15)", badgeColor:"#bc8cff", typeBadge:"'Use' button",
+    notes:"TrainTab activate() (gui.py:726). Selects a models/<stamp>/ checkpoint as the live one and derives per-defect thresholds from that checkpoint's own metrics.json. infer.Model (infer.py:77) always crops using the ROI/input size baked INTO the checkpoint, not the project's live config.json — this is what makes rolling back to an older model safe even if the camera/ROI has since changed." },
+  { id:"live",     name:"Live Multi-Camera Inference",  icon:"📷", badgeBg:"rgba(88,166,255,0.15)",  badgeColor:"#58a6ff", typeBadge:"Live Tab",
+    notes:"gui.py LiveTab (gui.py:772). infer.CameraSet (infer.py:292) shares one Model across N cameras, one background grab thread each, always infers on the NEWEST frame (mid-inference arrivals are dropped and counted, never queued → bounded latency). Capped ~15Hz per camera regardless of source FPS. Per-camera PASS/FAIL overlay + real-time FPS/latency/drop% (Camera.stats() + bench.system_stats()). Per-defect threshold sliders bound live to config.json." },
+  { id:"verdict",  name:"Combined Verdict (PASS/FAIL)", icon:"🔴", badgeBg:"rgba(248,81,73,0.15)",   badgeColor:"#f85149", typeBadge:"Output",
+    notes:"infer.CameraSet.combined() (infer.py:360): REJECT if ANY camera rejects. Rationale: multiple angles of the same physical bottle share one verdict — a defect only one angle can see is still a defect. (If cameras instead watch independent lines, use each camera's own verdict rather than combined())." },
+  { id:"snapshot", name:"Snapshot Capture → Inbox",    icon:"📸", badgeBg:"rgba(88,166,255,0.15)",  badgeColor:"#58a6ff", typeBadge:"Capture Panel",
+    notes:"LiveTab's snapshot-into-a-label capture panel (gui.py:772). Operator captures an interesting live frame straight into a project's images/_inbox/ (reviewed=0), closing the loop back into Label Images for the next training round — this is how the model improves over time on real line traffic." },
+  { id:"datahealth",name:"Data Health Monitor",         icon:"🏥", badgeBg:"rgba(139,148,158,0.15)", badgeColor:"#8b949e", typeBadge:"Data Tab",
+    notes:"gui.py DataTab 'Data health' (gui.py:1150). ROI editing (manual + Re-measure), near-duplicate-frame scan (dataset.scene_map) reporting how many DISTINCT bottles N images actually represent, plus dataset health counts (per-class thin warnings, unreviewed backlog, etc). Feeds back into deciding what still needs labeling." },
+  { id:"bench",    name:"Camera Benchmark",             icon:"⏱️", badgeBg:"rgba(139,148,158,0.15)", badgeColor:"#8b949e", typeBadge:"Bench Tab",
+    notes:"gui.py BenchTab 'Camera' tab (gui.py:1552). bench.benchmark_camera() sweeps resolution/FPS combos, measures ACTUAL delivered FPS/latency/jitter/sharpness/inference-time (OpenCV reports the requested mode, not the achieved one). bench.best_combo() recommends a setting picked by SHARPNESS, not raw FPS — a defect the camera can't resolve is invisible at any frame rate. Guarded against running concurrently with LiveTab's cameras." },
+  { id:"settings", name:"Settings (global)",            icon:"⚙️", badgeBg:"rgba(139,148,158,0.15)", badgeColor:"#8b949e", typeBadge:"Settings Tab",
+    notes:"gui.py SettingsTab (gui.py:1712). App-wide UI preferences persisted to top-level settings.json (D.load_settings/save_settings, dataset.py:149-171) — NOT per-project, unlike labels.csv/config.json which live under projects/<slug>/." }
+];
+
+const connections = [
+  { from:"New / Open Project",           to:["Calibrate ROI"] },
+  { from:"Calibrate ROI",                to:["Label Images"] },
+  { from:"Label Images",                 to:["Manage Defect Classes"] },
+  { from:"Manage Defect Classes",        to:["Train Model","Data Health Monitor"] },
+  { from:"Train Model",                  to:["Evaluate & Compare Checkpoints"] },
+  { from:"Evaluate & Compare Checkpoints",to:["Activate Checkpoint"] },
+  { from:"Activate Checkpoint",          to:["Live Multi-Camera Inference"] },
+  { from:"Live Multi-Camera Inference",  to:["Combined Verdict (PASS/FAIL)","Snapshot Capture → Inbox"] },
+  { from:"Snapshot Capture → Inbox",     to:["Label Images"] },
+  { from:"Data Health Monitor",          to:["Label Images"] },
+  { from:"Camera Benchmark",             to:["Calibrate ROI","Live Multi-Camera Inference"] },
+  { from:"Settings (global)",            to:["Label Images","Camera Benchmark"] }
+];
+
+const grid = document.getElementById('cards-grid');
+nodes.forEach(n => {
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'card-' + n.id;
+  const notesHtml = n.notes.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n/g,'<br>');
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="card-icon" style="background:${n.badgeBg}">${n.icon}</div>
+      <span class="card-title">${n.name}</span>
+      <span class="card-type" style="background:${n.badgeBg};color:${n.badgeColor}">${n.typeBadge}</span>
+    </div>
+    <div class="card-body collapsed" id="body-${n.id}">${notesHtml}</div>
+    <div class="card-footer">
+      <button class="expand-btn" onclick="toggleCard('${n.id}',this)">Show more ↓</button>
+    </div>`;
+  grid.appendChild(card);
+});
+
+const connList = document.getElementById('conn-list');
+connections.forEach(c => {
+  const row = document.createElement('div');
+  row.className = 'conn-row';
+  row.innerHTML = `<span class="conn-from">${c.from}</span><span class="conn-arrow">→</span>${c.to.map(t=>`<span class="conn-to">${t}</span>`).join('')}`;
+  connList.appendChild(row);
+});
+
+function toggleCard(id, btn) {
+  const body = document.getElementById('body-'+id);
+  const col = body.classList.toggle('collapsed');
+  btn.textContent = col ? 'Show more ↓' : 'Show less ↑';
+}
+
+function scrollToCard(id) {
+  const el = document.getElementById('card-'+id);
+  if (!el) return;
+  el.scrollIntoView({ behavior:'smooth', block:'center' });
+  el.style.borderColor = '#58a6ff';
+  el.style.boxShadow = '0 0 25px rgba(88,166,255,0.4)';
+  setTimeout(()=>{ el.style.borderColor=''; el.style.boxShadow=''; }, 1800);
+}
+</script>
+</body>
+</html>

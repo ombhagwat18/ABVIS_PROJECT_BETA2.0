@@ -1,0 +1,33 @@
+{
+  "roi": [
+    826,
+    0,
+    841,
+    1927
+  ],
+  "roi_frame": [
+    2537,
+    1927
+  ],
+  "input_wh": [
+    192,
+    448
+  ],
+  "cache_wh": [
+    216,
+    496
+  ],
+  "camera": 0,
+  "thresholds": {
+    "damaged_bottle": 0.45,
+    "damaged_label": 0.2,
+    "missing_cap": 1.01,
+    "missing_label": 0.15,
+    "new_bottle": 1.01,
+    "skewed_bottle": 0.95,
+    "skewed_label": 0.2,
+    "tilt_cap": 0.2,
+    "water_level": 0.1
+  },
+  "active_model": "20260918-120030"
+}
