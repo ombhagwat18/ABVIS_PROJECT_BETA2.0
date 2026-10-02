@@ -28,6 +28,7 @@ import annotation_studio
 import bench
 import charts
 import dataset as D
+import detect
 import infer
 
 ctk.set_appearance_mode("light")
@@ -1051,8 +1052,11 @@ class LiveTab:
     on one bottle, and a defect only the side camera can see is still a defect.
     """
 
+    MODES = ("Classifier", "Classifier + YOLO", "YOLO only")
+
     def __init__(self, app: App, parent):
         self.app = app
+        self._detector = None                 # loaded once, shared by every camera
         self.sources: list[tuple[str, object]] = []
         self.picked: dict[str, ctk.CTkCheckBox] = {}
         self.panes: dict[str, ctk.CTkLabel] = {}
@@ -1070,8 +1074,15 @@ class LiveTab:
         ctk.CTkButton(bar, text="Stop", width=70, command=self.stop).pack(side="left")
         ctk.CTkButton(bar, text="⟳ Scan", width=80, command=self.scan).pack(side="left", padx=6)
         ctk.CTkButton(bar, text="Open a video…", command=self.pick_video).pack(side="left", padx=6)
+        # What runs on each frame. The YOLO detector finds bottle / cap / label boxes only: it
+        # does not decide defects, so "YOLO only" is a test mode that reports FAULT by design.
+        self.infer_mode = ctk.CTkOptionMenu(bar, values=list(self.MODES), width=170)
+        self.infer_mode.set(self.MODES[0])
+        self.infer_mode.pack(side="left", padx=6)
         self.verdict = ctk.CTkLabel(bar, text="", font=("Segoe UI", 17, "bold"))
         self.verdict.pack(side="left", padx=20)
+        self.detlabel = ctk.CTkLabel(bar, text="", text_color=DIM)
+        self.detlabel.pack(side="left", padx=4)
         self.hint = ctk.CTkLabel(bar, text="", text_color=DIM)
         self.hint.pack(side="right", padx=10)
 
@@ -1263,19 +1274,42 @@ class LiveTab:
         if not chosen:
             return messagebox.showinfo("No source", "Tick at least one camera or open a video.")
         cfg = D.load_config()
-        stamp = cfg.get("active_model")
+        mode = self.infer_mode.get()
+        stamp = cfg.get("active_model") if mode != "YOLO only" else None
+        detector = None
+        if mode != "Classifier":
+            self.hint.configure(text="Loading the YOLO detector…")
+            self.app.update_idletasks()
+            try:
+                detector = self.build_detector()
+            except Exception as e:
+                self.hint.configure(text="")
+                return messagebox.showerror("YOLO detector", f"Not starting: {e}")
+            self.hint.configure(text="")
         for name, val in chosen:
             self.app.cams.add(val, name)
         try:
-            self.app.cams.start([v for _, v in chosen], stamp)
+            self.app.cams.start([v for _, v in chosen], stamp, detector)
         except Exception as e:
-            messagebox.showwarning("Model", f"Running without a model: {e}")
-            self.app.cams.start([v for _, v in chosen], None)
+            messagebox.showwarning("Model", f"Running without a classifier: {e}")
+            self.app.cams.start([v for _, v in chosen], None, detector)
         self.build_panes([n for n, _ in chosen])
         self.running = True
         self.btn_start.configure(state="disabled")
         self.app.after(1200, self.check_started)
         self.tick()
+
+    def build_detector(self):
+        """The shared YOLO detector, loaded on first use. Raises detect.DetectorError if the
+        trained checkpoint is missing or is not the one recorded in MODEL_PROVENANCE.json.
+        Confidence and weights path come from settings.json (keys detector_conf /
+        detector_weights); the default confidence is a DEVELOPMENT value, not a validated one."""
+        conf = float(self.app.settings.get("detector_conf", detect.DEV_CONF))
+        weights = self.app.settings.get("detector_weights") or None
+        d = self._detector
+        if d is None or d.conf != conf or str(d.weights) != str(weights or detect.DEFAULT_WEIGHTS):
+            d = self._detector = detect.YoloDetector(weights=weights, conf=conf)
+        return d
 
     def build_panes(self, names):
         for w in self.grid.winfo_children():
@@ -1314,6 +1348,7 @@ class LiveTab:
                                  text_color="#94a3b8")
         self.idle.pack(expand=True)
         self.verdict.configure(text="")
+        self.detlabel.configure(text="")
         for w in self.perf.winfo_children():
             w.destroy()
 
@@ -1339,6 +1374,15 @@ class LiveTab:
         self.verdict.configure(
             text=state if state == infer.PASS else f"{state} — {detail}",
             text_color={infer.PASS: ACC, infer.REJECT: BAD}.get(state, WARN))
+        parts = []
+        for cam in live:
+            i = cam.inspection()
+            if i.detector_state not in (None, infer.DET_OFF):
+                n = (" " + " ".join(f"{k[0]}{v}" for k, v in i.detector.counts().items())
+                     if i.detector else "")
+                parts.append(f"{cam.name}: {i.detector_state}{n}"
+                             + (f" ({i.detector_reason})" if i.detector_reason else ""))
+        self.detlabel.configure(text=("Detector — " + " | ".join(parts)) if parts else "")
         self.app.after(50, self.tick)
         self.update_perf()
 
@@ -2156,6 +2200,17 @@ def selftest():
     app.tab_live.build_panes(["Camera 0", "Camera 1"])
     app.update()
     assert len(app.tab_live.panes) == 2, app.tab_live.panes
+    # Detector wiring: default mode is the unchanged classifier path, and missing/foreign weights
+    # are refused (raised, not swallowed) -- never silently downgraded to "no detector".
+    assert app.tab_live.infer_mode.get() == "Classifier" and "YOLO only" in app.tab_live.MODES
+    app.settings["detector_weights"] = "no/such/stage2_best.pt"
+    try:
+        app.tab_live.build_detector()
+        raise AssertionError("missing detector weights were not refused")
+    except detect.DetectorError:
+        pass
+    finally:
+        app.settings.pop("detector_weights", None)
     # No camera is armed here: the verdict line must say FAULT, never PASS or blank.
     app.tab_live.running = True
     app.tab_live.tick()

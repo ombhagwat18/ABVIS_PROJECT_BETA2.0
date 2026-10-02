@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 import dataset as D
+import detect
 
 _MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 _STD = np.array([0.229, 0.224, 0.225], np.float32)
@@ -23,6 +24,8 @@ _STD = np.array([0.229, 0.224, 0.225], np.float32)
 C_PASS = (216, 78, 29)             # #1d4ed8
 C_FAIL = (28, 28, 185)             # #b91c1c
 C_FAULT = (9, 83, 180)             # #b45309 amber: "not inspected", distinct from both
+# component boxes (BGR): bottle, cap, label -- functional, not a design decision
+C_BOX = {"bottle": (230, 160, 40), "cap": (60, 200, 60), "label": (40, 200, 230)}
 C_TEXT = (255, 255, 255)
 C_MUTED = (150, 150, 150)
 C_LIGHT = (235, 235, 235)
@@ -165,6 +168,16 @@ class Inspection(NamedTuple):
     # perf_counter clock -- None unless state is PASS/REJECT.
     model_id: str | None = None
     infer_ms: float | None = None
+    # Component detector (detect.YoloDetector), observational: detector -> the fresh
+    # detect.DetectionResult it judged (None when OFF, FAULT or stale -- stale boxes are
+    # never exposed as current). detector_state: OFF | OK | NO DETECTIONS | FAULT.
+    detector: object | None = None
+    detector_state: str | None = None
+    detector_reason: str | None = None
+
+
+# Component-detector states. NO DETECTIONS is a valid result (nothing in view), not a defect.
+DET_OFF, DET_OK, DET_NONE, DET_FAULT = "OFF", "OK", "NO DETECTIONS", "FAULT"
 
 
 def decide(probs: dict, thresholds: dict) -> tuple[str, list[str]]:
@@ -205,6 +218,16 @@ class Camera:
         self.result_model: str | None = None      # stamp of the model that scored it
         self.result_infer_ms: float | None = None  # ...and how long that took
         self.session = 0
+        # Optional component detector (anything with detect(frame, camera_id=, frame_seq=,
+        # frame_ts=) -> detect.DetectionResult). Runs beside the Stage 1 classifier; it
+        # never produces PASS. det_* mirror result_*: committed together with each frame.
+        self.detector = None
+        self.det_result = None
+        self.det_ts: float | None = None
+        self.det_frame: np.ndarray | None = None   # the frame the boxes belong to
+        self.det_fault: str | None = None
+        self.det_faults = 0
+        self.det_ms = 0.0
         self.fault: str | None = None  # why the last inference failed, if it did
         self.faults = 0
         self.armed = False             # operator wants this camera inspecting
@@ -253,14 +276,16 @@ class Camera:
                 "drop_pct": round(drop_pct, 1), "alive": self.alive, "error": self.error,
                 "model": self.model.stamp if self.model else None,
                 "uptime_s": round(time.time() - self.started_at, 1) if self.started_at else 0.0,
-                "session": self.session, "frame_seq": self.frame_seq}
+                "session": self.session, "frame_seq": self.frame_seq,
+                "detector": getattr(self.detector, "model_id", None),
+                "det_ms": round(self.det_ms, 1), "det_faults": self.det_faults}
 
     def start(self, source=0):
         if self._thread and self._thread.is_alive() and self.source == source:
             return
         self.stop()
         self.source, self._stop = source, threading.Event()
-        self.dropped = self.grabbed = self.scored = self.faults = 0
+        self.dropped = self.grabbed = self.scored = self.faults = self.det_faults = 0
         self.started_at = time.time()
         self._invalidate()
         with self.lock:                       # a new session starts with no frame at all
@@ -284,6 +309,7 @@ class Camera:
             self.probs, self.hits, self.ok = {}, [], False
             self.state, self.result_ts, self.fault = FAULT, None, fault
             self.result_seq = self.result_model = self.result_infer_ms = None
+            self.det_result = self.det_ts = self.det_frame = self.det_fault = None
 
     def result(self, now: float | None = None) -> tuple[str, list[str], str | None]:
         """(state, defects, fault reason). PASS/REJECT only from a fresh valid score.
@@ -296,7 +322,13 @@ class Camera:
         return i.state, i.hits, i.reason
 
     def inspection(self, now: float | None = None) -> Inspection:
-        """result() plus the session/sequence/timestamps it was judged on."""
+        """result() plus the session/sequence/timestamps it was judged on, and the
+        component detector's view.
+
+        The detector is observational: it never produces PASS/REJECT. But if one is
+        attached and cannot vouch for the current frame (failed, nothing detected yet,
+        stale) the whole inspection is FAULT -- a camera we cannot fully see is not PASS.
+        """
         now = time.monotonic() if now is None else now
         with self.lock:
             state, hits, fault = self.state, list(self.hits), self.fault
@@ -304,31 +336,53 @@ class Camera:
             fseq, rseq, session = (self.frame_seq if fts is not None else None,
                                    self.result_seq, self.session)
             rmodel, rms = self.result_model, self.result_infer_ms
+            dres, dts, dfault = self.det_result, self.det_ts, self.det_fault
+        detector = self.detector
+
+        if detector is None:
+            dstate, dwhy, dview = DET_OFF, None, None
+        elif dfault:
+            dstate, dwhy, dview = DET_FAULT, dfault, None
+        elif dres is None or dts is None:
+            dstate, dwhy, dview = DET_FAULT, "no detection yet", None
+        elif fts is None or now - fts > self.max_age or now - dts > self.max_age:
+            dstate, dwhy, dview = DET_FAULT, f"stale detections (>{self.max_age:g}s old)", None
+        else:
+            dstate, dwhy, dview = (DET_OK if dres.detections else DET_NONE), None, dres
 
         def out(st, h, why):
             if st == FAULT:                 # no valid score: nothing to time or attribute
                 loaded = getattr(self.model, "stamp", None)
                 return Inspection(self.camera_id, session, st, h, why, fseq, fts, rseq, rts,
-                                  loaded, None)
-            return Inspection(self.camera_id, session, st, h, why, fseq, fts, rseq, rts, rmodel, rms)
+                                  loaded, None, dview, dstate, dwhy)
+            return Inspection(self.camera_id, session, st, h, why, fseq, fts, rseq, rts, rmodel, rms,
+                              dview, dstate, dwhy)
 
-        if not self.armed:
-            return out(FAULT, [], "camera not started")
-        if self.error:
-            return out(FAULT, [], self.error)
-        if not self.alive:
-            return out(FAULT, [], "camera thread not running")
-        if self.model is None:
-            return out(FAULT, [], "no model loaded")
-        if fault:
-            return out(FAULT, [], fault)
-        if rts is None or state not in (PASS, REJECT):
-            return out(FAULT, [], "no frame scored yet")
-        if fts is None or now - fts > self.max_age:
-            return out(FAULT, [], f"stale frame (>{self.max_age:g}s old)")
-        if now - rts > self.max_age:
-            return out(FAULT, [], f"stale score (>{self.max_age:g}s old)")
-        return out(state, hits, None)
+        def base():
+            if not self.armed:
+                return FAULT, [], "camera not started"
+            if self.error:
+                return FAULT, [], self.error
+            if not self.alive:
+                return FAULT, [], "camera thread not running"
+            if self.model is None:
+                if detector is None:
+                    return FAULT, [], "no model loaded"
+                return FAULT, [], "detector-only test mode: no inspection rules"
+            if fault:
+                return FAULT, [], fault
+            if rts is None or state not in (PASS, REJECT):
+                return FAULT, [], "no frame scored yet"
+            if fts is None or now - fts > self.max_age:
+                return FAULT, [], f"stale frame (>{self.max_age:g}s old)"
+            if now - rts > self.max_age:
+                return FAULT, [], f"stale score (>{self.max_age:g}s old)"
+            return state, hits, None
+
+        st, h, why = base()
+        if st != FAULT and dstate == DET_FAULT:
+            return out(FAULT, [], f"detector: {dwhy}")
+        return out(st, h, why)
 
     def load_model(self, stamp: str | None):
         self.model = Model(stamp) if stamp else None
@@ -388,34 +442,52 @@ class Camera:
                 break                          # superseded while read() was blocked
             seq = self.frame_seq + 1           # only the owning thread writes frame_seq
             now = time.time()
-            model = self.model
+            model, detector = self.model, self.detector
             probs, hits, ok = self.probs, self.hits, self.ok
             state, result_ts, fault = self.state, self.result_ts, self.fault
             result_seq = self.result_seq
             result_model, result_ms = self.result_model, self.result_infer_ms
+            det_result, det_ts, det_frame, det_fault = (self.det_result, self.det_ts,
+                                                        self.det_frame, self.det_fault)
             if model is None:
                 probs, hits, ok, state, result_ts = {}, [], False, FAULT, None
                 result_seq = result_model = result_ms = None
+            if detector is None:
+                det_result = det_ts = det_frame = det_fault = None
+            if model is None and detector is None:
+                pass                                   # nothing to run
             elif now - last > 0.06:  # ~15 Hz is plenty
                 last = now
-                t_inf = time.perf_counter()
-                try:
-                    cfg = D.load_config()
-                    probs = model.predict(frame)
-                    self.infer_ms = (time.perf_counter() - t_inf) * 1000
-                    state, hits = decide(probs, cfg.get("thresholds", {}))
-                    if state == FAULT:
-                        raise ValueError("model returned no usable scores")
-                    ok, result_ts, fault = state == PASS, t_grab, None
-                    result_seq, result_ms = seq, self.infer_ms
-                    result_model = getattr(model, "stamp", None)
-                    self.scored += 1
-                except Exception as e:                # noqa: BLE001 - must not kill the loop
-                    # Keep grabbing, but drop the scores: this frame was not inspected.
-                    probs, hits, ok, state, result_ts = {}, [], False, FAULT, None
-                    result_seq = result_model = result_ms = None
-                    fault = f"inference failed: {type(e).__name__}: {e}"
-                    self.faults += 1
+                if model is not None:
+                    t_inf = time.perf_counter()
+                    try:
+                        cfg = D.load_config()
+                        probs = model.predict(frame)
+                        self.infer_ms = (time.perf_counter() - t_inf) * 1000
+                        state, hits = decide(probs, cfg.get("thresholds", {}))
+                        if state == FAULT:
+                            raise ValueError("model returned no usable scores")
+                        ok, result_ts, fault = state == PASS, t_grab, None
+                        result_seq, result_ms = seq, self.infer_ms
+                        result_model = getattr(model, "stamp", None)
+                        self.scored += 1
+                    except Exception as e:                # noqa: BLE001 - must not kill the loop
+                        # Keep grabbing, but drop the scores: this frame was not inspected.
+                        probs, hits, ok, state, result_ts = {}, [], False, FAULT, None
+                        result_seq = result_model = result_ms = None
+                        fault = f"inference failed: {type(e).__name__}: {e}"
+                        self.faults += 1
+                if detector is not None:
+                    t_det = time.perf_counter()
+                    try:
+                        det_result = detector.detect(frame, camera_id=self.camera_id,
+                                                     frame_seq=seq, frame_ts=t_grab)
+                        self.det_ms = (time.perf_counter() - t_det) * 1000
+                        det_ts, det_frame, det_fault = t_grab, frame, None
+                    except Exception as e:                # noqa: BLE001 - must not kill the loop
+                        det_result = det_ts = det_frame = None
+                        det_fault = f"detection failed: {type(e).__name__}: {e}"
+                        self.det_faults += 1
             else:
                 # A frame arrived that inference did not look at. Not a fault --
                 # it is how the pipeline sheds load instead of building a lag --
@@ -434,6 +506,8 @@ class Camera:
                 self.result_model, self.result_infer_ms = result_model, result_ms
                 self.probs, self.hits, self.ok = probs, hits, ok
                 self.state, self.result_ts, self.fault = state, result_ts, fault
+                self.det_result, self.det_ts = det_result, det_ts
+                self.det_frame, self.det_fault = det_frame, det_fault
             if frame_dt:
                 lag = frame_dt - (time.time() - t_frame)
                 if lag > 0:
@@ -455,7 +529,12 @@ class Camera:
             if self.frame is None:
                 return None
             frame, probs, hits = self.frame.copy(), dict(self.probs), list(self.hits)
-        state, _, reason = self.result()       # PASS/REJECT only if the score is fresh
+            dframe = self.det_frame
+        insp = self.inspection()               # PASS/REJECT only if the score is fresh
+        state, reason, dres = insp.state, insp.reason, insp.detector
+        if (dres is not None and dframe is not None
+                and dframe.shape[:2] == (dres.frame_wh[1], dres.frame_wh[0])):
+            frame = dframe.copy()              # boxes are drawn on the frame they belong to
 
         h, w = frame.shape[:2]
         s = width / max(1, w)
@@ -469,6 +548,18 @@ class Camera:
                 rx, ry, rw, rh = rx * fx, ry * fy, rw * fx, rh * fy
             x, y = round(rx * s), round(ry * s)
             cv2.rectangle(frame, (x, y), (x + round(rw * s), y + round(rh * s)), (90, 90, 90), 1)
+
+        if dres is not None:                   # component boxes: coordinates are original-frame pixels
+            fh2, fw2 = frame.shape[:2]
+            for d in dres.detections:
+                x1, y1, x2, y2 = (round(v) for v in
+                                  detect.scale_box((d.x1, d.y1, d.x2, d.y2), dres.frame_wh, (fw2, fh2)))
+                col = C_BOX.get(d.class_name, C_MUTED)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
+                # text inside the box, one row per class, so bottle/cap labels never collide
+                cv2.putText(frame, f"{d.class_name} {d.confidence:.2f}",
+                            (x1 + 4, max(y1 + 18 + 18 * d.class_id, 66)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 2)
 
         colour = {PASS: C_PASS, REJECT: C_FAIL}.get(state, C_FAULT)
         text = {PASS: "PASS", REJECT: f"REJECT ({len(hits)})"}.get(state, f"FAULT - {reason}")
@@ -487,6 +578,15 @@ class Camera:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                             C_FAIL if on else C_LIGHT, 1)
                 y0 += 19
+        if insp.detector_state != DET_OFF:
+            dtxt = {DET_OK: "DETECTOR OK  " + "  ".join(f"{n} {c}" for n, c in dres.counts().items())
+                    + f"  {dres.infer_ms:.0f} ms  (dev conf {dres.conf_threshold:g})" if dres else "",
+                    DET_NONE: "DETECTOR: no components detected (not a defect)"
+                    }.get(insp.detector_state, f"DETECTOR FAULT: {insp.detector_reason}")
+            bh = frame.shape[0]
+            cv2.rectangle(frame, (0, bh - 26), (frame.shape[1], bh), (30, 30, 30), -1)
+            cv2.putText(frame, dtxt, (10, bh - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                        C_FAULT if insp.detector_state == DET_FAULT else C_TEXT, 1)
         return frame
 
 
@@ -539,8 +639,20 @@ class CameraSet:
         for c in self.cams.values():
             c.model = model
 
-    def start(self, sources, stamp: str | None = None):
-        """Run exactly these sources; anything else already running is stopped."""
+    def load_detector(self, detector):
+        """One detector (detect.YoloDetector) shared by every camera, or None to remove it.
+        Its calls are serialised internally, so sharing is safe. Cameras still run
+        independently: nothing here synchronises them."""
+        for c in self.cams.values():
+            c.detector = detector
+
+    def start(self, sources, stamp: str | None = None, detector=None):
+        """Run exactly these sources; anything else already running is stopped.
+
+        stamp selects the Stage 1 classifier checkpoint (None = no classifier);
+        detector is an optional component detector (None = none). With only a detector
+        the cameras run in detector-only test mode and report FAULT, by design: boxes
+        are not an inspection verdict."""
         wanted = {self.key(s): s for s in sources}
         for k, c in list(self.cams.items()):
             if k not in wanted and c.alive:
@@ -549,6 +661,7 @@ class CameraSet:
         for k, s in wanted.items():
             cam = self.add(s)
             cam.model = model
+            cam.detector = detector
             cam.start(s)
         return self.running()
 
@@ -794,6 +907,165 @@ def _selftest_tri_state():
         me.open_capture, D.load_config = real_open, real_cfg
 
 
+def _selftest_detector():
+    """Component detector inside the Camera: observational, fail-safe, and unable to turn a
+    missing component into a verdict. Fake capture + fake YOLO -- no device, no weights."""
+    me = sys.modules[__name__]
+    box = {"cap": "ok", "yolo": "full", "model": "pass"}
+
+    class Cap:
+        def __init__(self, mode):
+            self.mode, self.n = mode, 0
+        def isOpened(self):
+            return True
+        def get(self, *_):
+            return 0
+        def set(self, *_):
+            pass
+        def release(self):
+            pass
+        def read(self):
+            time.sleep(0.004)
+            self.n += 1
+            if self.mode == "dead" and self.n > 3:
+                return False, None
+            return True, np.zeros((36, 64, 3), np.uint8)
+
+    class Clf:
+        defects, roi, stamp = ["a"], None, "clf-1"
+        def predict(self, frame):
+            return {"a": 0.9 if box["model"] == "reject" else 0.1}
+
+    def yolo_out(frame):
+        k = box["yolo"]
+        if k == "boom":
+            raise RuntimeError("cuda out of memory")
+        if k == "nan":
+            return [[1, 1, 9, 9]], [float("nan")], [0]
+        if k == "empty":
+            return np.zeros((0, 4)), [], []
+        return [[2, 3, 30, 33], [10, 4, 20, 9]], [0.93, 0.81], [0, 1]       # bottle + cap, no label
+
+    def new_detector():
+        return detect.YoloDetector(model=detect.FakeYolo(yolo_out), warmup=False)
+
+    def wait(cond, what, timeout=3.0):
+        t0 = time.monotonic()
+        while not cond():
+            assert time.monotonic() - t0 < timeout, f"timed out waiting for: {what}"
+            time.sleep(0.01)
+
+    def cam_with(name, source, clf=True, det=True):
+        c = Camera(name)
+        c.model = Clf() if clf else None
+        c.detector = new_detector() if det else None
+        c.start(source)
+        return c
+
+    real_open, real_cfg = me.open_capture, D.load_config
+    me.open_capture = lambda src: Cap(box["cap"])
+    D.load_config = lambda: {"thresholds": {}}
+    try:
+        # -- detector alone: boxes yes, verdict never PASS
+        box.update(cap="ok", yolo="full", model="pass")
+        c = cam_with("solo", 0, clf=False)
+        wait(lambda: c.inspection().detector_state == DET_OK, "detector OK")
+        i = c.inspection()
+        assert i.state == FAULT and "detector-only" in i.reason, (i.state, i.reason)
+        r = i.detector
+        assert r.counts() == {"bottle": 1, "cap": 1, "label": 0}, r.counts()
+        assert (r.camera_id, r.frame_wh) == ("0", (64, 36)) and 1 <= r.frame_seq <= i.frame_seq, (r, i)
+        assert r.detections[0].class_name == "bottle" and (r.detections[0].x1, r.detections[0].y2) == (2, 33)
+        c.stop()
+        assert c.inspection().detector is None, "a stopped camera kept its boxes"
+
+        # -- classifier + detector: the Stage 1 verdict is untouched by the detector
+        c = cam_with("both", 0)
+        wait(lambda: c.result()[0] == PASS and c.inspection().detector_state == DET_OK, "PASS + detector")
+        assert c.inspection().detector.counts()["cap"] == 1
+        box["model"] = "reject"
+        wait(lambda: c.result()[0] == REJECT, "classifier REJECT still works")
+        assert c.result()[1] == ["a"]
+        box["model"] = "pass"
+
+        # -- absence is NOT a defect: no components detected leaves PASS as PASS
+        box["yolo"] = "empty"
+        wait(lambda: c.inspection().detector_state == DET_NONE, "empty detections")
+        wait(lambda: c.result()[0] == PASS, "PASS survives an empty detection")
+        i = c.inspection()
+        assert i.state == PASS and i.detector.detections == () and i.detector_reason is None
+
+        # -- detector failures are FAULT, never PASS; the thread survives and recovers
+        for kind in ("boom", "nan"):
+            box["yolo"] = kind
+            wait(lambda: c.result()[0] == FAULT, f"{kind} -> FAULT")
+            i = c.inspection()
+            assert c.alive and i.detector is None and i.detector_state == DET_FAULT, (kind, i)
+            assert i.reason.startswith("detector: detection failed"), i.reason
+            assert c.det_faults >= 1
+        box["yolo"] = "full"
+        wait(lambda: c.result()[0] == PASS and c.inspection().detector_state == DET_OK, "recovery")
+
+        # -- stale detections -> FAULT (clock injected)
+        future = time.monotonic() + 10
+        i = c.inspection(now=future)
+        assert i.state == FAULT and i.detector is None and "stale" in i.reason, i
+        c.stop()
+        # ...and the detection age on its own: a FRESH frame with OLD detections (hand-built,
+        # thread stopped so nothing refreshes them) must not read as current boxes
+        c.armed, c._thread, c.model = True, threading.current_thread(), Clf()
+        c.frame_ts = c.result_ts = time.monotonic()
+        c.state, c.result_seq, c.frame_seq = PASS, 1, 1          # a fresh, valid Stage 1 PASS
+        c.det_ts = c.frame_ts - 5.0
+        c.det_result = detect.DetectionResult("0", 1, c.det_ts, (), (64, 36), 1.0, "fake", 0.25)
+        i = c.inspection(now=c.frame_ts + 0.1)
+        assert i.detector is None and i.detector_state == DET_FAULT and "stale detections" in i.detector_reason, i
+        assert i.state == FAULT and i.reason.startswith("detector: stale"), i
+        c._thread = None
+
+        # -- camera failure drops the boxes too
+        box["cap"] = "dead"
+        c = cam_with("dying", 0)
+        wait(lambda: not c.alive, "camera death")
+        i = c.inspection()
+        assert i.state == FAULT and i.detector is None and c.det_result is None, i
+        c.stop()
+
+        # -- restart: no boxes carried across sessions
+        box["cap"] = "ok"
+        c = cam_with("again", 0)
+        wait(lambda: c.inspection().detector_state == DET_OK, "first session")
+        s1 = c.session
+        c.stop(); c.start(0)
+        assert c.session == s1 + 1 and c.det_result is None, "restart kept old detections"
+        wait(lambda: c.inspection().detector_state == DET_OK, "second session")
+        assert c.inspection().detector.frame_seq <= c.frame_seq
+        c.stop()
+
+        # -- several cameras, one shared detector: independent, ids preserved, not synchronised
+        shared = new_detector()
+        cs = CameraSet()
+        cs.start([0, 1], stamp=None, detector=shared)
+        a, b = cs.get(0), cs.get(1)
+        for cam in (a, b):
+            cam.model = Clf()
+        wait(lambda: all(cam.result()[0] == PASS and cam.inspection().detector_state == DET_OK
+                         for cam in (a, b)), "two cameras OK")
+        ia, ib = a.inspection(), b.inspection()
+        assert (ia.detector.camera_id, ib.detector.camera_id) == ("0", "1")
+        assert (ia.session, ib.session) == (a.session, b.session)
+        assert cs.combined()[0] == PASS
+        assert shared._model.max_active == 1, "shared detector was entered concurrently"
+        b.detector = detect.YoloDetector(model=detect.FakeYolo(
+            lambda f: (_ for _ in ()).throw(RuntimeError("one camera's detector fails"))), warmup=False)
+        wait(lambda: b.result()[0] == FAULT, "one detector faults")
+        st, by = cs.combined()
+        assert st == FAULT and "detector" in by["Camera 1"][0] and "Camera 0" not in by, (st, by)
+        cs.stop()
+    finally:
+        me.open_capture, D.load_config = real_open, real_cfg
+
+
 def demo():
     """Self-check on the verdict rule -- the branch that decides pass/fail."""
     probs = {"a": 0.9, "b": 0.2, "c": 0.55}
@@ -812,9 +1084,10 @@ def demo():
     assert isinstance(cams, list) and all(c["width"] > 0 for c in cams), cams
 
     _selftest_tri_state()
+    _selftest_detector()
 
     print(f"ok  ({len(cams)} camera(s) found on indices 0-1; "
-          f"tri-state PASS/REJECT/FAULT checked)")
+          f"tri-state PASS/REJECT/FAULT + component-detector path checked)")
 
 
 if __name__ == "__main__":

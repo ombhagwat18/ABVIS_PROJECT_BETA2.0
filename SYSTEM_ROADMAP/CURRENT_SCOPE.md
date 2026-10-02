@@ -20,9 +20,9 @@ One bottle enters
 
 | # | Item | State today |
 |---|---|---|
-| 1 | YOLO runtime integration | **NEXT.** Detector trained offline; not loaded by `infer.py` |
+| 1 | YOLO runtime integration | **CURRENT DEVELOPMENT.** `detect.py` + Camera hook + Live-tab selector exist (opt-in, observational); software-tested; not validated on live bottle frames |
 | 2 | Camera acquisition | PARTIAL. Works on driver defaults; no exposure/gain/focus, reconnect or trigger |
-| 3 | Bottle / component detection | PARTIAL. Offline YOLOv8n (bottle, cap, label); classifier is the live path |
+| 3 | Bottle / component detection | PARTIAL. YOLOv8n finds bottle/cap/label boxes (opt-in in the Live tab); components only, no defect verdict |
 | 4 | Inspection window | Not started |
 | 5 | Per-bottle association | Not started (a sensor-triggered single capture may replace full tracking -- a design decision for Phase 2) |
 | 6 | Multi-camera fusion | PARTIAL. Rule exists (FAULT > REJECT > PASS); no frame alignment across cameras |

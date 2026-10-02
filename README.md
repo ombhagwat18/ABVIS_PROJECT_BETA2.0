@@ -11,7 +11,7 @@ application: **250 ml Bisleri bottle inspection on a conveyor**.
 |---|---|
 | **Stage** | Software baseline; next milestone is the first complete machine cycle |
 | **Application** | Python desktop app (Tk / CustomTkinter, OpenCV, PyTorch) |
-| **Detector** | YOLOv8n trained and test-evaluated offline - **not yet in the live runtime** |
+| **Detector** | YOLOv8n: **training complete** (test-evaluated). **Runtime integration: current development** - opt-in in the Live tab, finds component boxes only |
 | **Hardware validation** | None |
 | **Docs** | [`SYSTEM_ROADMAP/`](SYSTEM_ROADMAP/README.md) |
 
@@ -42,12 +42,13 @@ dashboard, security, OCR, active learning, ...) is planned but **deliberately de
 | Desktop app, multi-project, labelling, training, annotation | Working (software-tested) |
 | Stage 1 multi-label classifier (live path) | Working in software; no held-out test split |
 | Stage 2 detection dataset (594 images) | Complete, validated (19/19 export checks) |
-| YOLOv8n detector | **Trained and test-evaluated**; not in the runtime |
+| YOLOv8n detector - training | **COMPLETE** (test-evaluated) |
+| YOLOv8n detector - runtime | **Current development**: opt-in in the Live tab; bottle/cap/label boxes shown; software-tested; live-tested only on scenes with no bottle |
 | PASS / REJECT / FAULT, frame/session metadata | Implemented, software-tested |
 | Inspection record / trace store | In-memory foundation only |
 | Sensor trigger, tracking, decision rules, timing | Not implemented |
 | PLC communication, reject control | Not implemented; PLC I/O mapping **unverified** |
-| Any hardware testing | **None** |
+| Physical machine | **NOT TESTED** (no sensor, PLC, conveyor or reject; the only live test used two desktop cameras with no bottle in view) |
 
 ### What works today
 
@@ -55,13 +56,18 @@ dashboard, security, OCR, active learning, ...) is planned but **deliberately de
   with a PASS / REJECT / FAULT verdict, camera benchmarking and diagnostics.
 - Annotation Studio (boxes and polygons) with YOLO export; a reviewed, scene-split Stage 2 dataset.
 - A trained YOLOv8n detector with full training provenance
-  ([`models/stage2_yolo/MODEL_PROVENANCE.json`](models/stage2_yolo/MODEL_PROVENANCE.json)).
+  ([`models/stage2_yolo/MODEL_PROVENANCE.json`](models/stage2_yolo/MODEL_PROVENANCE.json)), and an
+  **opt-in runtime path** (`detect.py`; Live tab -> "Classifier + YOLO" / "YOLO only") that draws bottle, cap and
+  label boxes with confidences and a detector state, beside the unchanged Stage 1 classifier.
 - Fail-safe inspection results (stale/missing/failed -> FAULT) with per-session frame sequence numbers and
   monotonic timestamps; an in-memory inspection record and store.
 
 ### What does NOT work yet
 
-- YOLO is not loaded by the live pipeline (the live path is the Stage 1 classifier).
+- YOLO finds **components, not defects**, and drives no verdict: a missing or low-confidence box is *not* treated
+  as a defect (it can be occlusion, angle, blur, lighting or a false negative). "YOLO only" mode reports FAULT by design.
+- The detector has not been validated on live bottle frames (the Stage 2 images are Iriun-viewer screenshots, and
+  on a bottle-free room it drew low-confidence false boxes at the 0.25 development threshold).
 - No bottle tracking / inspection window / temporal voting; no decision rules for detections; no fault latching.
 - No sensor trigger, no timing model, no PLC integration (a manual simulator script exists), no reject control.
 - No persistence, evidence images, production counters, dashboard, login or reports.
@@ -70,8 +76,9 @@ dashboard, security, OCR, active learning, ...) is planned but **deliberately de
 ### Next milestone
 
 **First complete machine cycle**: a bottle is sensed, inspected, given a PASS / REJECT / FAULT, the PLC receives
-the correct result in time, and the correct bottle is physically rejected. The next development task is
-**YOLO runtime integration**. See [IMPLEMENTATION_PLAN](SYSTEM_ROADMAP/IMPLEMENTATION_PLAN.md).
+the correct result in time, and the correct bottle is physically rejected. YOLO runtime integration is the
+**current development** step; the phase after it is **inspection window / per-bottle association** (not PLC).
+See [IMPLEMENTATION_PLAN](SYSTEM_ROADMAP/IMPLEMENTATION_PLAN.md).
 
 ## Architecture
 
@@ -86,9 +93,13 @@ flowchart LR
     DEC --> ST{PASS / REJECT / FAULT}
     ST --> GUI[GUI verdict]
     ST -.-> TR[InspectionRecord<br/>in-memory, not wired to GUI]
-    YOLO[(YOLOv8n<br/>trained offline)]:::off
-    classDef off stroke-dasharray: 5 5
+    FR -.->|opt-in| DET[YOLOv8n component detector<br/>whole frame, original-frame pixel boxes]
+    DET -.-> BOX[bottle / cap / label boxes<br/>display + trace only]
+    DET -.->|detector failure or stale| ST
 ```
+
+The detector is **observational**: it never produces PASS or REJECT. If it is enabled and fails or goes stale, the
+result becomes FAULT. Details: [CURRENT_SYSTEM](SYSTEM_ROADMAP/CURRENT_SYSTEM.md).
 
 ### Target architecture (not implemented)
 
@@ -142,6 +153,7 @@ ConvNeXt-Tiny); 9 checkpoints exist.
 
 All images are reviewed; the scene-leakage check passed; the YOLO export passes 19/19 validation checks. The
 images and the generated export are not in Git (the scripts, `annotations.json`, `split.json` and manifests are).
+The images are 1780x1000 crops of desktop screenshots of the **Iriun Webcam** viewer, not direct OpenCV camera frames.
 
 **Annotation:** the Annotate tab (`annotation_studio.py`, data layer `annotate.py`) supports boxes and
 polygons, a reviewed flag and "next unannotated", with YOLO detection/segmentation export. Polygons/segmentation
@@ -159,8 +171,8 @@ seed 0, ultralytics 8.1.0, 6.2 MB. GPU batch-1 latency ~29 ms end to end (~34 FP
 RTX 3050; CPU ~248 ms.
 
 > **The test set is small** (7 scenes, 87 images, 396 boxes), so these numbers are indicative, not a production
-> guarantee. Cap and label are clearly weaker than bottle. Whether the images match the line camera and
-> lighting is not recorded.
+> guarantee. Cap and label are clearly weaker than bottle. The images are Iriun-viewer screenshots, so how the
+> detector behaves on live camera frames (the development cameras default to 640x480, 4:3) is unverified.
 
 The full chain *dataset -> annotations -> split -> export -> training configuration -> checkpoint (sha256) ->
 validation -> test* is in [`models/stage2_yolo/MODEL_PROVENANCE.json`](models/stage2_yolo/MODEL_PROVENANCE.json).
@@ -203,7 +215,8 @@ cylinder with a 5/2 solenoid valve, controlled LED lighting, an inspection enclo
 | Phase | Objective |
 |---|---|
 | 0 | Git baseline + documentation (this baseline) |
-| 1 | **YOLO runtime integration (next)** |
+| 1 | **YOLO runtime integration (current development)** |
+| 1b | *(next)* Inspection window / per-bottle association = Phase 2 below |
 | 2 | Inspection window / per-bottle association |
 | 3 | Decision engine |
 | 4 | Mock PLC |
@@ -223,7 +236,8 @@ login, OCR/barcode, auto annotation, active learning, anomaly detection, reports
 gui.py                  desktop app (9 tabs); entry point
 dataset.py              project paths, labels.csv, crop pipeline, scene split
 train.py                Stage 1 classifier training
-infer.py                cameras, model, PASS/REJECT/FAULT, frame metadata
+infer.py                cameras, model, PASS/REJECT/FAULT, frame metadata, optional detector hook
+detect.py               YOLOv8n component detector runtime (Detection / DetectionResult contract)
 inspection_trace.py     InspectionRecord + TraceStore (in-memory)
 annotate.py             annotation data layer + YOLO export
 annotation_studio.py    Annotate tab (boxes/polygons)
@@ -259,6 +273,11 @@ python gui.py                         # the desktop application
 
 `run.bat` does the above automatically on Windows (detects an NVIDIA GPU, picks the CUDA/CPU wheel).
 
+**YOLO in the Live tab** needs `models/stage2_yolo/stage2_best.pt` (not in Git). It is verified against the sha256 in
+`MODEL_PROVENANCE.json` and refused if missing or different - nothing is downloaded. The detector confidence is a
+*development threshold* (default 0.25, **not validated for production**); override it in `settings.json` with
+`"detector_conf"` (and optionally `"detector_weights"`).
+
 ## Tests
 
 Each module is its own self-check (there is no separate suite). Software only - **none is a hardware test**.
@@ -266,6 +285,7 @@ Each module is its own self-check (there is no separate suite). Software only - 
 ```bash
 python infer.py                 # tri-state result, freshness, frame metadata, restart safety
 python inspection_trace.py      # records, ids, store ordering/bounds/threads, live Camera -> record
+python detect.py                # detector parsing/validation (fakes) + real checkpoint sanity check if present
 python gui.py --selftest        # builds every tab against the real dataset, no device I/O
 python train.py --demo
 python dataset.py               # CSV / crop / scene-split correctness
@@ -310,7 +330,7 @@ Historical (kept, marked as such): [PLAN.md](PLAN.md), [PROGRESS.md](PROGRESS.md
 ## Known limitations
 
 - No hardware testing; PLC addresses/I-O mapping unverified; no timing or physical values recorded.
-- YOLO detector not in the live runtime; no tracking, inspection window or decision rules for detections.
+- YOLO runtime is in development (opt-in, observational); no tracking, inspection window or decision rules for detections.
 - Small, scene-based test set (7 scenes); Stage 1 has no test split and saturated validation scores.
 - Camera: driver-default settings, no exposure/focus control, no reconnect or trigger; `time.monotonic()` is
   ~15.6 ms resolution on Windows.

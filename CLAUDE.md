@@ -36,6 +36,7 @@ python dataset.py            # demo() + project_demo(): CSV/crop/scene-split cor
 python train.py --demo
 python infer.py              # tri-state PASS/REJECT/FAULT, freshness, frame metadata, restart safety
 python inspection_trace.py   # InspectionRecord, ids, TraceStore, live Camera -> record
+python detect.py             # detector contract/validation (fakes) + real-checkpoint sanity check
 python calibrate.py --demo
 python charts.py
 python bench.py
@@ -204,9 +205,17 @@ checkpoint itself, not from live config.
 
 ### Inference (`infer.py`) and the safety model
 
-**Runtime inference is the Stage 1 classifier only.** The Stage 2 YOLOv8n
-detector is trained and test-evaluated (see below) but nothing in `infer.py`
-loads it yet -- YOLO runtime integration is the next development task.
+**The default runtime inference is the Stage 1 classifier.** The Stage 2 YOLOv8n
+detector is trained and test-evaluated (see below) and has an opt-in, *observational*
+runtime path: `detect.py` (`YoloDetector`, `Detection`, `DetectionResult`) plugged in
+as `Camera.detector` and chosen in the Live tab ("Classifier" / "Classifier + YOLO" /
+"YOLO only"). It finds bottle/cap/label **components, not defects**, and never produces
+PASS/REJECT -- do not turn a missing box into a defect (absence can be occlusion,
+angle, blur, lighting or a false negative). A detector failure or stale detection makes
+the inspection FAULT. Box coordinates are absolute pixels in the original whole frame
+(no ROI, no resize). `DEV_CONF = 0.25` is a development threshold; configure it with
+`settings.json` `detector_conf`. Weights are checked against the sha256 in
+`MODEL_PROVENANCE.json` and are never downloaded.
 
 `Model` loads a checkpoint and always crops using the ROI/input size **baked
 into that checkpoint**, not the project's live config -- this is what makes
@@ -250,7 +259,7 @@ only: no persistence, no evidence images, no database. `job_id` and
 name a module `trace.py` -- it shadows the standard library (it was renamed for
 that reason).
 
-### Stage 2 detection pipeline (offline; not in the runtime)
+### Stage 2 detection pipeline (training offline; runtime opt-in)
 
 `stage2_dataset/` holds the 594-image detection dataset (classes bottle, cap,
 label; 1,994 boxes; scene split 25/7/7 scenes = 418/89/87 images). Its
