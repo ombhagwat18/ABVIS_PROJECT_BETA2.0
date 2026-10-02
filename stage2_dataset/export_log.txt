@@ -1,0 +1,24 @@
+============================================================
+Stage 2D-B ù YOLO Export
+Timestamp: 2026-09-30T21:32:22.977755
+============================================================
+[LOAD] Loading annotations.json ...
+[LOAD] Loading split.json ...
+[SPLIT] 594 images in split map.
+[DIR] Created export tree under: E:\MACHINE LEARNING PROJECT\Datasets\Bottle-train-OpenCV-main_vesion two\stage2_dataset\yolo_export
+[EXPORT] Copying images and writing YOLO labels ...
+
+=== Export Statistics ===
+  Images:  train=418  val=89  test=87  total=594
+  Boxes:   total=1994
+    train: bottle=446  cap=435  label=350  total=1231
+    val  : bottle=137  cap=131  label=99  total=367
+    test : bottle=156  cap=143  label=97  total=396
+  Class totals: bottle=739  cap=709  label=546
+[YAML] Written: E:\MACHINE LEARNING PROJECT\Datasets\Bottle-train-OpenCV-main_vesion two\stage2_dataset\yolo_export\data.yaml
+
+[SANITY] All counts match expected values.
+
+============================================================
+EXPORT COMPLETE ù no errors, sanity checks passed.
+Output: E:\MACHINE LEARNING PROJECT\Datasets\Bottle-train-OpenCV-main_vesion two\stage2_dataset\yolo_export

@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A desktop app (`gui.py`, CustomTkinter, 1917 lines) that trains and runs a
+A desktop app (`gui.py`, CustomTkinter, ~2.2k lines) that trains and runs a
 multi-label defect classifier for bottles on a QC line: label images,
 manage defect classes, train an EfficientNet-B0 classifier, and run live
-multi-camera inspection with PASS/FAIL verdicts. Not a git repository (no
-`.git`), though a `.gitignore` exists for if/when one is initialized.
+multi-camera inspection with PASS/FAIL verdicts. Git repo on `main`; `.gitignore` is whitelist-style
+(see below).
 
 `app.py` (FastAPI, 433 lines) + `index.html` (530 lines) are an earlier
 browser-based version of the same app. Confirmed dead code: nothing in the
@@ -18,29 +18,13 @@ see the "web vs. desktop" open decision in `PROGRESS.md`.
 
 ## Running it
 
-```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124   # or /cpu
-pip install -r requirements.txt
+`run.bat` does the full setup and launch (picks the CUDA or CPU torch wheel, migrates an old
+`All Datasets/` layout, runs `calibrate.py` if no ROI is set, then `python gui.py` — kept as
+`python.exe` so tracebacks stay visible). Manually: `python calibrate.py` once (measures the crop
+ROI -> `projects/<slug>/config.json`), then `python gui.py`; `python train.py --epochs 25` trains
+from the terminal. `torch`/`torchvision` are installed separately (CUDA-vs-CPU wheel); `psutil` is
+optional (without it the Camera tab's CPU/RAM readings are blank).
 
-python calibrate.py       # first run only: measures the crop ROI -> projects/<slug>/config.json
-python gui.py              # the desktop dashboard
-```
-
-`requirements.txt` covers `opencv-python`, `customtkinter`, `pillow`, and
-optional `psutil` (without it the CPU/RAM readings in the Camera tab's
-performance panel are blank; everything else still works). `torch`/
-`torchvision` are installed separately because of the CUDA-vs-CPU wheel
-choice.
-
-`run.bat` does all of the above automatically: checks Python is on PATH,
-detects an NVIDIA GPU (`Get-CimInstance Win32_VideoController`) to pick the
-CUDA or CPU wheel, runs `migrate.py "OM Bottle" --run` if an old `All
-Datasets/` layout is found, runs `calibrate.py` if no ROI is configured
-yet, then launches `python gui.py` (not `pythonw.exe`, so tracebacks stay
-visible in the console).
-
-`python train.py --epochs 25` trains from the terminal instead of the Train
-button in the GUI.
 
 ## Tests
 
@@ -50,13 +34,25 @@ directly:
 ```bash
 python dataset.py            # demo() + project_demo(): CSV/crop/scene-split correctness
 python train.py --demo
-python infer.py
+python infer.py              # tri-state PASS/REJECT/FAULT, freshness, frame metadata, restart safety
+python inspection_trace.py   # InspectionRecord, ids, TraceStore, live Camera -> record
 python calibrate.py --demo
 python charts.py
 python bench.py
 python migrate.py --demo
 python gui.py --selftest     # builds every real tab against the real dataset, no device I/O
 ```
+
+Stage 2 data checks: `stage2_dataset/validate_yolo_export.py` runs 19 export
+checks but **writes `yolo_export/EXPORT_REPORT.md`** when run; to avoid touching
+the export, load it as a module and point `REPORT_PATH` somewhere else. All of
+the above are software self-checks (fake captures, fake models); none is a
+hardware test.
+
+**Known stale self-test:** `stage2_dataset/review_app.py --selftest` asserts that
+every row of `review_manifest.csv` is still `unreviewed`. The review is finished
+(606 reviewed: 594 KEEP, 12 REJECT), so it now fails by design -- it is not a
+regression, and it is intentionally left unmodified.
 
 Run the self-check(s) for any module you touch before considering a change
 done. `gui.py --selftest` (implemented at `gui.py:1836`, entry point at
@@ -206,32 +202,75 @@ the crop/ROI it was trained on, regardless of the project's current
 `config.json`, because `infer.Model` reads those fields from the
 checkpoint itself, not from live config.
 
-### Inference (`infer.py`, 416 lines)
+### Inference (`infer.py`) and the safety model
 
-`Model` (`infer.py:77`) loads a checkpoint and always crops using the ROI/
-input size **baked into that checkpoint**, not the project's live config —
-this is what makes rollback safe. `verdict(probs, thresholds)`
-(`infer.py:117`) is simple threshold logic: any defect probability at or
-above its configured threshold (default `0.5` if unconfigured) fails the
-bottle.
+**Runtime inference is the Stage 1 classifier only.** The Stage 2 YOLOv8n
+detector is trained and test-evaluated (see below) but nothing in `infer.py`
+loads it yet -- YOLO runtime integration is the next development task.
 
-`Camera` (`infer.py:122`) runs one background grab thread per source and
-always infers on the **newest** frame — a frame that arrives mid-inference
-is dropped and counted (`self.dropped`), never queued, so latency can't
-build an unbounded backlog. Inference is capped at ~15 Hz regardless of
-camera FPS. Video-file sources are paced to their native FPS and loop on
-EOF.
+`Model` loads a checkpoint and always crops using the ROI/input size **baked
+into that checkpoint**, not the project's live config -- this is what makes
+rollback safe. `verdict(probs, thresholds)` is the original boolean threshold
+rule (kept; `train.py` uses it). `decide(probs, thresholds)` is the runtime
+version: **PASS / REJECT / FAULT**, where an empty or non-finite (NaN) score is a
+FAULT, never a PASS. `PASS`, `REJECT`, `FAULT` are defined once, in `infer.py`;
+import them, don't redefine them.
 
-`CameraSet` (`infer.py:292`) manages N simultaneous cameras for
-multi-camera live inspection, keyed by `str(source)` so re-adding a source
-replaces rather than duplicates it, and shares one `Model` instance across
-all cameras. `combined()` (`infer.py:360`) is the fusion rule: **REJECT if
-ANY camera rejects** — rationale being that multiple angles of the same
-bottle share a verdict (a defect only one angle can see is still a
-defect); if cameras are meant to watch independent lines instead, use each
-camera's own verdict rather than `combined()`.
+`Camera` runs one background grab thread per source and always infers on the
+**newest** frame -- a frame that arrives mid-inference is dropped and counted
+(`self.dropped`), never queued. Inference is capped at ~15 Hz. Video-file
+sources are paced to their native FPS and loop on EOF. Every captured frame
+gets a `time.monotonic()` stamp (`frame_ts`) and a per-session sequence number
+(`frame_seq`, from 1; `session` counts `start()`s, so `(session, seq)` never
+repeats). `latest_frame()` returns a `Frame(camera_id, ts, seq, image)`.
+**Wall-clock time is never used for freshness.** On Windows `time.monotonic()`
+ticks every ~15.6 ms, so adjacent frames can share a timestamp -- `seq` is the
+strict order.
 
-### GUI (`gui.py`, 1917 lines)
+`Camera.inspection()` returns an `Inspection` (state, hits, reason, frame/result
+seq + ts, model_id, infer_ms); `Camera.result()` is the same thing as the
+original 3-tuple `(state, hits, reason)`. **PASS/REJECT only come from a fresh,
+valid score.** Everything else is FAULT with a reason: not started, thread
+dead, driver error, no model, failed inference (the thread survives and drops
+its scores), nothing scored yet, or a frame/score older than
+`MAX_RESULT_AGE_S` (1.0 s). A FAULT clears itself on the next good frame -- there
+is no latching yet. Each camera thread is pinned to its own stop event so a
+wedged driver that wakes after a restart cannot write into the new session.
+
+`CameraSet` manages N cameras (keyed by `str(source)`, one shared `Model`).
+`combined()` returns `(state, detail)` with precedence **FAULT > REJECT > PASS**:
+PASS only if every *armed* camera has a fresh PASS; no armed camera at all is a
+FAULT. (If cameras watch independent lines, use each camera's own result.)
+
+`inspection_trace.py` turns an `Inspection` into an `InspectionRecord` and
+holds a bounded, thread-safe in-memory `TraceStore`. It records what the
+camera decided; it never decides. It is not called by the GUI yet. In-memory
+only: no persistence, no evidence images, no database. `job_id` and
+`evidence_path` are always `None`; `decision` currently equals `state`. Do not
+name a module `trace.py` -- it shadows the standard library (it was renamed for
+that reason).
+
+### Stage 2 detection pipeline (offline; not in the runtime)
+
+`stage2_dataset/` holds the 594-image detection dataset (classes bottle, cap,
+label; 1,994 boxes; scene split 25/7/7 scenes = 418/89/87 images). Its
+provenance -- scripts, `annotations.json`, `split.json`, `scene_map.json`,
+manifests, audit reports -- IS tracked. The images (`clean/`, `source/`) and the
+generated `yolo_export/` are NOT; rebuild the export with
+`stage2_dataset/export_yolo.py`. `yolo_export/data.yaml` has an absolute path;
+`stage2_dataset/data.yaml` is the portable copy (pass it to Ultralytics as an
+absolute path). Don't edit the export in place: `training_metadata.json` records
+its tree hash.
+
+`yolo_stage2_train.py` trains candidates on train only, selects on val, then
+evaluates test once. Result and the full chain back to the data are in
+`models/stage2_yolo/MODEL_PROVENANCE.json`. **Windows gotcha:** Ultralytics
+`val()` defaults to 8 dataloader workers (~500 MB each); on a 16 GB machine
+that exhausted the paging file and hung runs. Always pass `workers=` to *both*
+`train()` and every `val()`. `yolo_train.py` is an older synthetic smoke test,
+not the real training script. Weights (`*.pt`) are never committed.
+
+### GUI (`gui.py`, ~2.2k lines)
 
 Single `App(ctk.CTk)` (`gui.py:53`) with a `CTkTabview`. **Note:** the
 on-screen tab order (`App.TABS`, `gui.py:101`: Label, Defects, Train,
@@ -252,47 +291,12 @@ Switching projects (`switch_project`/`new_project`, `gui.py:148-159`)
 always stops cameras first, since a running camera thread must not keep
 scoring frames against a project it no longer belongs to.
 
-Tab reference:
-- **LabelTab** (`gui.py:198`) — paginated thumbnail grid (default 60/page),
-  filter by mode (all/inbox/good/defective/pos/neg) or filename search,
-  multi-select with keyboard shortcuts (digits 1-9 toggle a defect, `g`
-  marks good, `a` selects page, `Esc` clears), bulk apply/clear/delete, all
-  routed through `D.apply_labels`/`D.delete_images` in the background.
-- **DefectsTab** (`gui.py:442`) — add/rename/delete defect classes, upload
-  images into a class's `-ve/` folder or into `+ve/`, shows per-class
-  WITH/WITHOUT counts and a "thin — aim for 100+" warning.
-- **TrainTab** (`gui.py:601`) — epoch count + "Train now" (spawns a thread
-  calling `train.run(epochs, log=emit)`), a live log, per-defect metrics
-  table (VAL+/THR/PREC/RECALL/F1/MISSED) with a false-positive/negative
-  mistake gallery, and a model-version list with per-checkpoint "Use"
-  (`activate()`, `gui.py:726`, which also derives `thresholds` from that
-  model's metrics).
-- **AnalysisTab** (`gui.py:1303`) — loss/macro-F1 curves, per-defect
-  recall bars, a confusion matrix for a chosen defect, and a
-  "re-test every model on today's labels" comparison table
-  (`compare()`/`show_compare()`) that distinguishes checkpoints needing
-  retrain (predate the current val split) from honestly re-scored ones —
-  all drawn via `charts.py`.
-- **LiveTab** (`gui.py:772`) — multi-camera live dashboard: camera
-  discovery/picker, video grid with PASS/FAIL overlay per camera plus a
-  combined verdict (`app.cams.combined()`), a real-time performance panel
-  (FPS/latency/drop% via `Camera.stats()` + `bench.system_stats()`), a
-  snapshot-into-a-label capture panel, and per-defect threshold sliders
-  bound live to `config.json`.
-- **DataTab** ("Data health", `gui.py:1150`) — ROI editing (manual entry +
-  "Re-measure" via `calibrate.run()`, "Preview crop" side-by-side), a
-  near-duplicate-frames scan (`dataset.scene_map`) explaining how many
-  distinct bottles N images actually represent, and dataset health counts.
-- **BenchTab** ("Camera" tab, `gui.py:1552`) — sweeps a camera through
-  resolution/FPS combos via `bench.benchmark_camera`, shows
-  requested-vs-actual FPS/latency/jitter/sharpness/inference-time, and
-  highlights `bench.best_combo()`'s recommended setting (picked by
-  **sharpness**, not raw FPS — a defect the camera can't resolve is
-  invisible at any frame rate). Guards against running concurrently with
-  LiveTab's cameras.
-- **SettingsTab** (`gui.py:1712`) — font scale, camera probe depth, bench
-  duration, monitor refresh rate, label-grid page size; persisted via
-  `D.save_settings`. Shows read-only paths for the active project.
+Tab reference: read the `Tab` classes in `gui.py` (on-screen order is `App.TABS`). Non-obvious: the
+"Camera" tab is `BenchTab` and "Data health" is `DataTab`; `BenchTab` picks the recommended
+camera setting by **sharpness**, not raw FPS (a defect the camera can't resolve is invisible at
+any frame rate) and refuses to run while LiveTab's cameras are open; `AnalysisTab.compare`
+distinguishes checkpoints that predate the current val split (need retrain) from honestly
+re-scored ones.
 
 `bgr_to_ctk()` (`gui.py:46`) is the shared OpenCV-BGR-frame → `CTkImage`
 helper used across Label/Train/Live/Data/Bench tabs. `train` and
@@ -365,19 +369,19 @@ regress them:
   measurement, scene-based split, deliberately skipped features like
   bounding boxes, auth, or Docker training — see its closing note: "add any
   of these when the constraint that rules them out stops being true").
-- `PROGRESS.md` — current feature status against
-  `Bottle_Defect_Detection_Web_Dashboard_Architecture.docx`, and the two
-  open decisions that gate a chunk of remaining work:
-  1. **Web vs. desktop** — the architecture doc specifies a web dashboard;
-     the actual app is desktop (`gui.py`). `app.py`/`index.html` are the
-     unused web version.
-  2. **YOLO/detection vs. classifier** — the doc specifies YOLOv8 with
-     bounding boxes and mAP; the current app is a whole-image classifier.
-     Switching requires bounding-box annotation that doesn't exist yet and
-     is only worth it if a frame could hold more than one bottle or defect
-     *location* matters.
-  Check this before assuming a doc-spec'd feature (YOLOv8, bounding boxes,
-  mAP) should be added — it's blocked on a decision, not forgotten.
+- `PROGRESS.md` — **historical** (2026-08-23) status against
+  `Bottle_Defect_Detection_Web_Dashboard_Architecture.docx`. Its two "open
+  decisions" are resolved: the machine path uses a YOLO detector (Stage 2,
+  trained), and the desktop app is the application (`app.py`/`index.html` are
+  an unused earlier web version; nothing imports them). The classifier stays
+  for defect classes.
+- `PROJECT_MASTER_AUDIT.md` — **historical** snapshot (2026-10-02 morning);
+  superseded, see the banner at its top for what changed.
+- `SYSTEM_ROADMAP/` — the current, maintained description of the project:
+  what exists (`CURRENT_SYSTEM.md`), what is in scope now (`CURRENT_SCOPE.md`),
+  what is deliberately deferred (`FUTURE_ENHANCEMENTS.md`), the target
+  architecture, the phased plan, per-feature status, hardware and traceability.
+  Start there, and keep `FEATURE_STATUS.md` honest.
 - `docs/superpowers/specs/2026-08-09-multi-project-design.md` — design
   rationale for the multi-project layout described above, including the
   full folder-rename/delete consequences table.
