@@ -32,7 +32,7 @@ STATES = (PASS, REJECT, FAULT)
 RUN_ID = uuid.uuid4().hex[:8]
 
 _fault_n = itertools.count(1)                    # next() is atomic under the GIL
-_TUPLES = ("reasons", "hits")
+_TUPLES = ("reasons", "hits", "detections")
 
 
 def make_inspection_id(camera_id: str, session: int | None, seq: int | None,
@@ -70,6 +70,12 @@ class InspectionRecord:
     processing_ms: float | None = None  # inference time of the scored frame (perf_counter);
     #                                     NOT capture-to-result latency
     evidence_path: str | None = None    # reserved: nothing saves images yet
+    # Component detector (detect.py) -- observational, never a verdict. All optional so
+    # older records and older Inspection tuples still load/build.
+    detector_state: str | None = None   # OFF | OK | NO DETECTIONS | FAULT; None = not recorded
+    detector_model_id: str | None = None
+    detector_ms: float | None = None    # detect() duration (perf_counter), not capture latency
+    detections: tuple = ()              # plain dicts (detect.Detection.to_dict()): original-frame pixel boxes
 
     def __post_init__(self):
         if self.state not in STATES:
@@ -90,6 +96,7 @@ class InspectionRecord:
         the active project. Only PASS/REJECT name an inspected frame, so only those get
         a deterministic id (and so can be recognised if the same result is seen twice)."""
         scored = insp.state in (PASS, REJECT)
+        dres = getattr(insp, "detector", None)           # fresh DetectionResult, or None
         return cls(
             inspection_id=make_inspection_id(insp.camera_id, insp.session,
                                              insp.result_seq if scored else None, run_id),
@@ -103,7 +110,11 @@ class InspectionRecord:
             hits=tuple(insp.hits), run_id=run_id,
             project_id=(D.PROJECT or None) if project_id is None else project_id,
             job_id=job_id, model_id=insp.model_id, processing_ms=insp.infer_ms,
-            evidence_path=evidence_path)
+            evidence_path=evidence_path,
+            detector_state=getattr(insp, "detector_state", None),
+            detector_model_id=dres.model_id if dres else None,
+            detector_ms=dres.infer_ms if dres else None,
+            detections=tuple(d.to_dict() for d in dres.detections) if dres else ())
 
     def to_dict(self) -> dict:
         """Plain JSON-able dict (tuples become lists)."""
@@ -216,8 +227,27 @@ def demo():
     f2 = InspectionRecord.from_inspection(_insp(FAULT, reason="x")).inspection_id
     assert f1 != f2, "two FAULT events must not share an id"
 
+    # detector fields: recorded when present, absent (and old shapes still work) when not
+    import detect as _d
+    dres = _d.DetectionResult("0", 8, 100.4, (_d.Detection(0, "bottle", 0.93, 2, 3, 30, 33),
+                                              _d.Detection(1, "cap", 0.81, 10, 4, 20, 9)),
+                              (64, 36), 21.5, "stage2_best@abc", 0.25)
+    withdet = InspectionRecord.from_inspection(_insp(PASS)._replace(
+        detector=dres, detector_state="OK"))
+    assert withdet.detector_state == "OK" and withdet.detector_ms == 21.5
+    assert withdet.detector_model_id == "stage2_best@abc" and withdet.state == PASS
+    assert [x["class_name"] for x in withdet.detections] == ["bottle", "cap"]
+    assert withdet.detections[0]["x1"] == 2 and withdet.detections[0]["confidence"] == 0.93
+    assert (p.detector_state, p.detections, p.detector_ms) == (None, (), None), "old-shape Inspection"
+    dfault = InspectionRecord.from_inspection(_insp(FAULT, reason="detector: stale detections")._replace(
+        detector=None, detector_state="FAULT"))
+    assert dfault.state == FAULT and dfault.detections == () and dfault.detector_state == "FAULT"
+    old = {k: v for k, v in p.to_dict().items() if k not in (
+        "detector_state", "detector_model_id", "detector_ms", "detections")}
+    assert InspectionRecord.from_dict(old) == p, "a record written before the detector fields must still load"
+
     # 7. serialization round trip, including through real JSON
-    for rec in (p, r, f):
+    for rec in (p, r, f, withdet, dfault):
         d = rec.to_dict()
         assert isinstance(d["hits"], list) and isinstance(d["reasons"], list)
         assert InspectionRecord.from_dict(d) == rec
@@ -302,7 +332,7 @@ def _integration():
         def read(self):
             time.sleep(0.004)
             self.n += 1
-            return True, np.zeros((8, 8, 3), np.uint8)
+            return True, np.zeros((240, 320, 3), np.uint8)   # big enough to contain FakeYolo's boxes
 
     class Model:
         defects, roi, stamp = ["a"], None, "fake-model"
@@ -320,8 +350,10 @@ def _integration():
 
     real_open, real_cfg = infer.open_capture, D.load_config
     infer.open_capture, D.load_config = (lambda src: Cap()), (lambda: {"thresholds": {}})
+    import detect
     cam = infer.Camera("t")
     cam.model = Model()
+    cam.detector = detect.YoloDetector(model=detect.FakeYolo(), warmup=False)
     store = TraceStore()
     try:
         cam.start(0)
@@ -332,6 +364,11 @@ def _integration():
         assert rec.model_id == "fake-model" and rec.result_seq >= 1 and rec.frame_seq >= rec.result_seq
         assert rec.processing_ms is not None and 0 < rec.processing_ms < 1000, rec.processing_ms
         first_id = rec.inspection_id
+        wait(lambda: cam.inspection().detector_state == "OK", "detector OK")
+        drec = InspectionRecord.from_inspection(cam.inspection())
+        assert drec.detector_state == "OK" and drec.detector_ms is not None and drec.detector_ms >= 0
+        assert {d["class_name"] for d in drec.detections} == {"bottle", "cap"} and drec.state == PASS
+        assert InspectionRecord.from_dict(json.loads(json.dumps(drec.to_dict()))) == drec
 
         box["infer"] = "reject"
         wait(lambda: cam.result()[0] == REJECT, "REJECT")

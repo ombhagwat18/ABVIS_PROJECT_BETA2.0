@@ -86,8 +86,10 @@ these quantities until they are measured.
 - No exposure, gain, focus or white-balance control; no automatic reconnect (a dead camera stays FAULT until
   restarted); no hardware trigger.
 - On Windows `time.monotonic()` has ~15.6 ms resolution; frame sequence numbers give the strict ordering.
-- Whether the two EMEET cameras enumerate and behave as expected is untested; the code probes indices 0-1 and
-  found two devices on the development machine, but which devices those are is not recorded.
+- Whether the two EMEET cameras enumerate and behave as expected is untested. On the development machine the probe found
+  index 0 (640x480 at driver defaults; device identity not recorded, delivering ~7.5-8.7 fps in room light) and index 1,
+  which is the **Iriun Webcam virtual camera** (black "Please start Iriun Webcam" frame when the app is not running).
+  Neither was confirmed to be an EMEET NOVA 4K.
 
 ## First hardware checklist (for Phase 5-8)
 

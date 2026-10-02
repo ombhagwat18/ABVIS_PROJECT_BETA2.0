@@ -1,7 +1,7 @@
 {
   "schema": "model-provenance/1",
   "purpose": "Links the Stage 2 detector checkpoint back to the dataset, annotations, split, export, training configuration and evaluations that produced it. All values are copied from existing artifacts; nothing here was re-measured.",
-  "status": "DEPLOYMENT CANDIDATE - not deployed, not integrated into the inspection runtime, no hardware validation",
+  "status": "DEPLOYMENT CANDIDATE - available as an opt-in, observational runtime detector (detect.py); not validated on live bottle frames; no hardware validation",
   "generated_from": [
     "models/stage2_yolo/training_metadata.json",
     "models/stage2_yolo/run_yolov8n/results.csv",
@@ -93,7 +93,7 @@
     "portable_data_yaml": "stage2_dataset/data.yaml",
     "known_limits": [
       "Test set is 7 scenes / 87 images: small, so the test metrics carry wide uncertainty.",
-      "Whether the images come from the production line camera is not recorded in the repository.",
+      "The images are 1780x1000 crops (x=70, y=28) of desktop screenshots of the Iriun Webcam viewer (stage2_dataset/prepare_stage2.py), NOT direct OpenCV captures from the production camera. Framing (16:9), compression and colour may differ from live camera frames (live cameras on the development machine default to 640x480 4:3); accuracy on live frames is unverified.",
       "Cap (709) and label (546) box totals are below bottle (739); whether the difference is absent objects or unlabeled ones is not recorded."
     ]
   },
@@ -261,7 +261,7 @@
   ],
   "not_verified": [
     "Behaviour on frames from the production camera and lighting",
-    "Runtime integration (infer.py loads only the Stage 1 classifier)",
+    "Detection accuracy on live OpenCV camera frames: runtime integration exists (detect.py, opt-in), but the only live test had no bottle in view",
     "Any hardware or line testing"
   ]
 }

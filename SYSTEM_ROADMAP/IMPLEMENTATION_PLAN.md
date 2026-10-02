@@ -26,7 +26,7 @@ on any software phase and can start immediately in parallel.
 - **Test:** all existing self-tests; no secrets; no images/weights committed.
 - **Out of scope:** any new functionality; retraining; hardware.
 
-## Phase 1 -- YOLO runtime integration  *(NEXT)*
+## Phase 1 -- YOLO runtime integration  *(CURRENT DEVELOPMENT -- implemented in the working tree, awaiting review; hardware-unverified)*
 
 - **Objective:** run the trained YOLOv8n inside the live pipeline behind the existing contracts.
 - **Inputs:** `models/stage2_yolo/stage2_best.pt` (see its checksum), `Camera` / `Frame` / `Inspection`.

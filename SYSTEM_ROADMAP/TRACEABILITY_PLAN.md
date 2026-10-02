@@ -27,6 +27,7 @@ concluded; it never decides PASS/REJECT/FAULT.
 | `model_id` | Checkpoint stamp that produced the score (for FAULT: the model loaded, or `None`) | Populated |
 | `processing_ms` | Inference time of the scored frame (`perf_counter`); **not** capture-to-result latency | Populated for PASS/REJECT; `None` for FAULT |
 | `project_id` | Active project slug | Populated |
+| `detector_state`, `detector_model_id`, `detector_ms`, `detections` | Optional component-detector info (OFF/OK/NO DETECTIONS/FAULT, checkpoint id, `detect()` time, boxes as original-frame pixels). Observational: never a verdict | Populated when the detector is enabled; `None`/empty otherwise |
 | `job_id` | Job/recipe id | **Placeholder -- always `None`** (no job system) |
 | `evidence_path` | Saved evidence image | **Placeholder -- always `None`** (no images are saved) |
 

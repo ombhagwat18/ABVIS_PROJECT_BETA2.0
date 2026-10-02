@@ -17,13 +17,13 @@ success. Nothing in this repository has been validated on the physical machine.
 | Project management | COMPLETE | NOW | Multi-project folders, switch/create in the GUI. Not a job/recipe system |
 | Dataset management | PARTIAL | NOW | Stage 1 images/labels managed in the GUI; Stage 2 dataset built by scripts in `stage2_dataset/` |
 | Classification | SOFTWARE ONLY | NOW | Stage 1 multi-label classifier is the live path. No test split; saturated validation scores; `missing_cap` has 0 positives |
-| Detection | PARTIAL | NOW | YOLOv8n trained and test-evaluated offline; not loaded by the runtime |
+| Detection | PARTIAL | NOW | YOLOv8n: components (bottle/cap/label) only, not defects. Available as an opt-in runtime path; unvalidated on live bottle frames |
 | Segmentation | PARTIAL | DEFERRED | Annotation/export code exists; no polygons annotated, no model |
 | Annotation Studio | COMPLETE | NOW | Boxes + polygons, review flag, YOLO detection/segmentation export |
 | YOLO training | COMPLETE | NOW | YOLOv8n only: 53 epochs, best epoch 33; YOLOv8s not trained |
-| YOLO runtime | NEXT | NOW | Phase 1: load `stage2_best.pt` behind the existing Camera/Inspection contract |
+| YOLO runtime | PARTIAL (SOFTWARE ONLY) | NOW | **Current development.** `detect.py` + Camera hook + Live-tab selector; boxes/confidence/detector state shown; observational (never PASS/REJECT); detector fault or stale -> FAULT. Live-tested only without a bottle in view; dev confidence 0.25 is not validated |
 | Camera manager | PARTIAL | NOW | Index discovery, DirectShow, driver defaults. No exposure/gain/focus, reconnect or hardware trigger |
-| Multi-camera | SOFTWARE ONLY | NOW | Threads + shared model + FAULT > REJECT > PASS fusion |
+| Multi-camera | SOFTWARE ONLY | NOW | Threads + shared model + FAULT > REJECT > PASS fusion; a shared YOLO detector is supported. Cameras are independent, not synchronised |
 | Camera synchronization | FUTURE | NEXT | Cross-camera frame alignment does not exist |
 | Trigger sensor | HARDWARE REQUIRED | NOW | Photoelectric sensor not represented in software |
 | Bottle tracking | NEXT | NOW | Nothing knows that frames belong to one physical bottle. Sensor-triggered capture may replace full tracking |
@@ -31,8 +31,8 @@ success. Nothing in this repository has been validated on the physical machine.
 | Temporal voting | NEXT | NOW | Not started |
 | Decision engine | PARTIAL | NOW | Per-frame thresholds only; no rules for detections, no fault latching |
 | PASS / REJECT / FAULT | SOFTWARE ONLY | NOW | Fail-safe states with freshness checks; software-tested with fake captures |
-| Traceability | PARTIAL | NOW | In-memory `InspectionRecord` / `TraceStore`; `job_id`, `evidence_path` placeholders. See [TRACEABILITY_PLAN.md](TRACEABILITY_PLAN.md) |
-| PLC communication | NEXT | NOW | No integration code in the application |
+| Traceability | PARTIAL | NOW | In-memory `InspectionRecord` / `TraceStore`; now also optional detector fields (state, model id, ms, boxes). `job_id`, `evidence_path` placeholders. See [TRACEABILITY_PLAN.md](TRACEABILITY_PLAN.md) |
+| PLC communication | SOFTWARE ONLY (simulator) | NOW | `plc/` package: Modbus ASCII client, guarded writes, health/reconnect, commissioning window; read-only verified against the ISPSoft DVP-SS2 simulator. Write->ladder->read **not yet run** (no safe command bit identified); device meanings UNKNOWN. See [PLC_COMMUNICATION.md](PLC_COMMUNICATION.md) |
 | Mock PLC | NEXT | NOW | Not started; `plc file/delta_sim_test.py` is only a manual sender |
 | Delta PLC | HARDWARE REQUIRED | NOW | ISPSoft project exists but cannot be read here; I/O mapping **unverified** |
 | Conveyor | HARDWARE REQUIRED | NOW | Not represented in software |
