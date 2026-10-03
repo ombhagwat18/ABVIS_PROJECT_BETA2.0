@@ -39,7 +39,9 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_WEIGHTS = ROOT / "models" / "stage2_yolo" / "stage2_best.pt"
 PROVENANCE = ROOT / "models" / "stage2_yolo" / "MODEL_PROVENANCE.json"
 
-CLASS_NAMES = ("bottle", "cap", "label")        # class_id == index; matches the trained model
+CLASS_NAMES = ("bottle", "cap", "label")        # the bottle line's classes (stage2_best.pt); another
+                                                # product's model brings its own -- names are read from
+                                                # the model, and it must have the classes its recipe uses
 DEV_CONF = 0.25                                 # DEVELOPMENT threshold -- not validated for production
 DEV_IMGSZ = 640                                 # the size the model was trained and evaluated at
 
@@ -77,7 +79,8 @@ class DetectionResult(NamedTuple):
     conf_threshold: float               # the DEVELOPMENT threshold in force
 
     def counts(self) -> dict:
-        return {n: sum(1 for d in self.detections if d.class_name == n) for n in CLASS_NAMES}
+        names = list(CLASS_NAMES) + sorted({d.class_name for d in self.detections} - set(CLASS_NAMES))
+        return {n: sum(1 for d in self.detections if d.class_name == n) for n in names}
 
 
 def scale_box(box, src_wh, dst_wh) -> tuple:
@@ -91,7 +94,7 @@ def scale_box(box, src_wh, dst_wh) -> tuple:
     return (x1 * fx, y1 * fy, x2 * fx, y2 * fy)
 
 
-def parse_boxes(xyxy, conf, cls, frame_wh) -> tuple:
+def parse_boxes(xyxy, conf, cls, frame_wh, names=CLASS_NAMES) -> tuple:
     """Raw model output -> validated Detections. Anything unusable raises DetectorError;
     nothing is silently dropped or repaired, because a quietly wrong box is worse than FAULT.
 
@@ -106,8 +109,8 @@ def parse_boxes(xyxy, conf, cls, frame_wh) -> tuple:
         raise DetectorError("non-finite value in detector output (box, confidence or class)")
     if (conf < 0).any() or (conf > 1).any():
         raise DetectorError(f"confidence outside [0, 1]: min {conf.min():.3g} max {conf.max():.3g}")
-    if (cls != np.round(cls)).any() or (cls < 0).any() or (cls >= len(CLASS_NAMES)).any():
-        raise DetectorError(f"class id outside 0..{len(CLASS_NAMES) - 1}: {sorted(set(cls.tolist()))}")
+    if (cls != np.round(cls)).any() or (cls < 0).any() or (cls >= len(names)).any():
+        raise DetectorError(f"class id outside 0..{len(names) - 1}: {sorted(set(cls.tolist()))}")
     w, h = frame_wh
     out = []
     for (x1, y1, x2, y2), c, k in zip(xyxy, conf, cls):
@@ -115,15 +118,18 @@ def parse_boxes(xyxy, conf, cls, frame_wh) -> tuple:
         y1, y2 = min(max(y1, 0.0), h), min(max(y2, 0.0), h)
         if x2 <= x1 or y2 <= y1:
             raise DetectorError(f"degenerate box ({x1:.1f},{y1:.1f},{x2:.1f},{y2:.1f}) in a {w}x{h} frame")
-        out.append(Detection(int(k), CLASS_NAMES[int(k)], float(c), float(x1), float(y1), float(x2), float(y2)))
+        out.append(Detection(int(k), names[int(k)], float(c), float(x1), float(y1), float(x2), float(y2)))
     out.sort(key=lambda d: -d.confidence)
     return tuple(out)
 
 
-def verify_checkpoint(path, provenance=PROVENANCE) -> str:
+def verify_checkpoint(path, provenance=None) -> str:
     """sha256 of the weights, checked against MODEL_PROVENANCE.json. Refuses a file that is
     not the model we trained -- never substitute downloaded weights and call them ours."""
     path = Path(path)
+    if provenance is None:                       # a product's detector carries its own provenance file
+        own = path.parent / PROVENANCE.name
+        provenance = own if own.is_file() else PROVENANCE
     got = hashlib.sha256(path.read_bytes()).hexdigest()
     try:
         want = json.loads(Path(provenance).read_text(encoding="utf-8"))["model"]["checkpoint"]["sha256"]
@@ -147,7 +153,7 @@ class YoloDetector:
     """
 
     def __init__(self, weights=None, conf: float = DEV_CONF, imgsz: int = DEV_IMGSZ, device=None,
-                 verify: bool = True, warmup: bool = True, model=None):
+                 verify: bool = True, warmup: bool = True, model=None, require=CLASS_NAMES):
         conf = float(conf)
         if not (0.0 < conf < 1.0):
             raise DetectorError(f"confidence threshold must be in (0, 1), got {conf}")
@@ -172,8 +178,11 @@ class YoloDetector:
         self._model = model
         names = getattr(model, "names", None)
         got = tuple(names[i] for i in sorted(names)) if isinstance(names, dict) else tuple(names or ())
-        if got != CLASS_NAMES:
-            raise DetectorError(f"model classes {got} != expected {CLASS_NAMES}")
+        lack = [n for n in require if n not in got]
+        if not got or lack:
+            raise DetectorError(f"model classes {got} lack {lack or list(require)}, which the inspection "
+                                f"recipe needs: this is not the detector for this product")
+        self.class_names = got
         if device is None:
             try:
                 import torch
@@ -203,7 +212,7 @@ class YoloDetector:
         if boxes is None or len(boxes) == 0:
             dets = ()
         else:
-            dets = parse_boxes(_np(boxes.xyxy), _np(boxes.conf), _np(boxes.cls), (w, h))
+            dets = parse_boxes(_np(boxes.xyxy), _np(boxes.conf), _np(boxes.cls), (w, h), self.class_names)
         return DetectionResult(camera_id, frame_seq, frame_ts, dets, (w, h), ms,
                                self.model_id, self.conf)
 
@@ -294,10 +303,21 @@ def demo(real: bool = True):
     assert scale_box((100, 50, 300, 250), (1780, 1000), (890, 500)) == (50.0, 25.0, 150.0, 125.0)
     _expect(ValueError, lambda: scale_box((0, 0, 1, 1), (0, 10), (5, 5)), "zero-size frame")
 
-    # wrong class order in the model is refused
+    # class names come from the model, so a different class order is read correctly, not mislabelled
     class Swapped(FakeYolo):
         names = {0: "cap", 1: "bottle", 2: "label"}
-    _expect(DetectorError, lambda: YoloDetector(model=Swapped(), warmup=False), "swapped class names")
+    sw = YoloDetector(model=Swapped(lambda f: ([[30, 20, 60, 50]], [0.9], [0])), warmup=False)
+    assert [d.class_name for d in sw.detect(frame).detections] == ["cap"]
+    # ...but a model without a class the recipe needs is refused
+    class NoLabel(FakeYolo):
+        names = {0: "bottle", 1: "cap"}
+    _expect(DetectorError, lambda: YoloDetector(model=NoLabel(), warmup=False), "model lacks 'label'")
+    class Boxes(FakeYolo):                       # another product: its own classes, its own recipe
+        names = {0: "box", 1: "sticker"}
+    bx = YoloDetector(model=Boxes(lambda f: ([[5, 5, 50, 50]], [0.9], [1])), warmup=False, require=("box", "sticker"))
+    r = bx.detect(frame)
+    assert [d.class_name for d in r.detections] == ["sticker"] and r.counts()["sticker"] == 1, r.counts()
+    _expect(DetectorError, lambda: YoloDetector(model=Boxes(), warmup=False), "box model on the bottle recipe")
 
     # missing / non-matching weights
     _expect(DetectorError, lambda: YoloDetector(weights=Path("no/such/stage2_best.pt")), "missing weights")

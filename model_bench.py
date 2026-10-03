@@ -184,6 +184,59 @@ def cls_test(stamp: str) -> dict:
     return res
 
 
+def cls_report(stamp: str) -> dict:
+    """Per-class 2x2 confusion on the held-out test set, at the VALIDATION thresholds, including
+    GOOD (= every defect below threshold; not a stored column). Re-scores the recorded test_paths
+    with frozen thresholds: deterministic, no selection. Writes test_report.json."""
+    import infer
+    d = D.MODELS / stamp
+    met = json.loads((d / "metrics.json").read_text())
+    if not met.get("test_paths"):
+        raise RuntimeError("no recorded test set")
+    _, labels = D.load_labels()
+    m = infer.Model(stamp)
+    thr = {k: float(met["per_defect"][k]["threshold"]) for k in m.defects}
+    P, T, used = [], [], []
+    for p in met["test_paths"]:
+        if p not in labels:
+            continue
+        img = D.cached_crop(p, m.cfg)
+        if img is None:
+            continue
+        pr = m.predict_view(D.center_crop(img, m.input_wh))
+        P.append([pr[k] for k in m.defects]); T.append([float(labels[p].get(k, 0)) for k in m.defects]); used.append(p)
+    probs, truths = np.array(P, np.float32), np.array(T, np.float32) == 1
+    pred = probs >= np.array([thr[k] for k in m.defects], np.float32)
+    cols = {k: (pred[:, i], truths[:, i]) for i, k in enumerate(m.defects)}
+    cols["GOOD"] = (~pred.any(1), ~truths.any(1))
+    per = {}
+    for k, (pp, tt) in cols.items():
+        tp, fp = int((pp & tt).sum()), int((pp & ~tt).sum())
+        fn, tn = int((~pp & tt).sum()), int((~pp & ~tt).sum())
+        pr_ = tp / (tp + fp) if tp + fp else None
+        rc = tp / (tp + fn) if tp + fn else None
+        per[k] = {"support": tp + fn, "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+                  "precision": None if pr_ is None else round(pr_, 4), "recall": None if rc is None else round(rc, 4),
+                  "f1": round(2 * pr_ * rc / (pr_ + rc), 4) if pr_ and rc else (0.0 if tp + fn else None),
+                  "threshold": thr.get(k), "fp_examples": [used[i] for i in np.where(pp & ~tt)[0][:5]],
+                  "fn_examples": [used[i] for i in np.where(~pp & tt)[0][:5]]}
+    rep = {"stamp": stamp, "arch": met["arch"], "n_test": len(used),
+           "threshold_source": "validation (metrics.json)",
+           "exact_match_accuracy": round(float((pred == truths).all(1).mean()), 4), "per_class": per}
+    (d / "test_report.json").write_text(json.dumps(rep, indent=2))
+    return rep
+
+
+def cmd_cls_report(a):
+    with isolated_project(CLS_PROJECT):
+        stamps = a.stamps or sorted(p.name for p in D.MODELS.iterdir()
+                                    if (p / "metrics.json").exists() and json.loads((p / "metrics.json").read_text()).get("test_paths"))
+        for s in stamps:
+            r = cls_report(s)
+            print(f"{s} {r['arch']:<20} exact={r['exact_match_accuracy']}  " + "  ".join(
+                f"{k}:{v['tp']}/{v['support']} fp{v['fp']}" for k, v in r["per_class"].items() if v["support"] or v["fp"]))
+
+
 def cmd_cls_test(a):
     with isolated_project(CLS_PROJECT):
         stamps = a.stamps or sorted(p.name for p in D.MODELS.iterdir() if (p / "metrics.json").exists())
@@ -215,9 +268,14 @@ def cmd_yolo(a):
     from ultralytics import YOLO
     import yolo_stage2_train as Y
 
+    if a.data == "v2":
+        # cap = cap only (stage2_dataset/annotations_v2.py); same split and images as v1
+        Y.EXPORT = ROOT / "stage2_dataset" / "yolo_export_v2"
+        Y.DATA_YAML = Y.EXPORT / "data.yaml"
+    sfx = "" if a.data == "v1" else f"_{a.data}"
     stem = Path(a.model).stem
-    name = f"bench_{stem}"
-    meta_p = Y.OUT / f"candidate_{stem}.json"
+    name = f"bench_{stem}{sfx}"
+    meta_p = Y.OUT / f"candidate_{stem}{sfx}.json"
     if meta_p.exists():
         raise SystemExit(f"{meta_p} exists - delete it to retrain")
     dev = 0 if torch.cuda.is_available() else "cpu"
@@ -259,8 +317,12 @@ def cmd_yolo(a):
               "val. stage2_best.pt / training_metadata.json were not modified."),
         val=Y.metrics_of(val, m.names), test=Y.metrics_of(test, m.names),
         benchmark_gpu=bench, benchmark_cpu=bench_cpu,
-        dataset=dict(yaml="stage2_dataset/data.yaml", split_json_sha256=sha256(ROOT / "stage2_dataset/split.json"),
-                     annotations_sha256=sha256(ROOT / "stage2_dataset/annotations.json"),
+        dataset=dict(version=a.data, yaml=str(Y.DATA_YAML.relative_to(ROOT)),
+                     annotations_file="stage2_dataset/annotations.json" if a.data == "v1"
+                     else f"stage2_dataset/annotations_{a.data}.json",
+                     split_json_sha256=sha256(ROOT / "stage2_dataset/split.json"),
+                     annotations_sha256=sha256(ROOT / ("stage2_dataset/annotations.json" if a.data == "v1"
+                                                       else f"stage2_dataset/annotations_{a.data}.json")),
                      export_tree_sha256=before, export_unchanged=before == after),
         removed_ultralytics_cache_files=removed, mem_before=mem,
         env=dict(ultralytics=ultralytics.__version__, torch=torch.__version__, cuda=torch.version.cuda,
@@ -282,6 +344,71 @@ def cmd_yolo_bench(a):
                benchmark_cpu=Y.benchmark(YOLO(str(best)), "test", 640, "cpu", warm=3))
     (Y.OUT / "rebench_yolov8n.json").write_text(json.dumps(out, indent=2))
     print(json.dumps(out, indent=2))
+
+
+def det_defects(weights: str, ann: str = "v2", split: str = "test", device="cpu") -> dict:
+    """Defect-level score of a detector through the PRODUCTION rule (decision.detection_findings):
+    per image, the inspected bottle (nearest the station) -> missing_cap / missing_label /
+    cap_misplaced / no bottle, against the same rule applied to the ground-truth boxes.
+
+    Ground truth comes from annotations_<ann>.json (v1 = annotations.json); presence of a cap or
+    label does not depend on box tightness, so v1 and v2 give the same truth for these defects.
+    """
+    import cv2
+    import decision as DEC
+    import detect
+    import yolo_stage2_train as Y
+    af = ROOT / "stage2_dataset" / ("annotations.json" if ann == "v1" else f"annotations_{ann}.json")
+    a = json.loads(af.read_text())["images"]
+    split_j = json.loads((ROOT / "stage2_dataset" / "split.json").read_text())
+    files = sorted(f for sc, fs in split_j["splits"][split]["files_by_scene"].items() for f in fs)
+    det = detect.YoloDetector(weights=weights, verify=False, device=device, warmup=False)
+    rules = dict(DEC.RULES)
+    names = ("missing_cap", "missing_label", "cap_misplaced", "no_bottle")
+    cm = {n: {"tp": 0, "fp": 0, "fn": 0, "tn": 0, "fp_examples": [], "fn_examples": []} for n in names}
+    per_image, lat = [], []
+    for f in files:
+        img = cv2.imread(str(ROOT / "stage2_dataset" / "clean" / f))
+        H, W = img.shape[:2]
+        gt_dets = tuple(detect.Detection(["bottle", "cap", "label"].index(b["cls"]), b["cls"], 1.0,
+                                         (b["x"] - b["w"] / 2) * W, (b["y"] - b["h"] / 2) * H,
+                                         (b["x"] + b["w"] / 2) * W, (b["y"] + b["h"] / 2) * H)
+                        for b in a[f]["boxes"])
+        gt_res = detect.DetectionResult("gt", None, None, gt_dets, (W, H), 0.0, "gt", 1.0)
+        g, _ = DEC.detection_findings(gt_res, rules)
+        r = det.detect(img)
+        lat.append(r.infer_ms)
+        p, _ = DEC.detection_findings(r, rules)
+        gs = {"no_bottle"} if g is None else set(g)
+        ps = {"no_bottle"} if p is None else set(p)
+        for n in names:
+            k = ("tp" if n in ps else "fn") if n in gs else ("fp" if n in ps else "tn")
+            cm[n][k] += 1
+            if k in ("fp", "fn") and len(cm[n][f"{k}_examples"]) < 15:
+                cm[n][f"{k}_examples"].append(f)
+        per_image.append({"image": f, "truth": sorted(gs) or ["ok"], "pred": sorted(ps) or ["ok"],
+                          "cap_conf": [round(d.confidence, 3) for d in r.detections if d.class_name == "cap"]})
+    for n, c in cm.items():
+        c["precision"] = round(c["tp"] / (c["tp"] + c["fp"]), 4) if c["tp"] + c["fp"] else None
+        c["recall"] = round(c["tp"] / (c["tp"] + c["fn"]), 4) if c["tp"] + c["fn"] else None
+        c["support"] = c["tp"] + c["fn"]
+    good = sum(1 for x in per_image if x["truth"] == ["ok"])
+    good_ok = sum(1 for x in per_image if x["truth"] == ["ok"] and x["pred"] == ["ok"])
+    return {"weights": weights, "truth_from": af.name, "split": split, "n_images": len(files), "rules": rules,
+            "device": str(device), "latency_ms_mean": round(float(np.mean(lat)), 1),
+            "good": {"support": good, "passed": good_ok, "pass_rate": round(good_ok / good, 4) if good else None},
+            "defects": cm, "per_image": per_image}
+
+
+def cmd_det_defects(a):
+    r = det_defects(a.weights, a.ann, a.split, a.device)
+    out = ROOT / "models" / "stage2_yolo" / f"defects_{a.tag}_{a.split}.json"
+    out.write_text(json.dumps(r, indent=2))
+    print(f"{a.tag} [{a.split}, truth {r['truth_from']}] GOOD {r['good']['passed']}/{r['good']['support']}")
+    for n, c in r["defects"].items():
+        print(f"  {n:<14} support={c['support']:<3} TP={c['tp']:<3} FP={c['fp']:<3} FN={c['fn']:<3} "
+              f"P={c['precision']} R={c['recall']}  FP eg {c['fp_examples'][:3]}  FN eg {c['fn_examples'][:3]}")
+    print("  ->", out)
 
 
 # ---------------------------------------------------------------- registry
@@ -344,6 +471,7 @@ def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("cls-test"); s.add_argument("stamps", nargs="*")
+    s = sub.add_parser("cls-report"); s.add_argument("stamps", nargs="*")
     s = sub.add_parser("cls-train")
     s.add_argument("--arch", required=True); s.add_argument("--epochs", type=int, default=25)
     s.add_argument("--batch", type=int, default=32); s.add_argument("--patience", type=int)
@@ -352,11 +480,15 @@ def main():
     s.add_argument("--imgsz", type=int, default=640); s.add_argument("--batch", type=int, default=8)
     s.add_argument("--patience", type=int, default=20); s.add_argument("--workers", type=int, default=0)
     s.add_argument("--resume", action="store_true", help="continue an interrupted bench_<model> run")
+    s.add_argument("--data", choices=["v1", "v2"], default="v1", help="v2 = cap-only annotations (annotations_v2.py)")
     sub.add_parser("yolo-bench")
+    s = sub.add_parser("det-defects")
+    s.add_argument("--weights", required=True); s.add_argument("--tag", required=True)
+    s.add_argument("--ann", default="v2"); s.add_argument("--split", default="test"); s.add_argument("--device", default="cpu")
     sub.add_parser("registry")
     a = ap.parse_args()
-    {"cls-test": cmd_cls_test, "cls-train": cmd_cls_train, "yolo": cmd_yolo,
-     "yolo-bench": cmd_yolo_bench, "registry": cmd_registry}[a.cmd](a)
+    {"cls-test": cmd_cls_test, "cls-report": cmd_cls_report, "cls-train": cmd_cls_train, "yolo": cmd_yolo,
+     "yolo-bench": cmd_yolo_bench, "det-defects": cmd_det_defects, "registry": cmd_registry}[a.cmd](a)
 
 
 if __name__ == "__main__":

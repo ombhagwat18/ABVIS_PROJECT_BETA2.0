@@ -238,6 +238,10 @@ def survey(indices, size=(1920, 1080), fourcc="MJPG", seconds=4.0, out_dir=None,
             r["size"] = f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
             r["fourcc"] = fourcc_str(cap)
             r["props"] = {k: round(float(cap.get(p)), 2) for k, p in _PROPS.items()}
+            r["controls"] = infer.applied_controls.get(str(i))      # settings camera_controls: [asked, got]
+            r["rotate"] = infer.camera_controls(i).get("rotate") or 0
+            if i in keep:
+                keep[i] = infer.orient(keep[i], r["rotate"])
             if i in keep:
                 r["frame_shape"] = list(keep[i].shape)
                 if out_dir:

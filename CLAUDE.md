@@ -248,7 +248,8 @@ as `Camera.detector` and chosen in the Live tab ("Classifier" / "Classifier + YO
 PASS/REJECT -- do not turn a missing box into a defect (absence can be occlusion,
 angle, blur, lighting or a false negative). A detector failure or stale detection makes
 the inspection FAULT. Box coordinates are absolute pixels in the original whole frame
-(no ROI, no resize). `DEV_CONF = 0.25` is a development threshold; configure it with
+(no ROI, no resize). Class names are read from the model; `YoloDetector(require=...)` refuses a
+model lacking a class the project's inspection recipe needs. `DEV_CONF = 0.25` is a development threshold; configure it with
 `settings.json` `detector_conf`. Weights are checked against the sha256 in
 `MODEL_PROVENANCE.json` and are never downloaded.
 
@@ -259,6 +260,11 @@ rule (kept; `train.py` uses it). `decide(probs, thresholds)` is the runtime
 version: **PASS / REJECT / FAULT**, where an empty or non-finite (NaN) score is a
 FAULT, never a PASS. `PASS`, `REJECT`, `FAULT` are defined once, in `infer.py`;
 import them, don't redefine them.
+
+Camera driver controls live in `settings.json` `camera_controls` (`{"<index>": {"focus": ..,
+"exposure": .., "wb_temperature": .., "rotate": 90}}`): `open_capture` applies them (auto modes
+off first) and records what the driver read back in `infer.applied_controls`; `rotate` is applied
+in the grab thread before the frame gets its seq, so every consumer sees the same rotated frame.
 
 `Camera` runs one background grab thread per source and always infers on the
 **newest** frame -- a frame that arrives mid-inference is dropped and counted
@@ -347,7 +353,11 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   reject cycle, `HELD_UNTIL_DONE`). A trigger seen again after reconnect is a new trigger
   flagged `after_reconnect`.
 - **`decision.py`** — pure functions, no I/O. Each AI stage turns one frame into findings;
-  `decide()` votes them across the bottle's frames (`majority` default) and fuses cameras
+  detection findings follow the project's **inspection recipe** (`config.json` `"inspection"`:
+  `anchor` class + `parts` with `required` / `search` / `zone`; absent = `default_recipe()`, the
+  bottle/cap/label rule). A new product needs data + a detector + a recipe, not code. `Inspector`
+  and `--bench` load the recipe; `LiveTab.build_detector` validates it (`recipe_problems`).
+  `decide()` votes the findings across the bottle's frames (`majority` default) and fuses cameras
   FAULT > REJECT > PASS. A missing detection box becomes a defect only through the vote,
   and "no bottle found" is FAULT. `RULES` thresholds are development defaults, overridable
   via `settings.json` `decision_rules`.
@@ -357,6 +367,8 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   with M0, recorded as FAULT, alarm to remove by hand). Line settings (`line_cameras`,
   `inspect_frames`, `inspection_to_reject_mm`, `conveyor_mm_s`, `plc_t0_s`, …) live in
   `settings.json`; distance/speed of 0 means "not measured" and T0 is used as travel time.
+  `timing_problem()` blocks Start line when T0 >= travel (every REJECT would be late) or T0 > 5 s
+  unmeasured (the saved K150 ladder).
   Driven from the GUI's **Production** tab. Line cameras run capture-only; the Inspector runs
   the models per bottle on frames stamped strictly *after* the trigger (`>`, not `>=`: the
   coarse Windows clock otherwise lets in a frame of the previous bottle).

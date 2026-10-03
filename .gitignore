@@ -35,6 +35,9 @@ stage2_dataset/clean/
 stage2_dataset/source/
 stage2_dataset/yolo_export/
 stage2_dataset/yolo_seg_export/
+# v2 box corrections: rebuilt by stage2_dataset/annotations_v2.py build / export
+stage2_dataset/review_v2/
+stage2_dataset/yolo_export_v2/
 
 # Model weights are never pushed (checksums and how to rebuild are recorded in
 # models/stage2_yolo/MODEL_PROVENANCE.json). Logs and editor autosaves neither.
