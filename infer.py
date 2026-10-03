@@ -59,8 +59,50 @@ def open_capture(src, size=None, fourcc=None):
         if size:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(size[0]))
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(size[1]))
+        ctl = camera_controls(src)
+        if ctl:
+            applied_controls[str(int(src))] = apply_controls(cap, ctl)
         return cap
     return cv2.VideoCapture(str(src))
+
+
+# Driver controls a webcam can be locked to: settings.json "camera_controls" =
+# {"<index>": {"autofocus": 0, "focus": 30, "auto_exposure": 0.25, "exposure": -6, "auto_wb": 0,
+# "wb_temperature": 6500, "rotate": 90}}. On a moving bottle, autofocus hunting and auto-exposure
+# drift change the picture from bottle to bottle. Values are passed to the driver as-is (their scale
+# is driver-specific); what the driver actually took is read back into applied_controls, because a
+# webcam often ignores a property without any error. "rotate" (0/90/180/270, clockwise) is not a
+# driver property: Camera turns each frame before it gets a seq number, so every consumer
+# (Live, Production, dataset capture, --bench) sees the same, already-rotated frame.
+CAMERA_PROPS = {"auto_exposure": cv2.CAP_PROP_AUTO_EXPOSURE, "exposure": cv2.CAP_PROP_EXPOSURE,
+                "autofocus": cv2.CAP_PROP_AUTOFOCUS, "focus": cv2.CAP_PROP_FOCUS,
+                "gain": cv2.CAP_PROP_GAIN, "brightness": cv2.CAP_PROP_BRIGHTNESS,
+                "auto_wb": cv2.CAP_PROP_AUTO_WB, "wb_temperature": cv2.CAP_PROP_WB_TEMPERATURE}
+_AUTO_FIRST = ("auto_exposure", "autofocus", "auto_wb")   # a manual value is ignored while auto is on
+ROTATIONS = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}
+applied_controls: dict = {}        # str(index) -> {control: [requested, read back]} at the last open
+
+
+def camera_controls(src) -> dict:
+    """This source's entry in settings.json "camera_controls" ({} if none)."""
+    c = D.load_settings().get("camera_controls") or {}
+    return dict(c.get(str(src)) or {}) if isinstance(c, dict) else {}
+
+
+def apply_controls(cap, controls: dict) -> dict:
+    """Set the driver controls; {control: [requested, read back]} (read back None = unknown name)."""
+    names = sorted((k for k in controls if k != "rotate"), key=lambda k: k not in _AUTO_FIRST)
+    for k in names:
+        if k in CAMERA_PROPS:
+            cap.set(CAMERA_PROPS[k], float(controls[k]))
+    return {k: [controls[k], round(float(cap.get(CAMERA_PROPS[k])), 2) if k in CAMERA_PROPS else None]
+            for k in names}
+
+
+def orient(frame, rotate):
+    """frame turned clockwise by rotate degrees (0/90/180/270); anything else = unchanged."""
+    r = ROTATIONS.get(int(rotate or 0) % 360)
+    return frame if r is None or frame is None else cv2.rotate(frame, r)
 
 
 def camera_names() -> list:
@@ -338,6 +380,7 @@ class Camera:
         self.capture_wh: tuple | None = None
         self.fourcc: str | None = None
         self.frame_wh: tuple | None = None
+        self.rotate = 0                # degrees clockwise, from settings "camera_controls" at start()
         # The last few captured frames, oldest first, so a per-bottle inspection can pick the
         # frames taken AFTER its trigger instead of whatever happens to be newest.
         self.recent: collections.deque = collections.deque(maxlen=RECENT_FRAMES)
@@ -378,13 +421,15 @@ class Camera:
                 "uptime_s": round(time.time() - self.started_at, 1) if self.started_at else 0.0,
                 "session": self.session, "frame_seq": self.frame_seq, "frame_wh": self.frame_wh,
                 "detector": getattr(self.detector, "model_id", None),
-                "det_ms": round(self.det_ms, 1), "det_faults": self.det_faults}
+                "det_ms": round(self.det_ms, 1), "det_faults": self.det_faults,
+                "rotate": self.rotate, "controls": applied_controls.get(str(self.source))}
 
     def start(self, source=0):
         if self._thread and self._thread.is_alive() and self.source == source:
             return
         self.stop()
         self.source, self._stop = source, threading.Event()
+        self.rotate = int(camera_controls(source).get("rotate") or 0)
         self.dropped = self.grabbed = self.scored = self.faults = self.det_faults = 0
         self.started_at = time.time()
         self._invalidate()
@@ -542,6 +587,8 @@ class Camera:
                 break
             if stop.is_set() or stop is not self._stop:
                 break                          # superseded while read() was blocked
+            if self.rotate:
+                frame = orient(frame, self.rotate)
             seq = self.frame_seq + 1           # only the owning thread writes frame_seq
             now = time.time()
             model, detector = self.model, self.detector
@@ -1170,6 +1217,65 @@ def _selftest_detector():
         me.open_capture, D.load_config = real_open, real_cfg
 
 
+def _selftest_controls():
+    """camera_controls: auto modes set before manual values, read-back reported (a driver may
+    ignore a request), unknown names flagged; rotate turns the frame before it gets a seq, so a
+    landscape camera mounted in portrait delivers a tall frame with seq still strictly increasing."""
+    me = sys.modules[__name__]
+
+    class Prop:                                # a driver that ignores focus but takes the rest
+        def __init__(self):
+            self.v, self.order = {}, []
+        def set(self, p, val):
+            self.order.append(p)
+            if p != cv2.CAP_PROP_FOCUS:
+                self.v[p] = val
+        def get(self, p):
+            return self.v.get(p, -1.0)
+
+    cap = Prop()
+    got = apply_controls(cap, {"focus": 40, "autofocus": 0, "exposure": -6, "rotate": 90, "zoom": 2})
+    assert cap.order.index(cv2.CAP_PROP_AUTOFOCUS) < cap.order.index(cv2.CAP_PROP_FOCUS), cap.order
+    assert got["focus"] == [40, -1.0] and got["exposure"] == [-6, -6.0], got
+    assert got["zoom"] == [2, None] and "rotate" not in got, got
+    f = np.zeros((36, 64, 3), np.uint8)
+    assert orient(f, 90).shape == (64, 36, 3) and orient(f, 0) is f and orient(f, 45) is f
+
+    class Cap:
+        def isOpened(self):
+            return True
+        def get(self, *_):
+            return 0
+        def set(self, *_):
+            pass
+        def release(self):
+            pass
+        def read(self):
+            time.sleep(0.004)
+            return True, np.zeros((36, 64, 3), np.uint8)
+
+    real_open, real_settings = me.open_capture, D.load_settings
+    me.open_capture = lambda src, *_: Cap()
+    D.load_settings = lambda: {"camera_controls": {"7": {"rotate": 90}}}
+    try:
+        c = Camera("portrait")
+        c.start(7)
+        t0 = time.monotonic()
+        while len(c.recent) < 5:
+            assert time.monotonic() - t0 < 3.0, "no frames from the rotated camera"
+            time.sleep(0.01)
+        c.stop()
+        seqs = [fr.seq for fr in c.recent]
+        assert c.rotate == 90 and c.frame_wh == (36, 64), (c.rotate, c.frame_wh)
+        assert all(fr.image.shape[:2] == (64, 36) for fr in c.recent)
+        assert seqs == sorted(set(seqs)), seqs
+        c.start(8)                                     # no entry -> unrotated
+        c.stop()
+        assert c.rotate == 0
+    finally:
+        me.open_capture, D.load_settings = real_open, real_settings
+
+
 def demo():
     """Self-check on the verdict rule -- the branch that decides pass/fail."""
     probs = {"a": 0.9, "b": 0.2, "c": 0.55}
@@ -1189,9 +1295,10 @@ def demo():
 
     _selftest_tri_state()
     _selftest_detector()
+    _selftest_controls()
 
     print(f"ok  ({len(cams)} camera(s) found on indices 0-1; "
-          f"tri-state PASS/REJECT/FAULT + component-detector path checked)")
+          f"tri-state PASS/REJECT/FAULT + component-detector path + camera controls/rotation checked)")
 
 
 if __name__ == "__main__":

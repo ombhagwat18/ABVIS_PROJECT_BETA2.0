@@ -32,6 +32,9 @@ the application: it reports on work already completed and recorded in
 | Screenshots (application UI) | `13_Screenshots/` | placeholder — not yet captured |
 | Viva preparation | `14_Viva_Preparation/` | `VIVA_QUESTIONS_STAGE_1.md` |
 | Future work | `15_Future_Work/` | `FUTURE_WORK.md` |
+| Whole-system analysis (3 Oct 2026) | `16_System_Analysis/` | `SYSTEM_ANALYSIS_2026-10-03.md`, `fig_domain_shift.png` |
+| Hardware commissioning (physical tests) | `17_Hardware_Commissioning/` | `README.md` test sheets |
+| **Every result, where it is, how strong** | `../RESULTS_INDEX.md` | one row per result |
 
 ## Document list
 

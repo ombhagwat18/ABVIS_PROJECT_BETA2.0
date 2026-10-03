@@ -12,7 +12,8 @@ Rules (all thresholds live in RULES and can be overridden from settings.json "de
     frame after the trigger, an AI runtime error, a non-finite score, a required model missing,
     or no bottle found by detection/segmentation (cannot inspect what we cannot see).
   * Classification: a defect fires when its probability >= its project threshold (infer.decide).
-  * Detection (components only, see detect.py): with a bottle found at the station, no cap box in
+  * Detection (components only, see detect.py), judged against the project's inspection recipe
+    (default_recipe below = this bottle line): with a bottle found at the station, no cap box in
     the bottle's column -> missing_cap; cap centre below the top `cap_top_fraction` of the bottle
     -> cap_misplaced; no label box inside the bottle -> missing_label. A missing box only becomes a
     defect through the frame vote below, never from one frame.
@@ -95,33 +96,84 @@ def _centre(d):
     return (d.x1 + d.x2) / 2, (d.y1 + d.y2) / 2
 
 
+# ------------------------------------------------------------------------ inspection recipe
+# What "a complete product" means to the detection stage, per project (config.json "inspection"),
+# so a new product needs a dataset, a trained detector and a recipe -- not a code change:
+#
+#   {"anchor": "bottle",                       the object inspected; none at the station -> FAULT
+#    "parts": [{"name": "cap",                 a detector class that must belong to the anchor
+#               "required": true,              missing -> defect "missing_<name>" (or "missing")
+#               "search": [-0.25, 1.0],        where to look: centre y, as fractions of the anchor
+#                                              height from its top (centre x must be inside it)
+#               "zone": [-0.25, 0.5],          optional: found outside it -> "<name>_misplaced"
+#               "misplaced": "cap_misplaced"}, ...]}
+#
+# With no recipe, default_recipe() is the bottle/cap/label rule this line was built with.
+def default_recipe(rules) -> dict:
+    up = float(rules["cap_above_margin"])
+    return {"anchor": "bottle",
+            "parts": [{"name": "cap", "search": [-up, 1.0], "zone": [-up, float(rules["cap_top_fraction"])],
+                       "misplaced": "cap_misplaced"},
+                      {"name": "label", "search": [0.0, 1.0]}]}
+
+
+def recipe_of(rules) -> dict:
+    return rules.get("recipe") or default_recipe(rules)
+
+
+def recipe_classes(recipe) -> tuple:
+    """The detector classes a recipe needs (the model must have all of them)."""
+    return (recipe["anchor"],) + tuple(p["name"] for p in recipe.get("parts", ()))
+
+
+def recipe_problems(recipe) -> list:
+    """Why a recipe cannot be used ([] = usable). Checked before the line starts, so a typo cannot
+    turn into every product being rejected for a missing part."""
+    if not isinstance(recipe, dict) or not isinstance(recipe.get("anchor"), str) or not recipe["anchor"]:
+        return ["recipe needs an 'anchor' class name"]
+    out, seen = [], {recipe["anchor"]}
+    for i, p in enumerate(recipe.get("parts") or []):
+        n = p.get("name") if isinstance(p, dict) else None
+        if not isinstance(n, str) or not n:
+            out.append(f"part {i + 1}: needs a 'name'")
+            continue
+        if n in seen:
+            out.append(f"part {n!r}: listed twice (or same as the anchor)")
+        seen.add(n)
+        for k in ("search", "zone"):
+            v = p.get(k)
+            if v is not None and not (isinstance(v, (list, tuple)) and len(v) == 2
+                                      and all(isinstance(x, (int, float)) for x in v) and v[0] < v[1]):
+                out.append(f"part {n!r}: {k} must be [top, bottom] with top < bottom")
+    return out
+
+
 def detection_findings(det, rules) -> tuple:
-    """(findings, confidence) for one frame's DetectionResult. findings is None if no bottle was
-    found (the frame cannot say anything about this bottle)."""
+    """(findings, confidence) for one frame's DetectionResult, judged against the recipe. findings
+    is None if no anchor (bottle) was found: the frame cannot say anything about this product."""
     conf = float(rules["det_min_conf"])
+    recipe = recipe_of(rules)
     keep = [d for d in det.detections if d.confidence >= conf]
-    bottles = [d for d in keep if d.class_name == "bottle"]
-    if not bottles:
+    anchors = [d for d in keep if d.class_name == recipe["anchor"]]
+    if not anchors:
         return None, None
     sx = float(rules["station_x"]) * det.frame_wh[0]
-    b = min(bottles, key=lambda d: (abs(_centre(d)[0] - sx), -d.confidence))
+    b = min(anchors, key=lambda d: (abs(_centre(d)[0] - sx), -d.confidence))
     bh = b.y2 - b.y1
     found, scores = [], [b.confidence]
-    caps = [d for d in keep if d.class_name == "cap" and b.x1 <= _centre(d)[0] <= b.x2
-            and b.y1 - rules["cap_above_margin"] * bh <= _centre(d)[1] <= b.y2]
-    if not caps:
-        found.append("missing_cap")
-    else:
-        cap = max(caps, key=lambda d: d.confidence)
-        scores.append(cap.confidence)
-        if _centre(cap)[1] > b.y1 + float(rules["cap_top_fraction"]) * bh:
-            found.append("cap_misplaced")
-    labels = [d for d in keep if d.class_name == "label" and b.x1 <= _centre(d)[0] <= b.x2
-              and b.y1 <= _centre(d)[1] <= b.y2]
-    if not labels:
-        found.append("missing_label")
-    else:
-        scores.append(max(d.confidence for d in labels))
+    for part in recipe.get("parts", ()):
+        top, bottom = part.get("search") or (0.0, 1.0)
+        hits = [d for d in keep if d.class_name == part["name"] and b.x1 <= _centre(d)[0] <= b.x2
+                and b.y1 + top * bh <= _centre(d)[1] <= b.y1 + bottom * bh]
+        if not hits:
+            if part.get("required", True):
+                found.append(part.get("missing") or f"missing_{part['name']}")
+            continue
+        best = max(hits, key=lambda d: d.confidence)
+        scores.append(best.confidence)
+        zone = part.get("zone")
+        if zone and not (b.y1 + zone[0] * bh <= _centre(best)[1] <= b.y1 + zone[1] * bh):
+            found.append(part.get("misplaced") or f"{part['name']}_misplaced")
     return found, (b.confidence if found else min(scores))
 
 
@@ -227,8 +279,8 @@ def demo():
     from detect import CLASS_NAMES as DET_CLASSES, Detection, DetectionResult
     from segment import FakeSeg, YoloSegmenter, rect
 
-    def det(*boxes, wh=(400, 600)):
-        out = tuple(Detection(DET_CLASSES.index(n), n, c, *xyxy) for n, c, xyxy in boxes)
+    def det(*boxes, wh=(400, 600), names=DET_CLASSES):
+        out = tuple(Detection(list(names).index(n) if n in names else -1, n, c, *xyxy) for n, c, xyxy in boxes)
         return DetectionResult("0", 1, 0.0, out, wh, 5.0, "fake", 0.25)
 
     BOT = ("bottle", 0.95, (150, 100, 250, 550))
@@ -266,6 +318,30 @@ def demo():
     # the bottle at the station (nearest station_x) is the one judged, not a neighbour
     two = det(("bottle", 0.99, (0, 100, 90, 550)), BOT, CAP, LAB)                 # capless neighbour at the edge
     assert D("detection", cam({"det": two})).state == PASS
+    # the default recipe IS the bottle rule: spelling it out changes nothing
+    explicit = {**RULES, "recipe": default_recipe(RULES)}
+    for f in (good, nocap, nolabel, lowcap, weak, two, empty):
+        assert detection_findings(f, explicit) == detection_findings(f, RULES)
+    assert recipe_classes(default_recipe(RULES)) == ("bottle", "cap", "label")
+    # another product, same code: a box that must carry a sticker in its top half, an optional tag
+    box_recipe = {"anchor": "box", "parts": [{"name": "sticker", "search": [0.0, 1.0], "zone": [0.0, 0.5]},
+                                             {"name": "tag", "required": False}]}
+    assert recipe_problems(box_recipe) == []
+    BOX = ("box", 0.9, (100, 100, 300, 500))
+
+    def sticker(y):
+        return ("sticker", 0.8, (150, y, 250, y + 40))
+
+    def R(*b):
+        return D("detection", cam({"det": det(*b, names=("box", "sticker", "tag"))}), rules={"recipe": box_recipe})
+    assert R(BOX, sticker(150)).state == PASS                                  # optional tag absent: fine
+    assert R(BOX).defects == ["missing_sticker"]
+    assert R(BOX, sticker(400)).defects == ["sticker_misplaced"]
+    assert R(sticker(150)).state == FAULT                                      # no anchor: cannot inspect
+    assert R(BOT, CAP, LAB).state == FAULT                                     # a bottle is not this product
+    assert recipe_problems({"parts": []})
+    assert recipe_problems({"anchor": "box", "parts": [{"name": "box"}]})
+    assert recipe_problems({"anchor": "box", "parts": [{"name": "s", "zone": [0.5, 0.1]}]})
     # runtime failures and missing results are FAULT
     assert D("detection", cam({"det": good}, {"det_error": "cuda oom"})).state == FAULT
     assert D("detection", cam({})).state == FAULT
@@ -312,7 +388,7 @@ def demo():
     assert d.state == REJECT and d.defects == ["missing_label"] and d.per_camera["cam0"][0] == PASS, d
     d = D("detection", c1, CameraEvidence("cam2", fault="frame timeout"))
     assert d.state == FAULT and "cam2: frame timeout" in d.reason, d                 # FAULT outranks REJECT
-    print("ok  decision engine: classification / detection / segmentation rules, frame vote, "
+    print("ok  decision engine: classification / detection (recipe-driven) / segmentation rules, frame vote, "
           "camera fusion FAULT > REJECT > PASS, every failure -> FAULT")
 
 

@@ -95,6 +95,30 @@ def travel_time(cfg: dict) -> tuple:
     return float(cfg["plc_t0_s"]), False
 
 
+# With distance/speed not measured, T0 IS the travel time. Above this it is almost certainly the old
+# K150 (15 s) preset, not a travel time: on this machine's ~1460 mm belt at ~90 mm/s, inspection ->
+# reject is a few seconds, and a 15 s T0 fires Y0 after the bottle has left the conveyor.
+MAX_UNMEASURED_T0_S = 5.0
+
+
+def timing_problem(cfg: dict) -> str | None:
+    """Why these line timings cannot reject a bottle at the right place (None = plausible).
+
+    The REJECT command is sent at trigger + travel - T0, so a T0 at or above the travel time makes
+    every REJECT late before inspection even starts: each one would be answered PASS + FAULT."""
+    t0 = float(cfg["plc_t0_s"])
+    travel, measured = travel_time(cfg)
+    if measured and t0 >= travel:
+        return (f"T0 {t0:.2f} s >= travel {travel:.2f} s ({cfg['inspection_to_reject_mm']} mm at "
+                f"{cfg['conveyor_mm_s']} mm/s): every REJECT would be late. Set the ladder's T0 below the "
+                f"travel time (contract K15 = 1.5 s) and enter the same value here.")
+    if not measured and t0 > MAX_UNMEASURED_T0_S:
+        return (f"T0 {t0:.2f} s is used as the travel time because distance/speed are not measured, and "
+                f"no inspection->reject distance on this belt takes that long. Measure the distance and "
+                f"speed, or set T0 to the real travel time (ladder and here).")
+    return None
+
+
 @dataclass
 class Bottle:
     inspection_id: str
@@ -162,11 +186,13 @@ class Inspector:
     GPU is not shared with a free-running preview."""
 
     def __init__(self, cams, task, classifier=None, detector=None, segmenter=None, missing=None,
-                 thresholds=None, frames=3, window_s=0.6):
+                 thresholds=None, frames=3, window_s=0.6, recipe=None):
         self.cams, self.task = list(cams), task
         self.classifier, self.detector, self.segmenter = classifier, detector, segmenter
         self.missing = dict(missing or {})      # stage -> why its model is unavailable
         self.thresholds = thresholds or (lambda: D.load_config().get("thresholds", {}))
+        # the project's inspection recipe (config.json "inspection"); None = decision.default_recipe
+        self.recipe = recipe or (lambda: D.load_config().get("inspection"))
         self.frames, self.window_s = max(1, int(frames)), float(window_s)
         self._wake = threading.Event()
 
@@ -254,7 +280,11 @@ class Inspector:
                 if first is None:
                     first = (f.image, fe)
             evid.append(ce)
-        dec = DEC.decide(self.task, evid, thr, self._rules)
+        rules = dict(self._rules)
+        recipe = self.recipe()
+        if recipe:
+            rules["recipe"] = recipe
+        dec = DEC.decide(self.task, evid, thr, rules)
         return dec, (self._thumb(*first, dec) if first else None), ms, n
 
     _rules: dict = {}
@@ -546,6 +576,14 @@ def demo():
     from plc import PLCService
     from plc.test_simulation import FakeLadder, FakePLC, _client
 
+    # ---- timing sanity (pure): T0 must be shorter than the travel it delays
+    T = lambda **k: line_settings({"plc_t0_s": 1.5, "plc_t1_s": 0.5, **k})          # noqa: E731
+    assert timing_problem(T()) is None                                      # unmeasured, contract K15
+    assert "not measured" in timing_problem(T(plc_t0_s=15.0))               # the saved K150 ladder
+    assert timing_problem(T(inspection_to_reject_mm=400, conveyor_mm_s=90)) is None     # 4.4 s travel
+    assert "late" in timing_problem(T(plc_t0_s=15.0, inspection_to_reject_mm=400, conveyor_mm_s=90))
+    assert "late" in timing_problem(T(plc_t0_s=1.5, inspection_to_reject_mm=100, conveyor_mm_s=100))
+
     scale = 0.2                                     # 100 ms timer base -> 20 ms: T0 = 0.3 s, T1 = 0.1 s
     t0_s, t1_s = 15 * 0.1 * scale, 5 * 0.1 * scale
     scene = {"kind": "good"}
@@ -736,7 +774,9 @@ def bench_inspect(label: str, sources, task: str = "classification+detection", f
             missing[DEC.CLASSIFICATION] = f"{type(e).__name__}: {e}"
     if DEC.DETECTION in stages:
         try:
-            models["detector"] = detect.YoloDetector(weights=settings.get("detector_weights") or None,
+            models["detector"] = detect.YoloDetector(
+                require=DEC.recipe_classes(DEC.recipe_of({**DEC.RULES, "recipe": D.load_config().get("inspection")})),
+                weights=settings.get("detector_weights") or None,
                                                      conf=float(settings.get("detector_conf", detect.DEV_CONF)))
         except Exception as e:                                       # noqa: BLE001
             missing[DEC.DETECTION] = str(e)
@@ -750,7 +790,9 @@ def bench_inspect(label: str, sources, task: str = "classification+detection", f
     out.mkdir(parents=True, exist_ok=True)
     names = infer.camera_names()
     evid, rec = [], {"label": label, "task": task, "project": D.PROJECT, "models": insp.models(),
-                     "missing": missing, "rules": {**DEC.RULES, **settings.get("decision_rules", {})},
+                     "missing": missing, "rules": {**DEC.RULES, **settings.get("decision_rules", {}),
+                                                   **({"recipe": D.load_config()["inspection"]}
+                                                      if D.load_config().get("inspection") else {})},
                      "cameras": {}}
     for src in sources:
         is_cam = str(src).isdigit()
@@ -761,13 +803,15 @@ def bench_inspect(label: str, sources, task: str = "classification+detection", f
             i = int(src)
             info["name"] = names[i] if i < len(names) else ""
             cap = infer.open_capture(i, size, fourcc)
+            rot = infer.camera_controls(i).get("rotate") or 0       # same orientation as the line
+            info["rotate"], info["controls"] = rot, infer.applied_controls.get(str(i))
             try:
                 for _ in range(15):                                  # let auto-exposure settle
                     cap.read()
                 for _ in range(frames):
                     ok, img = cap.read()
                     if ok and img is not None:
-                        imgs.append(img)
+                        imgs.append(infer.orient(img, rot))
                     time.sleep(0.1)
             finally:
                 cap.release()

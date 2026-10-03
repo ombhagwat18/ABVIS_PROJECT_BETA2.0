@@ -1100,7 +1100,12 @@ class ProductionTab:
             return False
         self.app.settings.update(vals)
         D.save_settings(self.app.settings)
-        tt, measured = MC.travel_time(MC.line_settings(self.app.settings))
+        cfg = MC.line_settings(self.app.settings)
+        bad = MC.timing_problem(cfg)
+        if bad:
+            self.tim_msg.configure(text=f"saved, but the line will not start: {bad}", text_color=BAD)
+            return False
+        tt, measured = MC.travel_time(cfg)
         self.tim_msg.configure(text=f"saved: travel {tt:.2f} s" + ("" if measured else " (= T0: distance/speed not set)"),
                                text_color=DIM)
         return True
@@ -2386,9 +2391,16 @@ class LiveTab:
         detector_weights); the default confidence is a DEVELOPMENT value, not a validated one."""
         conf = float(self.app.settings.get("detector_conf", detect.DEV_CONF))
         weights = self.app.settings.get("detector_weights") or None
+        recipe = D.load_config().get("inspection")
+        bad = DEC.recipe_problems(recipe) if recipe else []
+        if bad:
+            raise detect.DetectorError("project inspection recipe (config.json 'inspection'): " + "; ".join(bad))
+        need = DEC.recipe_classes(DEC.recipe_of({**DEC.RULES, "recipe": recipe}))
         d = self._detector
-        if d is None or d.conf != conf or str(d.weights) != str(weights or detect.DEFAULT_WEIGHTS):
-            d = self._detector = detect.YoloDetector(weights=weights, conf=conf)
+        if (d is None or d.conf != conf or str(d.weights) != str(weights or detect.DEFAULT_WEIGHTS)
+                or getattr(d, "_require", None) != need):
+            d = self._detector = detect.YoloDetector(weights=weights, conf=conf, require=need)
+            d._require = need
         return d
 
     def build_panes(self, names):
@@ -2965,6 +2977,24 @@ class BenchTab:
         self.btn.pack(side="left", padx=8)
         ctk.CTkButton(bar, text="Export CSV", command=self.export).pack(side="right", padx=12)
 
+        # Lock the camera for the line: settings.json "camera_controls" (infer.open_capture applies it
+        # every time the camera opens). Blank = leave that one on auto. Values are the driver's own scale.
+        lock = ctk.CTkFrame(parent, fg_color=PANEL)
+        lock.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(lock, text="Lock camera").pack(side="left", padx=(12, 10), pady=8)
+        self.ctl = {}
+        for key, label in (("focus", "Focus"), ("exposure", "Exposure"), ("wb_temperature", "WB K")):
+            ctk.CTkLabel(lock, text=label).pack(side="left", padx=(6, 4))
+            e = ctk.CTkEntry(lock, width=64)
+            e.pack(side="left")
+            self.ctl[key] = e
+        ctk.CTkLabel(lock, text="Rotate").pack(side="left", padx=(12, 4))
+        self.rot = ctk.CTkOptionMenu(lock, values=["0", "90", "180", "270"], width=70)
+        self.rot.pack(side="left")
+        ctk.CTkButton(lock, text="Save + read back", command=self.save_controls).pack(side="left", padx=10)
+        self.ctl_msg = ctk.CTkLabel(lock, text="", font=MONO, text_color=DIM, justify="left")
+        self.ctl_msg.pack(side="left", padx=6)
+
         ctk.CTkLabel(parent, text_color=DIM, justify="left", wraplength=1050,
                      text="A webcam asked for 1920x1080 at 30 fps will quietly deliver 7 in poor "
                           "light, and OpenCV reports the number it was asked for. Every column "
@@ -2994,8 +3024,76 @@ class BenchTab:
     def set_cams(self, cams):
         names = [f"Camera {c['index']} - {c['width']}x{c['height']}" for c in cams] or ["-"]
         self._idx = {n: c["index"] for n, c in zip(names, cams)}
-        self.cam.configure(values=names)
+        self.cam.configure(values=names, command=lambda _: self.load_controls())
         self.cam.set(names[0])
+        self.load_controls()
+
+    def load_controls(self):
+        idx = getattr(self, "_idx", {}).get(self.cam.get())
+        c = (self.app.settings.get("camera_controls") or {}).get(str(idx), {}) if idx is not None else {}
+        for k, e in self.ctl.items():
+            e.delete(0, "end")
+            if k in c:
+                e.insert(0, str(c[k]))
+        self.rot.set(str(c.get("rotate", 0)))
+
+    def _controls_from_ui(self) -> dict:
+        """The camera_controls entry the fields describe. A manual value switches its auto mode off
+        (auto_exposure 0.25 is OpenCV's 'manual' value); a blank field leaves that control on auto."""
+        out = {}
+        for k, e in self.ctl.items():
+            t = e.get().strip()
+            if not t:
+                continue
+            try:
+                out[k] = float(t)
+            except ValueError:
+                raise ValueError(f"{k}: {t!r} is not a number")
+        if "focus" in out:
+            out["autofocus"] = 0
+        if "exposure" in out:
+            out["auto_exposure"] = 0.25
+        if "wb_temperature" in out:
+            out["auto_wb"] = 0
+        if int(self.rot.get()):
+            out["rotate"] = int(self.rot.get())
+        return out
+
+    def save_controls(self):
+        idx = getattr(self, "_idx", {}).get(self.cam.get())
+        if idx is None:
+            return messagebox.showinfo("No camera", "Scan and pick a camera first.")
+        if self.app.cams.running():
+            return messagebox.showinfo("Cameras running", "Stop the Live tab first - the camera has to be "
+                                                          "reopened to apply the settings.")
+        try:
+            c = self._controls_from_ui()
+        except ValueError as e:
+            return self.ctl_msg.configure(text=str(e), text_color=BAD)
+        allc = dict(self.app.settings.get("camera_controls") or {})
+        if c:
+            allc[str(idx)] = c
+        else:
+            allc.pop(str(idx), None)
+        self.app.settings["camera_controls"] = allc
+        D.save_settings(self.app.settings)
+        self.ctl_msg.configure(text="saved, reading back…", text_color=DIM)
+
+        def work():
+            cap = infer.open_capture(idx)
+            try:
+                for _ in range(5):
+                    cap.read()
+            finally:
+                cap.release()
+            return infer.applied_controls.get(str(idx)) or {}
+
+        def done(got):
+            ignored = [k for k, (want, have) in got.items() if have is None or abs(float(want) - have) > 0.01]
+            text = "  ".join(f"{k} {w}->{h}" for k, (w, h) in got.items()) or "all on auto"
+            self.ctl_msg.configure(text=text + (f"\nIGNORED by the driver: {', '.join(ignored)}" if ignored else ""),
+                                   text_color=WARN if ignored else GOOD)
+        self.app.run_bg(work, done)
 
     def run(self):
         idx = getattr(self, "_idx", {}).get(self.cam.get())
@@ -3308,6 +3406,19 @@ def selftest():
         {"requested": "640x480@30", "error": "cannot open camera"}]
     app.tab_bench.show()
     app.update()
+    tb = app.tab_bench                                  # camera lock fields -> camera_controls (no device)
+    for k, v in (("focus", "30"), ("exposure", ""), ("wb_temperature", "6500")):
+        tb.ctl[k].delete(0, "end"); tb.ctl[k].insert(0, v)
+    tb.rot.set("90")
+    assert tb._controls_from_ui() == {"focus": 30.0, "autofocus": 0, "wb_temperature": 6500.0,
+                                      "auto_wb": 0, "rotate": 90}, tb._controls_from_ui()
+    tb.ctl["focus"].delete(0, "end"); tb.ctl["focus"].insert(0, "near")
+    try:
+        tb._controls_from_ui()
+        raise AssertionError("a non-numeric focus was accepted")
+    except ValueError:
+        pass
+    tb.load_controls()
 
     # Machine tab + conveyor HMI against a FAKE PLC (the self-test never touches a device)
     from plc.test_simulation import FakeLadder, FakePLC, _client
@@ -3438,6 +3549,8 @@ def selftest():
             pt.tim[key].delete(0, "end"); pt.tim[key].insert(0, val)
         pt.tim["plc_t0_s"].delete(0, "end"); pt.tim["plc_t0_s"].insert(0, "x")
         assert not pt.save_timing() and "not a number" in pt.tim_msg.cget("text")
+        pt.tim["plc_t0_s"].delete(0, "end"); pt.tim["plc_t0_s"].insert(0, "15")    # the K150 ladder
+        assert not pt.save_timing() and "will not start" in pt.tim_msg.cget("text")
         pt.tim["plc_t0_s"].delete(0, "end"); pt.tim["plc_t0_s"].insert(0, "0.75")
         pt.start_line(models={"detection": detect.YoloDetector(model=detect.FakeYolo(_yolo), warmup=False)})
         assert until(lambda: pt.line_lbl.cget("text") == "LINE RUNNING"), pt.line_lbl.cget("text")
