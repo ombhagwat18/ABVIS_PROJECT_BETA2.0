@@ -1,6 +1,7 @@
 """Camera -> crop -> model -> verdict, plus the MJPEG frames the dashboard shows."""
 from __future__ import annotations
 
+import collections
 import math
 import sys
 import threading
@@ -37,19 +38,91 @@ def list_models() -> list[str]:
     return sorted((p.name for p in D.MODELS.iterdir() if (p / "model.pt").exists()), reverse=True)
 
 
-def open_capture(src):
+def open_capture(src, size=None, fourcc=None):
     """Open a webcam index or a file/URL.
 
     Integer sources go through DirectShow on Windows. The default MSMF backend
     takes 5-10 s to open a webcam there and sometimes just fails; DSHOW is
     near-instant. Probing and streaming must use the same backend or they
     disagree about which indices exist and at what resolution.
+
+    size=(w, h) / fourcc="MJPG" request a capture mode from a webcam. Without them
+    DirectShow opens at the driver default (640x480 on the EMEET Nova 4K); 1920x1080
+    needs MJPG to reach 30 fps over USB. A request is not a guarantee: read the
+    delivered frame's shape (Camera reports it).
     """
     if isinstance(src, int) or str(src).isdigit():
-        if sys.platform == "win32":
-            return cv2.VideoCapture(int(src), cv2.CAP_DSHOW)
-        return cv2.VideoCapture(int(src))
+        cap = (cv2.VideoCapture(int(src), cv2.CAP_DSHOW) if sys.platform == "win32"
+               else cv2.VideoCapture(int(src)))
+        if fourcc:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*str(fourcc)[:4].ljust(4)))
+        if size:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(size[0]))
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(size[1]))
+        return cap
     return cv2.VideoCapture(str(src))
+
+
+def camera_names() -> list:
+    """DirectShow video-input names in device order, which is the index order cv2.CAP_DSHOW
+    uses (index i -> names[i]). [] off Windows or if the COM query fails: names are a label
+    for the operator, never needed to open a camera."""
+    if sys.platform != "win32":
+        return []
+    try:
+        import ctypes
+        import comtypes
+        import comtypes.client
+        from comtypes import COMMETHOD, GUID, HRESULT, IUnknown
+        from comtypes.automation import VARIANT
+        from ctypes import POINTER, c_ulong, c_void_p
+        from ctypes.wintypes import DWORD, LPCOLESTR
+
+        class IPropertyBag(IUnknown):
+            _iid_ = GUID("{55272A00-42CB-11CE-8135-00AA004BB851}")
+            _methods_ = [COMMETHOD([], HRESULT, "Read", (["in"], LPCOLESTR, "name"),
+                                   (["in", "out"], POINTER(VARIANT), "pVar"), (["in"], c_void_p, "pErrorLog"))]
+
+        class IMoniker(IUnknown):
+            _iid_ = GUID("{0000000F-0000-0000-C000-000000000046}")
+            _methods_ = [COMMETHOD([], HRESULT, "GetClassID", (["out"], POINTER(GUID))),
+                         COMMETHOD([], HRESULT, "IsDirty"),
+                         COMMETHOD([], HRESULT, "Load", (["in"], c_void_p)),
+                         COMMETHOD([], HRESULT, "Save", (["in"], c_void_p), (["in"], ctypes.c_int)),
+                         COMMETHOD([], HRESULT, "GetSizeMax", (["out"], POINTER(ctypes.c_ulonglong))),
+                         COMMETHOD([], HRESULT, "BindToObject", (["in"], c_void_p), (["in"], c_void_p),
+                                   (["in"], POINTER(GUID)), (["out"], POINTER(POINTER(IUnknown)))),
+                         COMMETHOD([], HRESULT, "BindToStorage", (["in"], c_void_p), (["in"], c_void_p),
+                                   (["in"], POINTER(GUID)), (["out"], POINTER(POINTER(IUnknown))))]
+
+        class IEnumMoniker(IUnknown):
+            _iid_ = GUID("{00000102-0000-0000-C000-000000000046}")
+            _methods_ = [COMMETHOD([], HRESULT, "Next", (["in"], c_ulong, "celt"),
+                                   (["out"], POINTER(POINTER(IMoniker)), "rgelt"), (["out"], POINTER(c_ulong), "n"))]
+
+        class ICreateDevEnum(IUnknown):
+            _iid_ = GUID("{29840822-5B84-11D0-BD3B-00A0C911CE86}")
+            _methods_ = [COMMETHOD([], HRESULT, "CreateClassEnumerator", (["in"], POINTER(GUID)),
+                                   (["out"], POINTER(POINTER(IEnumMoniker))), (["in"], DWORD))]
+
+        comtypes.CoInitialize()
+        dev_enum = comtypes.client.CreateObject(GUID("{62BE5D10-60EB-11d0-BD3B-00A0C911CE86}"),
+                                                interface=ICreateDevEnum)
+        found = dev_enum.CreateClassEnumerator(GUID("{860BB310-5D01-11d0-BD3B-00A0C911CE86}"), 0)
+        names = []
+        while found:                              # NULL enumerator: no video devices at all
+            mon, n = found.Next(1)
+            if not n:
+                break
+            bag = mon.BindToStorage(None, None, IPropertyBag._iid_).QueryInterface(IPropertyBag)
+            v = bag.Read("FriendlyName", VARIANT(), None)
+            names.append(str(getattr(v, "value", v)))
+        return names
+    except Exception:                             # noqa: BLE001 - a label, never a reason to fail
+        return []
+
+
+_PROBE_LOCK = threading.Lock()
 
 
 def list_cameras(max_index: int = 5) -> list[dict]:
@@ -57,12 +130,20 @@ def list_cameras(max_index: int = 5) -> list[dict]:
 
     isOpened() alone is not enough -- a claimed device that never returns a
     frame still reports open, and would show up as a selectable dead camera.
+    Serialized: the Live and Camera tabs both scan on startup, and two threads
+    enumerating DirectShow devices at once corrupts the heap (0xC0000374).
     """
+    with _PROBE_LOCK:
+        return _list_cameras(max_index)
+
+
+def _list_cameras(max_index: int) -> list[dict]:
     try:
         cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
     except Exception:
         pass                                     # noisy probe logs, not fatal
     found = []
+    names = camera_names()
     for i in range(max_index):
         cap = open_capture(i)
         try:
@@ -70,7 +151,8 @@ def list_cameras(max_index: int = 5) -> list[dict]:
                 ok, frame = cap.read()
                 if ok and frame is not None:
                     found.append({"index": i, "width": int(frame.shape[1]),
-                                  "height": int(frame.shape[0])})
+                                  "height": int(frame.shape[0]),
+                                  "name": names[i] if i < len(names) else ""})
         finally:
             cap.release()
     try:
@@ -133,6 +215,10 @@ PASS, REJECT, FAULT = "PASS", "REJECT", "FAULT"
 # A score older than this (monotonic clock) is not evidence about the bottle in
 # front of the camera now. Inference runs at ~15 Hz, so this is ~15 missed cycles.
 MAX_RESULT_AGE_S = 1.0
+
+# Frames kept per camera for per-bottle frame selection: ~0.4 s at 30 fps. Frames are
+# references to arrays the grab loop already allocated, so this costs no copies.
+RECENT_FRAMES = 12
 
 
 class Frame(NamedTuple):
@@ -247,8 +333,22 @@ class Camera:
         self.grabbed = 0
         self.scored = 0
         self.started_at = 0.0
+        # Requested capture mode for a webcam: (w, h) and a FOURCC such as "MJPG". None = driver
+        # default. frame_wh is what the camera actually delivers (the request is not a promise).
+        self.capture_wh: tuple | None = None
+        self.fourcc: str | None = None
+        self.frame_wh: tuple | None = None
+        # The last few captured frames, oldest first, so a per-bottle inspection can pick the
+        # frames taken AFTER its trigger instead of whatever happens to be newest.
+        self.recent: collections.deque = collections.deque(maxlen=RECENT_FRAMES)
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+
+    def frames_since(self, ts: float) -> list:
+        """Captured frames (Frame tuples, oldest first) stamped at or after monotonic `ts`,
+        from the current session only."""
+        with self.lock:
+            return [f for f in self.recent if f.ts >= ts]
 
     @property
     def camera_id(self) -> str:
@@ -276,7 +376,7 @@ class Camera:
                 "drop_pct": round(drop_pct, 1), "alive": self.alive, "error": self.error,
                 "model": self.model.stamp if self.model else None,
                 "uptime_s": round(time.time() - self.started_at, 1) if self.started_at else 0.0,
-                "session": self.session, "frame_seq": self.frame_seq,
+                "session": self.session, "frame_seq": self.frame_seq, "frame_wh": self.frame_wh,
                 "detector": getattr(self.detector, "model_id", None),
                 "det_ms": round(self.det_ms, 1), "det_faults": self.det_faults}
 
@@ -290,6 +390,8 @@ class Camera:
         self._invalidate()
         with self.lock:                       # a new session starts with no frame at all
             self.frame, self.frame_ts, self.frame_seq = None, None, 0
+            self.frame_wh = None
+            self.recent.clear()
             self.session += 1
         self.armed = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
@@ -406,7 +508,7 @@ class Camera:
 
     def _run(self, stop):
         src = self.source
-        cap = open_capture(src)
+        cap = open_capture(src, self.capture_wh, self.fourcc)
         if not cap.isOpened():
             self.error = f"cannot open camera source {src!r}"
             return
@@ -502,6 +604,8 @@ class Camera:
                 self.fps, n, t0 = n / (now - t0), 0, now
             with self.lock:
                 self.frame, self.frame_ts, self.frame_seq = frame, t_grab, seq
+                self.frame_wh = (int(frame.shape[1]), int(frame.shape[0]))
+                self.recent.append(Frame(self.camera_id, t_grab, seq, frame))
                 self.result_seq = result_seq
                 self.result_model, self.result_infer_ms = result_model, result_ms
                 self.probs, self.hits, self.ok = probs, hits, ok
@@ -751,7 +855,7 @@ def _selftest_tri_state():
         return cam, cs
 
     real_open, real_cfg = me.open_capture, D.load_config
-    me.open_capture = lambda src: Cap(box["cap"])
+    me.open_capture = lambda src, *_: Cap(box["cap"])
     D.load_config = lambda: {"thresholds": {}}
     try:
         # -- nothing inspected -> FAULT, never PASS
@@ -963,7 +1067,7 @@ def _selftest_detector():
         return c
 
     real_open, real_cfg = me.open_capture, D.load_config
-    me.open_capture = lambda src: Cap(box["cap"])
+    me.open_capture = lambda src, *_: Cap(box["cap"])
     D.load_config = lambda: {"thresholds": {}}
     try:
         # -- detector alone: boxes yes, verdict never PASS

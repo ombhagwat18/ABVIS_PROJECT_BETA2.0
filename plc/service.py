@@ -88,6 +88,7 @@ class CommandResult:
     write_ms: Optional[float] = None   # request -> Modbus response
     ack_ms: Optional[float] = None     # write started -> command bit and M2 observed cleared
     cmd_seen_on: Optional[bool] = None # was the command bit ever observed ON (the PLC may clear it within a scan)
+    cmd_held: bool = False             # ACKED with the bit still ON: the ladder holds M1 for T0 + T1
     before: dict = field(default_factory=dict)
 
     @property
@@ -111,7 +112,7 @@ class PLCEvent:
 class PLCService:
     def __init__(self, client: PLCClient, poll_s: float = 0.05, status_period_s: float = 0.25,
                  stale_after_s: float = 1.0, trigger_overdue_s: float = 5.0, ack_timeout_s: float = 1.0,
-                 ack_poll_s: float = 0.0):
+                 ack_poll_s: float = 0.0, watch_x0: bool = False):
         self.client = client
         self.poll_s, self.status_period_s = poll_s, status_period_s
         self.stale_after_s, self.trigger_overdue_s = stale_after_s, trigger_overdue_s
@@ -134,6 +135,14 @@ class PLCService:
         self._last_poll = 0.0
         self._cmd_bits = (AM.PASS_BIT, AM.REJECT_BIT)
         self._prev_dev: dict = {}                      # last observed value per device, for DEVICE_CHANGE events
+        # Bottle accounting (opt-in: one more transaction per poll). X0 is read BEFORE M2 in every poll and
+        # the ladder sets M2 in the scan X0 rises, so when an X0 rise is read, M2 must have risen since the
+        # previous X0 read (or in this one). If not, the PLC could not trigger for this bottle (M2 already ON,
+        # or held reset by M1 during a reject cycle).
+        self.watch_x0 = watch_x0
+        self._x0_prev: Optional[bool] = None
+        self._m2_rose = False                          # M2 rose since the last observation that read X0
+        self.untriggered = 0
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -263,6 +272,7 @@ class PLCService:
                 self._event("CONNECT_FAILED", error=f"{type(e).__name__}: {e}")
                 raise
             self._m2_prev = None                      # first poll after connect classifies M2 afresh
+            self._x0_prev = None                      # ...and X0: no bottle is inferred across a reconnect
             self._after_reconnect = True
             self._event("CONNECTED", latency_ms=lat, ack="after fault" if was_fault else "")
             return lat
@@ -372,7 +382,7 @@ class PLCService:
             self._snapshot, self._snapshot_mono = snap, time.monotonic()
         self._last_status = time.monotonic()
         self._device_changes(snap)
-        self._observe(snap["internal"])
+        self._observe(dict(snap["internal"], X0=snap["inputs"]["X0"]) if self.watch_x0 else snap["internal"])
         return snap
 
     def _device_changes(self, snap: dict) -> None:
@@ -402,11 +412,28 @@ class PLCService:
 
     # ------------------------------------------------------------------ trigger tracking
     def _observe(self, internal: dict) -> None:
-        """Feed one reading of M0/M1/M2 into the trigger state machine (service thread only)."""
+        """Feed one reading of M0/M1/M2 (and X0, when watched) into the trigger state machine
+        (service thread only)."""
         m2 = bool(internal.get(AM.TRIGGER_BIT, 0))
         now = time.monotonic()
         with self._lock:
             tr = self._trigger
+        rose_now = bool(m2 and not self._m2_prev)
+        x0 = internal.get("X0")
+        if x0 is None:                                # an observation without X0 (e.g. a command's ack read)
+            self._m2_rose = self._m2_rose or rose_now
+        else:
+            rising = bool(x0) and self._x0_prev is False
+            # X0 was read before M2 here, so an M2 rise in THIS observation can explain this X0 rise or the
+            # next one; an earlier rise explains only this one. Each M2 rise accounts for one X0 rise.
+            if rising and not (self._m2_rose or rose_now):
+                why = ("M1 ON: the reject cycle holds M2 reset (ladder net 5)" if internal.get(AM.REJECT_BIT)
+                       else "M2 already ON: the previous bottle was not answered yet" if self._m2_prev
+                       else "X0 rose but the ladder did not set M2")
+                self.untriggered += 1
+                self._event("BOTTLE_UNTRIGGERED", device="X0", error=why)
+            self._m2_rose = rose_now and not rising
+            self._x0_prev = bool(x0)
         if m2:
             if not self._m2_prev:                     # rising edge (or first reading after connect)
                 trig = Trigger(next(self._ids), now, time.time(), after_reconnect=bool(self._after_reconnect))
@@ -444,6 +471,7 @@ class PLCService:
         with self._lock:
             self._trigger = None
         self._m2_prev = None
+        self._x0_prev = None
 
     def _poll_cycle(self) -> None:
         self._last_poll = time.monotonic()
@@ -453,7 +481,7 @@ class PLCService:
             if time.monotonic() - self._last_status >= self.status_period_s:
                 self._read_status_now()
             else:
-                self._observe(self.client.read_many([AM.TRIGGER_BIT, *self._cmd_bits]))
+                self._observe(self.client.read_many((["X0"] if self.watch_x0 else []) + [AM.TRIGGER_BIT, *self._cmd_bits]))
         except PLCError as e:
             self._on_link_error(e)
 
@@ -559,12 +587,16 @@ class PLCService:
                 return res
             if st[dev]:
                 res.cmd_seen_on = True
-            if not st[AM.TRIGGER_BIT] and not st[dev]:
+            held = dev in AM.HELD_UNTIL_DONE
+            if not st[AM.TRIGGER_BIT] and (not st[dev] or held):
                 res.ack_ms = (time.perf_counter() - t0) * 1000
                 res.status = ACKED
+                res.cmd_held = bool(st[dev])
                 self._unresolved_command = False
                 self._event("COMMAND_ACKED", device=dev, command=v, trigger_id=trigger_id,
-                            ack="command bit and M2 cleared by the PLC", latency_ms=res.ack_ms)
+                            ack=(f"M2 cleared; {dev} held ON by the ladder until the reject cycle ends"
+                                 if res.cmd_held else "command bit and M2 cleared by the PLC"),
+                            latency_ms=res.ack_ms)
                 self._observe(st)
                 return res
             if time.monotonic() >= deadline:

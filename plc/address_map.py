@@ -46,6 +46,13 @@ TRIGGER_BIT = "M2"                     # PLC -> Python: bottle at the inspection
 PASS_BIT = "M0"                        # Python -> PLC: PASS (PLC self-clears it and M2)
 REJECT_BIT = "M1"                      # Python -> PLC: REJECT (PLC self-clears it and M2, then T0 -> Y0 -> T1)
 COMMAND_BITS = {"PASS": PASS_BIT, "REJECT": REJECT_BIT}
+# Command bits the ladder deliberately keeps ON after consuming them: M1 enables T0 (net 5) and is reset
+# only by T1 (net 7), so it stays ON for T0 + T1. For these, "consumed" = M2 cleared; the bit dropping
+# later means the reject cycle finished. While M1 is ON, net 5 also resets M2 every scan, so no new
+# trigger can be raised until the reject cycle ends.
+HELD_UNTIL_DONE = frozenset({REJECT_BIT})
+# Stated timer contract (K15 / K5 at the 100 ms base). The handshake test measures the real values.
+T0_CONTRACT_S, T1_CONTRACT_S = 1.5, 0.5
 
 # Devices Python may write: exactly the two command bits.
 WRITE_ALLOWLIST: frozenset = frozenset(COMMAND_BITS.values())

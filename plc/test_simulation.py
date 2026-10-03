@@ -13,6 +13,7 @@ nothing about the real ladder. Nothing in --real writes unless --write-test is g
 from __future__ import annotations
 
 import argparse
+import collections
 import socket
 import statistics
 import sys
@@ -42,6 +43,7 @@ class FakePLC:
         self.enforce_station = enforce_station
         self.count = 0
         self.writes: list = []        # every FC05 received: (address, 0/1)
+        self.lock = threading.RLock() # a ladder scan and a Modbus request never interleave (as in a real PLC)
         self._srv = socket.socket(); self._srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._srv.bind(("127.0.0.1", 0)); self._srv.listen(8)
         self.port = self._srv.getsockname()[1]
@@ -74,7 +76,8 @@ class FakePLC:
                 while b"\r\n" in buf:
                     line, buf = buf.split(b"\r\n", 1)
                     self.count += 1
-                    reply = self._handle(line + b"\r\n")
+                    with self.lock:
+                        reply = self._handle(line + b"\r\n")
                     if reply == "CLOSE":
                         c.close(); return
                     if reply is not None:
@@ -134,44 +137,123 @@ class FakePLC:
 
 
 class FakeLadder:
-    """FAKE model of the user-stated machine contract, to exercise PLCService without a simulator:
-    M0 -> clear M0, M2.   M1 -> clear M1, M2, then T0 (K15) -> Y0 ON -> T1 (K5) -> Y0 OFF.
-    `scale` shrinks the 100 ms timer base so tests run fast. NOT the real ladder."""
+    """FAKE PLC program: a scan-by-scan emulation of the ladder decoded from `final_year.isp` (saved
+    2026-10-03 09:06; SYSTEM_ROADMAP/PLC_COMMUNICATION.md section 0). Every scan runs, in order:
 
-    def __init__(self, fake, scale=0.1):
+        1  X1          -> SET Y1                 conveyor start
+        2  X2          -> RST Y1                 conveyor stop
+        3  X0 (rising) -> SET M2                 bottle at the station: inspection trigger
+        4  M0          -> RST M2, RST M0, CNT C0 PASS command (C0 counts PASS commands)
+        5  M1          -> TMR T0 K<t0_k>, RST M2, CNT C1
+        6  T0          -> TMR T1 K<t1_k>, OUT Y0 reject solenoid on while T0 is done
+        7  T1          -> RST M1, RST M2         reject cycle over: M1 drops, T0/T1/Y0 reset next scan
+
+    Consequences this reproduces (they matter to the application, not just to tests):
+      * REJECT is consumed at once (M2 drops) but M1 stays ON for T0 + T1; Y0 is ON for about T1.
+      * Net 5 resets M2 on EVERY scan while M1 is ON, so a bottle reaching X0 during a reject cycle
+        never produces a trigger Python can see.
+    Timers count in 100 ms units like Delta's T0..T183; `scale` shrinks that base so tests run fast.
+    The default presets are the stated contract (K15 = 1.5 s, K5 = 0.5 s); the saved file has K150/K50.
+    `ignore` = True stops nets 4/5 consuming commands (a PLC that never answers). NOT the real PLC."""
+
+    def __init__(self, fake, scale=0.1, t0_k=15, t1_k=5, scan_s=0.002):
         self.f, self.tick = fake, 0.1 * scale
-        self.ignore = False                   # True: the "PLC" never consumes commands
-        self.y0_log: list = []                # (monotonic, 0/1)
+        self.t0_k, self.t1_k, self.scan_s = t0_k, t1_k, scan_s
+        self.ignore = False
+        self.y0_log: list = []                # (monotonic, 0/1) every Y0 change
+        self.x0_edges = 0                     # rising edges of X0 the ladder saw
+        self._x0_until = 0.0                  # trigger(): X0 held ON until this monotonic time
+        # Field wiring: the physical input state. Modbus reads (FC02) see fake.inputs, which the scan
+        # refreshes from this, like a PLC's input image latched at scan start -- so X0 never reads ON
+        # before the scan that also sets M2.
+        self.raw = {AM.address_of(x): 0 for x in ("X0", "X1", "X2")}
+        self._queued: "collections.deque" = collections.deque()      # bottles waiting for a clear beam
+        self.gap_s = 0.05
+        self._x0_low_since = 0.0
         self._stop = False
         threading.Thread(target=self._scan, daemon=True).start()
 
-    def trigger(self):                        # what X0 -> M2 does in the real ladder
-        self.f.bits[AM.address_of("M2")] = 1
+    def trigger(self, hold_s=None):
+        """A bottle passes the photo-eye: X0 ON for `hold_s` (default a few scans), then OFF. If the beam
+        is still blocked by the previous bottle, this one starts after the beam has been clear for `gap_s`
+        -- two bottles never merge into one continuous X0 pulse (a real gap between bottles at the photo-eye
+        is tens of ms: e.g. 20 mm at 300 mm/s = 67 ms)."""
+        hold = max(4 * self.scan_s, 0.01) if hold_s is None else hold_s
+        self._queued.append(hold)
 
     def stop(self):
         self._stop = True
 
     def _scan(self):
-        b, a = self.f.bits, AM.address_of
-        phase, t_phase = "idle", 0.0
+        bits, regs, a = self.f.bits, self.f.regs, AM.address_of
+        X0, X1, X2, Y0, Y1 = a("X0"), a("X1"), a("X2"), a("Y0"), a("Y1")
+        M0, M1, M2, T0, T1, C0, C1 = a("M0"), a("M1"), a("M2"), a("T0"), a("T1"), a("C0"), a("C1")
+        x0_prev = cnt0_prev = cnt1_prev = False
+        t0_start = t1_start = None
         while not self._stop:
-            time.sleep(0.002)
-            if not self.ignore:
-                if b.get(a("M0")):
-                    b[a("M0")] = 0; b[a("M2")] = 0
-                if b.get(a("M1")) and phase == "idle":
-                    b[a("M1")] = 0; b[a("M2")] = 0
-                    phase, t_phase = "T0", time.monotonic()
+            time.sleep(self.scan_s)
             now = time.monotonic()
-            if phase == "T0":
-                self.f.regs[a("T0")] = min(15, int((now - t_phase) / self.tick))
-                if now - t_phase >= 15 * self.tick:
-                    b[a("Y0")] = 1; self.y0_log.append((now, 1)); phase, t_phase = "T1", now
-            elif phase == "T1":
-                self.f.regs[a("T1")] = min(5, int((now - t_phase) / self.tick))
-                if now - t_phase >= 5 * self.tick:
-                    b[a("Y0")] = 0; self.y0_log.append((now, 0)); phase = "idle"
-                    self.f.regs[a("T0")] = self.f.regs[a("T1")] = 0
+            # trigger()'s pulse ends only after a scan has seen it ON (Windows sleeps ~15 ms, not scan_s)
+            if self._x0_until and now >= self._x0_until and x0_prev:
+                self._x0_until = 0.0
+                self.raw[X0] = 0
+                self._x0_low_since = now
+            if (not self.raw[X0] and not x0_prev and self._queued        # beam clear long enough: next bottle
+                    and now - self._x0_low_since >= self.gap_s):
+                self._x0_until = now + self._queued.popleft()
+                self.raw[X0] = 1
+            for dev in (X0, X1, X2):              # a simulator-test write lands in bits: treat it as the input
+                if dev in bits:
+                    self.raw[dev] = bits.pop(dev)
+            # A real PLC answers Modbus between scans, never mid-scan. Work on copies and commit what the
+            # scan changed in one update, so the fake server can't see e.g. M2 set by net 3 before net 5.
+            b0, r0 = dict(bits), dict(regs)
+            b, r = dict(b0), dict(r0)
+            image = dict(self.raw)
+            x0, x1, x2 = (bool(image[d]) for d in (X0, X1, X2))
+            if x1:                                                        # net 1
+                b[Y1] = 1
+            if x2:                                                        # net 2
+                b[Y1] = 0
+            if x0 and not x0_prev:                                        # net 3
+                b[M2] = 1
+                self.x0_edges += 1
+            x0_prev = x0
+            m0 = bool(b.get(M0)) and not self.ignore                      # net 4
+            if m0:
+                b[M2] = 0; b[M0] = 0
+            if m0 and not cnt0_prev:
+                r[C0] = min(9999, r.get(C0, 0) + 1)
+            cnt0_prev = m0
+            m1 = bool(b.get(M1)) and not self.ignore                      # net 5
+            if m1:
+                t0_start = now if t0_start is None else t0_start
+                r[T0] = min(self.t0_k, int((now - t0_start) / self.tick))
+                b[M2] = 0
+            else:
+                t0_start, r[T0] = None, 0
+            if m1 and not cnt1_prev:
+                r[C1] = min(9999, r.get(C1, 0) + 1)
+            cnt1_prev = m1
+            t0_done = t0_start is not None and now - t0_start >= self.t0_k * self.tick
+            b[T0] = int(t0_done)
+            if t0_done:                                                   # net 6
+                t1_start = now if t1_start is None else t1_start
+                r[T1] = min(self.t1_k, int((now - t1_start) / self.tick))
+            else:
+                t1_start, r[T1] = None, 0
+            y0 = int(t0_done)
+            if y0 != b.get(Y0, 0):
+                self.y0_log.append((now, y0))
+            b[Y0] = y0
+            t1_done = t1_start is not None and now - t1_start >= self.t1_k * self.tick
+            b[T1] = int(t1_done)
+            if t1_done:                                                   # net 7
+                b[M1] = 0; b[M2] = 0
+            with self.f.lock:                                             # end of scan: one atomic commit
+                bits.update({k: v for k, v in b.items() if b0.get(k) != v})
+                regs.update({k: v for k, v in r.items() if r0.get(k) != v})
+                self.f.inputs.update(image)
 
 
 def _expect(exc, fn, what):

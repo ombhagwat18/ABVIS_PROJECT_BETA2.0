@@ -29,8 +29,11 @@ import annotation_studio
 import bench
 import charts
 import dataset as D
+import decision as DEC
 import detect
 import infer
+import machine_cycle as MC
+import segment
 from plc import (CONNECTED as PLC_CONNECTED, DEGRADED as PLC_DEGRADED, FAULT as PLC_FAULT, SERIAL_FORMATS, PLCClient,
                  PLCService, SerialTransport, TcpTransport, serial_ports)
 from plc import address_map as PLC_AM
@@ -156,6 +159,7 @@ class App(ctk.CTk):
         self.tab_analysis = AnalysisTab(self, self.tabs.tab("Analysis"))
         self.tab_live = LiveTab(self, self.tabs.tab("Live"))
         self.tab_machine = MachineTab(self, self.tabs.tab("Machine"))
+        self.tab_production = ProductionTab(self, self.tabs.tab("Production"))
         self.tab_bench = BenchTab(self, self.tabs.tab("Camera"))
         self.tab_data = DataTab(self, self.tabs.tab("Data health"))
         self.tab_annotate = annotation_studio.AnnotationTab(self, self.tabs.tab("Annotate"))
@@ -165,12 +169,13 @@ class App(ctk.CTk):
         self.reload()
         self.after(60, self.pump)
 
-    TABS = ("Label", "Defects", "Train", "Analysis", "Live", "Machine", "Camera",
+    TABS = ("Label", "Defects", "Train", "Analysis", "Live", "Machine", "Production", "Camera",
             "Data health", "Annotate", "Settings")
 
     def all_tabs(self):
         return (self.tab_label, self.tab_defects, self.tab_train, self.tab_analysis,
-                self.tab_live, self.tab_machine, self.tab_bench, self.tab_data, self.tab_annotate,
+                self.tab_live, self.tab_machine, self.tab_production, self.tab_bench, self.tab_data,
+                self.tab_annotate,
                 self.tab_settings)
 
     def apply_font_scale(self, scale: float, save: bool = True):
@@ -227,7 +232,9 @@ class App(ctk.CTk):
             return
         # The camera thread is holding the old project's model and thresholds;
         # let it keep running and the Live tab scores frames against a model
-        # that no longer belongs to the data on screen.
+        # that no longer belongs to the data on screen. The inspection line goes first: it is
+        # driving those cameras and logging into the old project's folder.
+        self.tab_production.stop_line()
         self.cams.stop()
         D.use_project(name)
         self.reload()
@@ -284,6 +291,7 @@ class App(ctk.CTk):
             name = D.create_project(title, task=task)
         except ValueError as e:
             return messagebox.showerror("Cannot create", str(e))
+        self.tab_production.stop_line()
         self.cams.stop()
         D.use_project(name)
         self.reload()
@@ -314,6 +322,7 @@ class App(ctk.CTk):
             t.refresh()
 
     def on_close(self):
+        self.tab_production.close()          # stops the machine cycle before the cameras and the PLC link
         self.cams.stop()
         self.tab_machine.close()
         self.plc.stop()                      # sends nothing; the PLC clears M0/M1 itself
@@ -866,8 +875,11 @@ class MachineTab:
             self.flow_lbl.configure(text="PLC is in STOP: the ladder is not executing. Values below are memory contents only; "
                                          "test inputs and commands are disabled.", text_color=BAD)
         elif trig is not None and trig.state == "PENDING":
-            self.flow_lbl.configure(text=f"INSPECTION TRIGGER RECEIVED (M2 ON, trigger #{trig.id})  -  camera not linked yet: "
-                                         f"AI result: none  -  waiting for PASS / REJECT", text_color=WARN)
+            line = getattr(self.app, "tab_production", None)
+            owner = ("handled by the inspection line (Production tab)" if line is not None and line.running
+                     else "inspection line not running: AI result: none  -  waiting for a test PASS / REJECT")
+            self.flow_lbl.configure(text=f"INSPECTION TRIGGER RECEIVED (M2 ON, trigger #{trig.id})  -  {owner}",
+                                    text_color=WARN)
         else:
             self.flow_lbl.configure(text="Waiting for bottle sensor (X0 -> M2).   Conveyor "
                                          + ("RUNNING" if flat["Y1"] else "STOPPED")
@@ -890,6 +902,442 @@ class MachineTab:
             self.log.delete("1.0", "end")
             self.log.insert("end", "\n".join(reversed(lines[-120:])))      # newest first
             self.log.configure(state="disabled")
+
+
+# ---------------------------------------------------------------- Production
+class ProductionTab:
+    """The inspection line on one screen: PLC trigger -> line cameras -> selected AI task -> decision
+    -> FIFO -> scheduled PLC command -> Y0, plus counters, the FIFO / history table and alarms.
+
+    The logic lives in machine_cycle.py (FIFO, deadlines, PLC commands) and decision.py (rules); this
+    tab only starts/stops it and shows it. It shares the app's one PLCService and CameraSet: starting
+    the line stops the Live tab's cameras, and the line's cameras run capture-only (the models run
+    per bottle inside the Inspector)."""
+
+    SLOTS = ("Camera 0", "Camera 1")
+    TIMING = (("inspection_to_reject_mm", "Inspect->reject mm", 70), ("conveyor_mm_s", "Speed mm/s", 60),
+              ("plc_t0_s", "T0 s", 46), ("plc_t1_s", "T1 s", 46), ("reject_tolerance_s", "Late limit s", 46),
+              ("inspect_frames", "Frames", 36), ("inspect_window_s", "Window s", 46),
+              ("capture_delay_s", "Capture delay s", 46))
+
+    def __init__(self, app: App, parent):
+        self.app = app
+        self.line = None                         # machine_cycle.MachineCycle (kept after Stop for display)
+        self._imgs: dict = {}
+        self._srcmap: dict = {}                  # option label -> camera index
+        self._table_sig = None
+        self._alarm_n = -1
+        self._next_feed = 0.0
+        self._tick_n = 0
+        self._loading = False
+        cfg = MC.line_settings(app.settings)
+
+        bar = ctk.CTkFrame(parent, fg_color=PANEL)
+        bar.pack(fill="x", pady=(0, 6))
+        self.btn_start = ctk.CTkButton(bar, text="Start line", width=96, fg_color=ACC, text_color=ACC_T,
+                                       hover_color=ACC_H, command=self.start_line)
+        self.btn_start.pack(side="left", padx=(10, 4), pady=8)
+        ctk.CTkButton(bar, text="Stop line", width=86, command=self.stop_line).pack(side="left")
+        ctk.CTkLabel(bar, text="AI task").pack(side="left", padx=(14, 4))
+        self.task = ctk.CTkOptionMenu(bar, values=list(DEC.TASK_LABELS), width=200)
+        self.task.set(next((k for k, v in DEC.TASK_LABELS.items() if v == cfg["line_task"]), "Detection"))
+        self.task.pack(side="left")
+        ctk.CTkButton(bar, text="Scan cameras", width=110, fg_color="transparent", border_width=1, text_color=INK,
+                      command=self.scan).pack(side="left", padx=8)
+        self.line_lbl = ctk.CTkLabel(bar, text="LINE STOPPED", font=("Segoe UI", 16, "bold"), text_color=DIM)
+        self.line_lbl.pack(side="left", padx=14)
+        self.feed_s = ctk.CTkEntry(bar, width=40)
+        self.feed_s.insert(0, "4")
+        self.feed_s.pack(side="right", padx=(2, 10))
+        self.feed = ctk.CTkCheckBox(bar, text="auto-feed every (s)", width=140)
+        self.feed.pack(side="right")
+        self.sim_btn = ctk.CTkButton(bar, text="Simulate bottle (X0)", width=150, fg_color="transparent",
+                                     border_width=1, text_color=WARN, command=self.simulate_bottle)
+        self.sim_btn.pack(side="right", padx=6)
+        self.models_lbl = ctk.CTkLabel(parent, text="", font=MONO, text_color=DIM, anchor="w", justify="left")
+        self.models_lbl.pack(fill="x", padx=6, pady=(0, 4))
+
+        top = ctk.CTkFrame(parent, fg_color="transparent")
+        top.pack(fill="x", pady=(0, 6))
+        for c, w in enumerate((3, 4, 4, 5)):
+            top.grid_columnconfigure(c, weight=w, uniform="p")
+
+        def box(col, title):
+            f = ctk.CTkFrame(top, fg_color=PANEL)
+            f.grid(row=0, column=col, sticky="nsew", padx=(0, 6))
+            ctk.CTkLabel(f, text=title, font=("Segoe UI", 11, "bold"), text_color=DIM).pack(anchor="w", padx=10,
+                                                                                            pady=(8, 2))
+            return f
+        plc_box = box(0, "MACHINE / PLC")
+        self.plc_lbl = ctk.CTkLabel(plc_box, text="", font=MONO, justify="left", anchor="nw")
+        self.plc_lbl.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        self.cam_pick, self.cam_lbl, self.cam_img = {}, {}, {}
+        for i, slot in enumerate(self.SLOTS):
+            f = box(1 + i, slot.upper())
+            self.cam_pick[slot] = ctk.CTkOptionMenu(f, values=["- not used -"], width=260)
+            self.cam_pick[slot].pack(anchor="w", padx=10)
+            self.cam_lbl[slot] = ctk.CTkLabel(f, text="", font=MONO, justify="left", anchor="w")
+            self.cam_lbl[slot].pack(fill="x", padx=10, pady=(4, 2))
+            self.cam_img[slot] = ctk.CTkLabel(f, text="no frame", text_color="#94a3b8", fg_color=VIDEO_BG,
+                                              height=190, corner_radius=6)
+            self.cam_img[slot].pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        ins = box(3, "INSPECTION (last bottle)")
+        row = ctk.CTkFrame(ins, fg_color="transparent")
+        row.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        self.ev_img = ctk.CTkLabel(row, text="no bottle yet", text_color="#94a3b8", fg_color=VIDEO_BG, width=200,
+                                   height=230, corner_radius=6)
+        self.ev_img.pack(side="left", fill="y")
+        side = ctk.CTkFrame(row, fg_color="transparent")
+        side.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        self.res_lbl = ctk.CTkLabel(side, text="--", font=("Segoe UI", 30, "bold"), text_color=DIM, anchor="w")
+        self.res_lbl.pack(anchor="w")
+        self.ins_lbl = ctk.CTkLabel(side, text="", font=MONO, justify="left", anchor="nw", wraplength=330)
+        self.ins_lbl.pack(fill="both", expand=True, anchor="w")
+
+        prod = ctk.CTkFrame(parent, fg_color=PANEL)
+        prod.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(prod, text="PRODUCTION", font=("Segoe UI", 11, "bold"), text_color=DIM).pack(side="left",
+                                                                                              padx=(10, 10))
+        self.cnt = {}
+        for key, title, col in (("total", "Total", INK), (infer.PASS, "PASS", GOOD), (infer.REJECT, "REJECT", BAD),
+                                (infer.FAULT, "FAULT", WARN), ("queue", "Queue", ACC),
+                                ("not_inspected", "Not inspected", WARN), ("missed_reject", "Missed rejects", BAD)):
+            cell = ctk.CTkFrame(prod, fg_color="transparent")
+            cell.pack(side="left", padx=10, pady=6)
+            self.cnt[key] = ctk.CTkLabel(cell, text="0", font=("Segoe UI", 22, "bold"), text_color=col)
+            self.cnt[key].pack()
+            ctk.CTkLabel(cell, text=title, text_color=DIM, font=("Segoe UI", 11)).pack()
+        self.travel_lbl = ctk.CTkLabel(prod, text="", font=MONO, text_color=DIM, justify="left")
+        self.travel_lbl.pack(side="right", padx=10)
+
+        tim = ctk.CTkFrame(parent, fg_color=PANEL)
+        tim.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(tim, text="LINE TIMING", font=("Segoe UI", 11, "bold"), text_color=DIM).pack(side="left",
+                                                                                               padx=(10, 6), pady=6)
+        self.tim = {}
+        for key, label, w in self.TIMING:
+            ctk.CTkLabel(tim, text=label, font=("Segoe UI", 11)).pack(side="left", padx=(6, 2))
+            e = ctk.CTkEntry(tim, width=w)
+            e.insert(0, f"{cfg[key]:g}")
+            e.pack(side="left")
+            self.tim[key] = e
+        ctk.CTkLabel(tim, text="FAULT ->", font=("Segoe UI", 11)).pack(side="left", padx=(8, 2))
+        self.fault_action = ctk.CTkOptionMenu(tim, values=["REJECT", "PASS"], width=86)
+        self.fault_action.set(str(cfg["fault_action"]).upper())
+        self.fault_action.pack(side="left")
+        ctk.CTkButton(tim, text="Save", width=60, command=self.save_timing).pack(side="left", padx=8)
+        self.tim_msg = ctk.CTkLabel(tim, text="", font=("Segoe UI", 11), text_color=DIM)
+        self.tim_msg.pack(side="left")
+
+        low = ctk.CTkFrame(parent, fg_color="transparent")
+        low.pack(fill="both", expand=True)
+        self.table = ctk.CTkTextbox(low, font=MONO, fg_color=PANEL, text_color=INK, wrap="none")
+        self.table.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        self.table.configure(state="disabled")
+        self.alarms = ctk.CTkTextbox(low, font=("Consolas", 11), fg_color=PANEL, text_color=BAD, width=380)
+        self.alarms.pack(side="left", fill="y")
+        self.alarms.configure(state="disabled")
+        app.after(300, self._tick)
+
+    # ------------------------------------------------------------ helpers
+    @property
+    def running(self) -> bool:
+        return self.line is not None and self.line.running
+
+    def refresh(self):
+        if not self._srcmap and not self._loading:
+            self.scan()
+
+    def scan(self):
+        if self.running:
+            return messagebox.showinfo("Line running", "Stop the line before scanning for cameras.")
+        n = int(self.app.settings.get("camera_probe", 5))
+        self._loading = True
+        self.app.run_bg(lambda: infer.list_cameras(n), self._set_cams)
+
+    def _set_cams(self, cams):
+        self._loading = False
+        self._srcmap = {f"{c['index']}: {c.get('name') or 'camera'} ({c['width']}x{c['height']} default)": c["index"]
+                        for c in cams}
+        values = ["- not used -"] + list(self._srcmap)
+        want = [int(s) for s in self.app.settings.get("line_cameras", []) if str(s).isdigit()]
+        if not want:                                   # default: the EMEET Nova 4K units, else the first cameras
+            want = [c["index"] for c in cams if "EMEET" in str(c.get("name", "")).upper()][:2]
+        for slot, src in zip(self.SLOTS, want + [None] * 2):
+            self.cam_pick[slot].configure(values=values)
+            self.cam_pick[slot].set(next((k for k, v in self._srcmap.items() if v == src), values[0]))
+
+    def chosen(self) -> list:
+        out = []
+        for slot in self.SLOTS:
+            src = self._srcmap.get(self.cam_pick[slot].get())
+            if src is not None and src not in out:
+                out.append(src)
+        return out
+
+    def _timing_from_ui(self) -> dict:
+        out = {}
+        for key, label, _ in self.TIMING:
+            try:
+                v = float(self.tim[key].get())
+            except ValueError:
+                raise ValueError(f"{label}: not a number") from None
+            if v < 0:
+                raise ValueError(f"{label}: must be >= 0")
+            out[key] = int(v) if key == "inspect_frames" else v
+        if out["inspect_frames"] < 1:
+            raise ValueError("Frames: at least 1")
+        if out["plc_t0_s"] <= 0 or out["plc_t1_s"] <= 0:
+            raise ValueError("T0 and T1 must be > 0 (they are the ladder's timer presets)")
+        out["fault_action"] = self.fault_action.get()
+        return out
+
+    def save_timing(self) -> bool:
+        try:
+            vals = self._timing_from_ui()
+        except ValueError as e:
+            self.tim_msg.configure(text=str(e), text_color=BAD)
+            return False
+        self.app.settings.update(vals)
+        D.save_settings(self.app.settings)
+        tt, measured = MC.travel_time(MC.line_settings(self.app.settings))
+        self.tim_msg.configure(text=f"saved: travel {tt:.2f} s" + ("" if measured else " (= T0: distance/speed not set)"),
+                               text_color=DIM)
+        return True
+
+    # ------------------------------------------------------------ line control
+    def start_line(self, models: dict | None = None):
+        """models: injected {"classification"/"detection"/"segmentation": object} for the self-test;
+        normally the required models are loaded in the background first."""
+        if self.running or self._loading:
+            return
+        if self.app.plc.link_state() != PLC_CONNECTED:
+            return messagebox.showwarning("PLC", "Connect the PLC first (Machine tab): the line is driven by its "
+                                                 "trigger (X0 -> M2).")
+        srcs = self.chosen()
+        if not srcs:
+            return messagebox.showinfo("No camera", "Choose Camera 0 and/or Camera 1 (Scan cameras), then Start.")
+        if not self.save_timing():
+            return
+        task = DEC.TASK_LABELS[self.task.get()]
+        self.app.settings.update(line_task=task, line_cameras=srcs)
+        D.save_settings(self.app.settings)
+        stages = DEC.TASKS[task]
+        if models is not None:
+            return self._go(task, srcs, models)
+        self._loading = True
+        self.line_lbl.configure(text="LOADING MODELS…", text_color=WARN)
+
+        def work():
+            out, errs = {}, []
+            if DEC.CLASSIFICATION in stages:
+                stamp = D.load_config().get("active_model")
+                if not stamp:
+                    errs.append("Classification: no active classifier in this project (Train tab -> Use)")
+                else:
+                    try:
+                        out[DEC.CLASSIFICATION] = infer.Model(stamp)
+                    except Exception as e:                   # noqa: BLE001 - shown to the operator
+                        errs.append(f"Classification: {type(e).__name__}: {e}")
+            if DEC.DETECTION in stages:
+                try:
+                    out[DEC.DETECTION] = self.app.tab_live.build_detector()
+                except Exception as e:                       # noqa: BLE001
+                    errs.append(f"Detection: {e}")
+            if DEC.SEGMENTATION in stages:
+                try:
+                    out[DEC.SEGMENTATION] = segment.YoloSegmenter(
+                        weights=self.app.settings.get("segmenter_weights") or None,
+                        conf=float(self.app.settings.get("segmenter_conf", segment.DEV_CONF)))
+                except Exception as e:                       # noqa: BLE001
+                    errs.append(f"Segmentation: {e}")
+            return out, errs
+
+        def done(r):
+            self._loading = False
+            out, errs = r
+            if errs:
+                self.line_lbl.configure(text="LINE STOPPED", text_color=DIM)
+                return messagebox.showerror("Cannot start the line", "\n\n".join(errs))
+            self._go(task, srcs, out)
+        self.app.run_bg(work, done)
+
+    def _go(self, task, srcs, models):
+        if self.app.tab_live.running:
+            self.app.tab_live.stop()
+        cfg = MC.line_settings(self.app.settings)
+        names = {v: k for k, v in self._srcmap.items()}
+        cams = []
+        for slot, src in zip(self.SLOTS, srcs):
+            cam = self.app.cams.add(src, f"{slot} (#{src})")
+            cam.stop()                                       # a capture mode only applies on (re)open
+            cam.capture_wh = tuple(cfg["line_capture_wh"]) if cfg["line_capture_wh"] else None
+            cam.fourcc = cfg["line_fourcc"] or None
+            cams.append(cam)
+        self.app.cams.start(srcs, None, None)                # capture only: models run per bottle
+        self._slot_src = dict(zip(self.SLOTS, srcs))
+        insp = MC.Inspector(cams, task, classifier=models.get(DEC.CLASSIFICATION),
+                            detector=models.get(DEC.DETECTION), segmenter=models.get(DEC.SEGMENTATION),
+                            frames=cfg["inspect_frames"], window_s=cfg["inspect_window_s"])
+        self.app.plc.watch_x0 = True                          # bottle accounting: X0 edges with no trigger
+        self.line = MC.MachineCycle(self.app.plc, insp, cfg, log_dir=D.PROJECT_DIR / "production")
+        self.line.start()
+        self.btn_start.configure(state="disabled")
+        self._table_sig = None
+
+    def stop_line(self):
+        if self.line is not None:
+            self.line.stop()
+        self.app.plc.watch_x0 = False
+        self.app.cams.stop()
+        self.btn_start.configure(state="normal")
+
+    def close(self):
+        self.stop_line()
+
+    def simulate_bottle(self):
+        """Simulator only: pulse X0 (the photo-eye) through the Machine tab's guarded test stimulus."""
+        if not self.app.plc.simulator_mode:
+            return messagebox.showinfo("Simulator only", "Bottles can only be simulated on the ISPSoft simulator.")
+        self.app.tab_machine.pulse_x0()
+
+    # ------------------------------------------------------------ view (main thread)
+    def _tick(self):
+        try:
+            self._update()
+        except Exception:                                    # a display glitch must never stop the loop
+            traceback.print_exc()
+        self.app.after(250, self._tick)
+
+    def _update(self):
+        self._tick_n += 1
+        svc = self.app.plc
+        h = svc.health_check()
+        st = h["link_state"]
+        snap = svc.snapshot() if st == PLC_CONNECTED else None
+        if snap:
+            fl = {}
+            for k in ("inputs", "internal", "outputs", "timers", "counters"):
+                fl.update(snap[k])
+            on = lambda n: "ON " if fl.get(n) else "off"
+            lat = "--" if h["last_latency_ms"] is None else f"{h['last_latency_ms']:.0f} ms"
+            txt = (f"link    {st}\nPLC     {'RUN' if snap['plc_run'] else 'STOP'}   latency {lat}\n"
+                   f"X0 {on('X0')}  M2 {on('M2')}\nM0 {on('M0')}  M1 {on('M1')}\nY0 {on('Y0')}  Y1 {on('Y1')}\n"
+                   f"T0 {fl.get('T0', 0) / 10:4.1f}s T1 {fl.get('T1', 0) / 10:4.1f}s\n"
+                   f"C0 {fl.get('C0', 0)}  C1 {fl.get('C1', 0)}\nuntriggered X0: {svc.untriggered}\n"
+                   f"{svc.client.transport.description}")
+        else:
+            txt = f"link    {st}\nno PLC data\n{svc.client.transport.description}"
+        self.plc_lbl.configure(text=txt, text_color=INK if snap else BAD)
+        self.sim_btn.configure(state="normal" if svc.simulator_mode and snap else "disabled")
+
+        # cameras
+        now = time.monotonic()
+        show_img = self._tick_n % 2 == 0
+        for slot in self.SLOTS:
+            src = getattr(self, "_slot_src", {}).get(slot) if self.running else None
+            cam = self.app.cams.get(src) if src is not None else None
+            if cam is None or not cam.armed:
+                pick = self.cam_pick[slot].get()
+                self.cam_lbl[slot].configure(text="STOPPED" if pick != "- not used -" else "not used", text_color=DIM)
+                continue
+            age = None if cam.frame_ts is None else now - cam.frame_ts
+            if cam.error:
+                state, col = f"FAULT: {cam.error}"[:60], BAD
+                if "stopped returning" in cam.error and len(self.app.cams.running()) >= 1:
+                    # measured 2026-10-03: two EMEET Nova 4K on one USB 2.0 hub -> only one high-res stream
+                    state += "\nanother camera is streaming: USB bandwidth?\nuse separate USB ports or 640x480"
+            elif not cam.alive:
+                state, col = "DISCONNECTED", BAD
+            elif age is None:
+                state, col = "CONNECTING…", WARN
+            elif age > infer.MAX_RESULT_AGE_S:
+                state, col = f"FAULT: frame timeout ({age:.1f} s)", BAD
+            else:
+                state, col = "CONNECTED", GOOD
+            wh = "x".join(map(str, cam.frame_wh)) if cam.frame_wh else "--"
+            ts = "--" if age is None else f"#{cam.frame_seq}  {age * 1000:.0f} ms ago"
+            self.cam_lbl[slot].configure(text=f"{state}\n{wh}  {cam.fps:.1f} fps\nframe {ts}", text_color=col)
+            if show_img:
+                f = cam.latest_frame()
+                if f is not None:
+                    img = bgr_to_ctk(f.image, (330, 190))
+                    self._imgs[slot] = img
+                    self.cam_img[slot].configure(image=img, text="")
+
+        line = self.line
+        if line is None:
+            self.line_lbl.configure(text="LOADING MODELS…" if self._loading else "LINE STOPPED",
+                                    text_color=WARN if self._loading else DIM)
+            return
+        s = line.snapshot()
+        models = line.inspector.models()
+        task = line.inspector.task
+        self.models_lbl.configure(
+            text=f"task {task}   classifier {models['classification'] or '-'}   detector {models['detection'] or '-'}   "
+                 f"segmenter {models['segmentation'] or '-'}   frames/camera {line.inspector.frames}   "
+                 f"log {D.PROJECT_DIR.name}/production/")
+        if s["error"]:
+            self.line_lbl.configure(text="LINE ERROR", text_color=BAD)
+        else:
+            self.line_lbl.configure(text="LINE RUNNING" if s["running"] else "LINE STOPPED",
+                                    text_color=GOOD if s["running"] else DIM)
+        c = s["counts"]
+        for k, w in self.cnt.items():
+            w.configure(text=str(s["queue"] if k == "queue" else c.get(k, 0)))
+        self.travel_lbl.configure(text=f"travel {s['travel_s']:.2f} s "
+                                       + ("(measured distance/speed)" if s["travel_measured"]
+                                          else "(= T0: distance/speed not set)"))
+        b = s["last"]
+        if b is not None:
+            col = {infer.PASS: GOOD, infer.REJECT: BAD}.get(b.final or b.decision, WARN)
+            shown = b.final or b.decision or "--"
+            self.res_lbl.configure(text=shown + ("" if b.final else " …"), text_color=col)
+            conf = "--" if b.confidence is None else f"{b.confidence:.2f}"
+            ms = "--" if b.infer_ms is None else f"{b.infer_ms:.0f} ms / {b.frames} frames"
+            self.ins_lbl.configure(text=(f"Bottle    {b.inspection_id}   (trigger #{b.trigger_id})\n"
+                                         f"Defect    {', '.join(b.defects) or ('-' if b.decision == infer.PASS else b.reason)}\n"
+                                         f"Conf.     {conf}\nInference {ms}\n"
+                                         f"Sched.rej {MC._wall(b.scheduled_wall)}\nCommand   {b.command or '-'}\n"
+                                         f"PLC       {b.plc_status or b.status}\n{b.note}"))
+            if b.thumb is not None and getattr(self, "_thumb_for", None) is not b:
+                self._thumb_for = b
+                self._ev = bgr_to_ctk(b.thumb, (200, 230))
+                self.ev_img.configure(image=self._ev, text="")
+        # FIFO + history table
+        rows = list(s["fifo"]) + list(reversed(s["history"]))
+        sig = tuple((r.inspection_id, r.status, r.final, r.plc_status) for r in rows[:40])
+        if sig != self._table_sig:
+            self._table_sig = sig
+            head = (f"{'ID':<7}{'TIME':<14}{'RESULT':<8}{'AI':<8}{'DEFECT':<26}{'CONF':>5}  {'SCHED.REJECT':<14}"
+                    f"{'CMD':<7}{'STATUS':<14}PLC")
+            lines = [head, "-" * len(head)]
+            for r in rows[:200]:
+                conf = "" if r.confidence is None else f"{r.confidence:.2f}"
+                lines.append(f"{r.inspection_id:<7}{MC._wall(r.wall):<14}{(r.final or '…'):<8}{(r.decision or '…'):<8}"
+                             f"{(', '.join(r.defects) or ('-' if r.decision == infer.PASS else r.reason))[:25]:<26}"
+                             f"{conf:>5}  {MC._wall(r.scheduled_wall):<14}{(r.command or '-'):<7}{r.status:<14}"
+                             f"{r.plc_status}")
+            self.table.configure(state="normal")
+            self.table.delete("1.0", "end")
+            self.table.insert("end", "\n".join(lines))
+            self.table.configure(state="disabled")
+        if len(s["alarms"]) != self._alarm_n or (s["alarms"] and self._alarm_n == 20):
+            self._alarm_n = len(s["alarms"])
+            self.alarms.configure(state="normal")
+            self.alarms.delete("1.0", "end")
+            self.alarms.insert("end", "ALARMS (newest first)\n" + "\n".join(
+                f"{time.strftime('%H:%M:%S', time.localtime(t))}  {a}" for t, a in reversed(s["alarms"])))
+            self.alarms.configure(state="disabled")
+        # simulator auto-feed: one simulated bottle every N s while the line runs
+        if self.feed.get() and self.running and svc.simulator_mode and snap:
+            try:
+                every = max(0.5, float(self.feed_s.get()))
+            except ValueError:
+                every = 4.0
+            if now >= self._next_feed:
+                self._next_feed = now + every
+                self.app.tab_machine.pulse_x0()
 
 
 # --------------------------------------------------------------------- Label
@@ -2947,6 +3395,78 @@ def selftest():
     mt.mode.set("Simulator (TCP)"); mt._mode_changed()
     mt.test_link()
     assert until(lambda: "link test: 10/10" in mt.info.cget("text")), mt.info.cget("text")
+
+    # Production tab: the whole inspection line against the same FAKE PLC (decoded-ladder emulation) with
+    # fake cameras and a fake detector -- no device, no weights. Start line saves settings: restore them.
+    pt = app.tab_production
+    app.tabs.set("Production")
+    settings_before = D.SETTINGS_JSON.read_text() if D.SETTINGS_JSON.exists() else None
+    scene = {"kind": "good"}
+
+    class _Cap:
+        def isOpened(self):
+            return True
+        def get(self, *_):
+            return 0
+        def set(self, *_):
+            return True
+        def release(self):
+            pass
+        def read(self):
+            time.sleep(0.02)
+            img = np.zeros((300, 200, 3), np.uint8)
+            img[0, 0, 0] = 2 if scene["kind"] == "nocap" else 1
+            return True, img
+
+    def _yolo(frame):
+        boxes = [([60, 40, 140, 290], 0.95, 0), ([80, 25, 120, 60], 0.9, 1), ([65, 120, 135, 220], 0.88, 2)]
+        if int(frame[0, 0, 0]) == 2:
+            boxes.pop(1)                                             # no cap
+        return [b[0] for b in boxes], [b[1] for b in boxes], [b[2] for b in boxes]
+
+    real_open = infer.open_capture
+    infer.open_capture = lambda src, *_: _Cap()
+    try:
+        # the operator's saved line_cameras (real indices, e.g. [2, 3]) must not decide what the fakes get
+        app.settings.pop("line_cameras", None)
+        pt._set_cams([{"index": 0, "width": 640, "height": 480, "name": "EMEET SmartCam Nova 4K"},
+                      {"index": 1, "width": 640, "height": 480, "name": "EMEET SmartCam Nova 4K"}])
+        assert pt.chosen() == [0, 1], pt.chosen()
+        pt.task.set("Detection")
+        for key, val in (("plc_t0_s", "0.75"), ("plc_t1_s", "0.25"), ("inspect_frames", "2"),
+                         ("inspection_to_reject_mm", "0"), ("conveyor_mm_s", "0")):
+            pt.tim[key].delete(0, "end"); pt.tim[key].insert(0, val)
+        pt.tim["plc_t0_s"].delete(0, "end"); pt.tim["plc_t0_s"].insert(0, "x")
+        assert not pt.save_timing() and "not a number" in pt.tim_msg.cget("text")
+        pt.tim["plc_t0_s"].delete(0, "end"); pt.tim["plc_t0_s"].insert(0, "0.75")
+        pt.start_line(models={"detection": detect.YoloDetector(model=detect.FakeYolo(_yolo), warmup=False)})
+        assert until(lambda: pt.line_lbl.cget("text") == "LINE RUNNING"), pt.line_lbl.cget("text")
+        assert until(lambda: pt.cam_lbl["Camera 0"].cget("text").startswith("CONNECTED")
+                     and pt.cam_lbl["Camera 1"].cget("text").startswith("CONNECTED")), pt.cam_lbl["Camera 0"].cget("text")
+        assert "200x300" in pt.cam_lbl["Camera 0"].cget("text")
+        for kind, want in (("good", infer.PASS), ("nocap", infer.REJECT), ("good", infer.PASS)):
+            scene["kind"] = kind
+            n0 = pt.line.counts["total"]
+            lad.trigger(hold_s=0.05)
+            assert until(lambda: pt.line.counts["total"] > n0, 10.0), (kind, pt.line.snapshot()["alarms"])
+            last = pt.line.snapshot()["history"][-1]
+            assert last.final == want, (kind, last.final, last.reason, last.plc_status)
+        assert until(lambda: pt.cnt["total"].cget("text") == "3" and pt.cnt[infer.REJECT].cget("text") == "1")
+        table = pt.table.get("1.0", "end")
+        assert "000001" in table and "000003" in table and "missing_cap" in table, table
+        assert pt.res_lbl.cget("text") == infer.PASS and "000003" in pt.ins_lbl.cget("text")
+        assert "Y0 pulse" in table, table
+        assert app.plc.watch_x0 and app.plc.untriggered == 0
+        pt.stop_line()
+        assert until(lambda: pt.line_lbl.cget("text") == "LINE STOPPED") and not app.cams.running()
+        assert not app.plc.watch_x0
+        assert not any(w[0] in (PLC_AM.address_of("Y0"), PLC_AM.address_of("Y1")) for w in fake.writes)
+    finally:
+        pt.stop_line()
+        infer.open_capture = real_open
+        if settings_before is not None:
+            D.SETTINGS_JSON.write_text(settings_before)
+        app.settings = D.load_settings()
     app.plc.stop()
     lad.stop()
     fake.close()

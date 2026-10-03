@@ -349,7 +349,7 @@ def _integration():
             time.sleep(0.01)
 
     real_open, real_cfg = infer.open_capture, D.load_config
-    infer.open_capture, D.load_config = (lambda src: Cap()), (lambda: {"thresholds": {}})
+    infer.open_capture, D.load_config = (lambda src, *_: Cap()), (lambda: {"thresholds": {}})
     import detect
     cam = infer.Camera("t")
     cam.model = Model()
