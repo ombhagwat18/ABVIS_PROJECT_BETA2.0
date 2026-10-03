@@ -32,7 +32,7 @@ success. Nothing in this repository has been validated on the physical machine.
 | Decision engine | PARTIAL | NOW | Per-frame thresholds only; no rules for detections, no fault latching |
 | PASS / REJECT / FAULT | SOFTWARE ONLY | NOW | Fail-safe states with freshness checks; software-tested with fake captures |
 | Traceability | PARTIAL | NOW | In-memory `InspectionRecord` / `TraceStore`; now also optional detector fields (state, model id, ms, boxes). `job_id`, `evidence_path` placeholders. See [TRACEABILITY_PLAN.md](TRACEABILITY_PLAN.md) |
-| PLC communication | SOFTWARE ONLY (simulator) | NOW | `plc/` package: Modbus ASCII client, guarded writes, health/reconnect, commissioning window; read-only verified against the ISPSoft DVP-SS2 simulator. Write->ladder->read **not yet run** (no safe command bit identified); device meanings UNKNOWN. See [PLC_COMMUNICATION.md](PLC_COMMUNICATION.md) |
+| PLC communication | SOFTWARE ONLY (simulator) | NOW | `plc/`: Modbus ASCII client, `PLCService` (single owner, M2 trigger events, at-most-once PASS/REJECT via M0/M1 with PLC acknowledgement), guarded writes, commissioning window. FAKE-PLC tests pass; simulator reads/faults verified; **simulator M0/M1 write path NOT yet proven (needs X0 raised in the simulator)**. Physical PLC untested. See `PLC_COMMUNICATION.md` |
 | Mock PLC | NEXT | NOW | Not started; `plc file/delta_sim_test.py` is only a manual sender |
 | Delta PLC | HARDWARE REQUIRED | NOW | ISPSoft project exists but cannot be read here; I/O mapping **unverified** |
 | Conveyor | HARDWARE REQUIRED | NOW | Not represented in software |

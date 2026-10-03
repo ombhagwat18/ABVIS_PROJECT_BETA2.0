@@ -22,7 +22,7 @@ import time
 from . import address_map as AM
 from . import protocol as P
 from .client import CONNECTED, DISCONNECTED, FAULT, PLCClient, PLCWriteNotAllowed, TcpTransport
-from .protocol import (PLCConnectionError, PLCExceptionResponse, PLCProtocolError, PLCTimeoutError)
+from .protocol import (PLCConnectionError, PLCError, PLCExceptionResponse, PLCProtocolError, PLCTimeoutError)
 
 
 # ======================================================================================= fake PLC
@@ -41,6 +41,7 @@ class FakePLC:
         self.ladder = ladder          # callable(fake) run after every write
         self.enforce_station = enforce_station
         self.count = 0
+        self.writes: list = []        # every FC05 received: (address, 0/1)
         self._srv = socket.socket(); self._srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._srv.bind(("127.0.0.1", 0)); self._srv.listen(8)
         self.port = self._srv.getsockname()[1]
@@ -113,6 +114,11 @@ class FakePLC:
             out = bytes([st, fc, n * 2]) + b"".join(self.regs.get(a + i, 0).to_bytes(2, "big") for i in range(n))
         elif fc == 5:
             self.bits[a] = 1 if body[2] == 0xFF else 0
+            self.writes.append((a, self.bits[a]))
+            if self.mode == "drop_write_reply":       # the PLC applied it, but the answer never arrives
+                return None
+            if self.mode == "close_on_write":
+                return "CLOSE"
             out = bytes([st, fc]) + body[:4]
             if self.ladder:
                 self.ladder(self)
@@ -125,6 +131,47 @@ class FakePLC:
         if self.mode == "badlrc":
             frame = frame[:-4] + (b"00" if frame[-4:-2] != b"00" else b"11") + b"\r\n"
         return frame
+
+
+class FakeLadder:
+    """FAKE model of the user-stated machine contract, to exercise PLCService without a simulator:
+    M0 -> clear M0, M2.   M1 -> clear M1, M2, then T0 (K15) -> Y0 ON -> T1 (K5) -> Y0 OFF.
+    `scale` shrinks the 100 ms timer base so tests run fast. NOT the real ladder."""
+
+    def __init__(self, fake, scale=0.1):
+        self.f, self.tick = fake, 0.1 * scale
+        self.ignore = False                   # True: the "PLC" never consumes commands
+        self.y0_log: list = []                # (monotonic, 0/1)
+        self._stop = False
+        threading.Thread(target=self._scan, daemon=True).start()
+
+    def trigger(self):                        # what X0 -> M2 does in the real ladder
+        self.f.bits[AM.address_of("M2")] = 1
+
+    def stop(self):
+        self._stop = True
+
+    def _scan(self):
+        b, a = self.f.bits, AM.address_of
+        phase, t_phase = "idle", 0.0
+        while not self._stop:
+            time.sleep(0.002)
+            if not self.ignore:
+                if b.get(a("M0")):
+                    b[a("M0")] = 0; b[a("M2")] = 0
+                if b.get(a("M1")) and phase == "idle":
+                    b[a("M1")] = 0; b[a("M2")] = 0
+                    phase, t_phase = "T0", time.monotonic()
+            now = time.monotonic()
+            if phase == "T0":
+                self.f.regs[a("T0")] = min(15, int((now - t_phase) / self.tick))
+                if now - t_phase >= 15 * self.tick:
+                    b[a("Y0")] = 1; self.y0_log.append((now, 1)); phase, t_phase = "T1", now
+            elif phase == "T1":
+                self.f.regs[a("T1")] = min(5, int((now - t_phase) / self.tick))
+                if now - t_phase >= 5 * self.tick:
+                    b[a("Y0")] = 0; self.y0_log.append((now, 0)); phase = "idle"
+                    self.f.regs[a("T0")] = self.f.regs[a("T1")] = 0
 
 
 def _expect(exc, fn, what):
@@ -199,15 +246,18 @@ def unit_tests():
     assert AM.address_of("T3") == 0x0603 and AM.address_of("D100") == 0x1064
     for bad in ("X8", "Y9", "Q1", "M", "10", "", "M-1", "X 1"):
         _expect(AM.AddressError, lambda b=bad: AM.parse(b), f"invalid device {bad!r}")
-    assert AM.PLC_MAP["M0"].meaning == AM.UNKNOWN and AM.PLC_MAP["Y2"].meaning == AM.UNKNOWN
-    assert all(d.meaning == AM.UNKNOWN for d in AM.PLC_MAP.values() if d.name != AM.RUN_FLAG), "no guessed meanings"
-    assert not any(d.writable for d in AM.PLC_MAP.values()), "nothing writable by default"
+    assert set(AM.PLC_MAP) == {"X0", "X1", "X2", "Y0", "Y1", "M0", "M1", "M2", "T0", "T1", "C0", "C1", "M1000"}
+    assert "PASS command counter" in AM.PLC_MAP["C0"].meaning and "Python -> PLC PASS" in AM.PLC_MAP["M0"].meaning
+    assert not AM.is_writable("C0") and not AM.is_writable("C1"), "counters are read-only"
+    assert {d.name for d in AM.PLC_MAP.values() if d.writable} == {"M0", "M1"}, "only the two command bits are writable"
+    assert AM.COMMAND_BITS == {"PASS": "M0", "REJECT": "M1"} and AM.TRIGGER_BIT == "M2"
+    assert not AM.is_writable("M2"), "M2 is PLC-owned"
 
     # ---- connect / read / write against the fake
     fake = FakePLC()
     fake.bits[AM.address_of("M1")] = 1
     fake.inputs[AM.address_of("X2")] = 1
-    fake.regs[AM.address_of("T3")] = 77
+    fake.regs[AM.address_of("T1")] = 77
     try:
         plc = _client(fake)
         assert plc.state == DISCONNECTED and not plc.is_connected()
@@ -219,9 +269,10 @@ def unit_tests():
         assert plc.read_bit("M1") is True and plc.read_bit("M0") is False
         assert plc.read_bits("M0", 3) == [0, 1, 0]
         assert plc.read_bit("X2") is True and plc.read_bit("X1") is False          # FC02 path
-        assert plc.read_word("T3") == 77
+        assert plc.read_word("T1") == 77
         st = plc.read_status()
-        assert st["inputs"]["X2"] == 1 and st["internal"]["M1"] == 1 and st["plc_run"] and st["timers"]["T3"] == 77
+        assert st["inputs"]["X2"] == 1 and st["internal"]["M1"] == 1 and st["plc_run"] and st["timers"]["T1"] == 77
+        assert set(st["counters"]) == {"C0", "C1"}
         assert st["health"]["state"] == CONNECTED and st["health"]["errors"] == 0
 
         # read_many groups neighbours into one block read
@@ -230,7 +281,7 @@ def unit_tests():
         assert fake.count - c0 == 1, "neighbouring devices should share one transaction"
         fake.regs[AM.address_of("T0")] = 5
         c0 = fake.count
-        assert plc.read_words_many(["T0", "T1", "T3", "T4", "T5"]) == {"T0": 5, "T1": 0, "T3": 77, "T4": 0, "T5": 0}
+        assert plc.read_words_many(["T0", "T1", "T3", "T4", "T5"]) == {"T0": 5, "T1": 77, "T3": 0, "T4": 0, "T5": 0}
         assert fake.count - c0 == 1, "timers should be one block read"
         c0 = fake.count
         plc.read_many(["M0", "M1000"])
@@ -238,18 +289,18 @@ def unit_tests():
 
         # ---- write policy: nothing is sent when refused
         c0 = fake.count
-        for dev in ("Y0", "Y2", "X0", "M5", "D1"):
+        for dev in ("Y0", "Y1", "X0", "M2", "M5", "D1"):
             _expect(PLCWriteNotAllowed, lambda d=dev: plc.write_bit(d, True), f"write {dev} refused")
         _expect(PLCWriteNotAllowed, lambda: plc.write_word("D1", 5), "write_word refused")
         assert fake.count == c0, "a refused write still reached the PLC"
-        AM.WRITE_ALLOWLIST = frozenset({"M5", "Y2"})                      # explicit, by someone who read the ladder
+        AM.WRITE_ALLOWLIST = frozenset({"M0", "M1", "M5", "Y2"})           # even if mis-edited, Y stays refused
         try:
             plc.write_bit("M5", True)
             assert fake.bits[AM.address_of("M5")] == 1 and plc.read_bit("M5") is True
             _expect(PLCWriteNotAllowed, lambda: plc.write_bit("Y2", True), "Y never writable even if listed")
             assert AM.is_writable("M5") and not AM.is_writable("M6")
         finally:
-            AM.WRITE_ALLOWLIST = frozenset()
+            AM.WRITE_ALLOWLIST = frozenset(AM.COMMAND_BITS.values())
 
         # ---- exception reply: link stays up
         fake.mode = "exception"
@@ -343,7 +394,7 @@ def unit_tests():
             assert not r["ok"] and r["changed"] == {} and r["restored"], r   # no reaction -> FAIL, bit still restored
             assert plc.read_bit("M101") is False
         finally:
-            AM.WRITE_ALLOWLIST = frozenset()
+            AM.WRITE_ALLOWLIST = frozenset(AM.COMMAND_BITS.values())
         _expect(PLCWriteNotAllowed, lambda: write_readback_test(plc, "M100", ["Y1"]), "write test needs allow-list")
         plc.disconnect()
     finally:
@@ -390,6 +441,9 @@ def real_report(a) -> int:
         print("TIMERS (current value, FC03)")
         for d in AM.group("T"):
             print(f"  {d.name:<5}= {st['timers'][d.name]}   @0x{d.address:04X}  meaning={d.meaning}")
+        print("COUNTERS (current value, FC03)")
+        for d in AM.group("C"):
+            print(f"  {d.name:<5}= {st['counters'][d.name]}   @0x{d.address:04X}  meaning={d.meaning}")
     except Exception as e:                            # noqa: BLE001
         print(f"READ FAIL: {type(e).__name__}: {e}")
         return 1
@@ -462,6 +516,52 @@ def bench(a) -> int:
     return 0 if fails == 0 else 1
 
 
+def real_fault_tests(a) -> int:
+    """SIMULATOR fault behaviour through PLCService. Read-only: nothing is written."""
+    from .service import PLCService
+    bad = 0
+
+    def check(name, ok, detail=""):
+        nonlocal bad
+        bad += 0 if ok else 1
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name} {detail}")
+    print("\nSIMULATOR fault / reconnect tests (read-only)")
+    svc = PLCService(PLCClient(TcpTransport(a.host, a.port + 1, connect_timeout=3.0), station=a.station, timeout=a.timeout))
+    svc.start()
+    try:
+        t = time.perf_counter()
+        try:
+            svc.connect(); ok = False
+        except PLCError:
+            ok = True
+        check("wrong port -> PLCError, FAULT, not healthy", ok and svc.link_state() == FAULT and not svc.is_connected(),
+              f"({(time.perf_counter() - t) * 1000:.0f} ms, last_error={svc.client.last_error})")
+        try:
+            svc.read_bit("M2"); ok = False
+        except PLCError:
+            ok = True
+        check("read during FAULT refused, nothing sent", ok)
+        check("send_pass during FAULT refused", svc.send_pass(1).status == "REFUSED")
+    finally:
+        svc.stop()
+    svc = PLCService(PLCClient(TcpTransport(a.host, a.port), station=a.station, timeout=a.timeout), poll_s=0.05)
+    svc.start()
+    try:
+        lat = []
+        for i in range(20):                                   # repeated reconnect while the service polls
+            t = time.perf_counter(); svc.connect(); lat.append((time.perf_counter() - t) * 1000)
+        check("20 repeated reconnects", svc.link_state() == CONNECTED and not svc.client.n_err, "(" + _stats(lat) + ")")
+        time.sleep(1.0)
+        st = svc.snapshot()
+        check("service polls on its own; snapshot fresh", st is not None and st["age_s"] < 1.0 and st["plc_run"])
+        check("link CONNECTED (not DEGRADED) while polling", svc.link_state() == CONNECTED)
+        check("no unrequested writes", not any(e.event.startswith("COMMAND") for e in svc.events()))
+    finally:
+        svc.stop()
+    check("shutdown during active connection is clean", svc.client.state == DISCONNECTED)
+    return 1 if bad else 0
+
+
 def real_write_test(a) -> int:
     cmd = a.write_test.strip().upper()
     expects = [e for e in (a.expect or "").split(",") if e.strip()]
@@ -484,7 +584,7 @@ def real_write_test(a) -> int:
         print("  RESULT  :", "PASS" if r["ok"] else "FAIL")
         return 0 if r["ok"] else 1
     finally:
-        AM.WRITE_ALLOWLIST = frozenset()
+        AM.WRITE_ALLOWLIST = frozenset(AM.COMMAND_BITS.values())
         plc.disconnect()
 
 
@@ -497,6 +597,7 @@ def main(argv=None) -> int:
     ap.add_argument("--write-test", metavar="Mn", help="with --real: write->ladder->read on THIS bit only")
     ap.add_argument("--expect", metavar="DEV[,DEV]", help="with --write-test: devices that should change")
     ap.add_argument("--settle", type=float, default=1.0)
+    ap.add_argument("--faults", action="store_true", help="with --real: wrong port / reconnect / shutdown through PLCService")
     a = ap.parse_args(argv)
     if not a.real:
         unit_tests()
@@ -504,6 +605,8 @@ def main(argv=None) -> int:
     rc = real_report(a)
     if rc == 0 and a.bench:
         rc = bench(a)
+    if rc == 0 and a.faults:
+        rc = real_fault_tests(a)
     if rc == 0 and a.write_test:
         rc = real_write_test(a)
     return rc

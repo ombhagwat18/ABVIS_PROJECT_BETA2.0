@@ -41,6 +41,7 @@ python calibrate.py --demo
 python charts.py
 python bench.py
 python migrate.py --demo
+python vision_data.py        # unified dataset prep: class mapping, cross-folder scene merge, leak fix, box checks
 python gui.py --selftest     # builds every real tab against the real dataset, no device I/O
 ```
 

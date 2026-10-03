@@ -144,8 +144,8 @@ correctly and the process then hung at exit); I could not reproduce it in three 
 | Sensor trigger, bottle tracking, inspection window | NOT IMPLEMENTED | |
 | Timing model (distances, speed, actuator response) | NOT IMPLEMENTED | No physical values are recorded anywhere |
 | PLC simulator prototype (`plc file/delta_sim_test.py`) | IMPLEMENTED as a standalone script; **not integrated; HARDWARE UNVERIFIED** | Manual keypad sender over Modbus ASCII to a local simulator. Its address map is **unverified** |
-| ISPSoft project (`plc file/final_year/`) | EXISTS; contents **UNKNOWN** | The `.isp` is a proprietary binary that cannot be read here. Set to the ISPSoft simulation driver |
-| PLC communication layer (`plc/`) | IMPLEMENTED, TESTED SOFTWARE ONLY against the ISPSoft **simulator** (read-only); HARDWARE UNVERIFIED | Not integrated with the inspection pipeline. Writes disabled by default; the write->ladder->read test is pending a command bit. See [PLC_COMMUNICATION.md](PLC_COMMUNICATION.md) |
+| ISPSoft project (`plc file/final_year/`) | EXISTS; ladder is an encrypted binary, unreadable here | Contract (X0 sensor, X1/X2 start/stop, Y1 conveyor, Y0 reject, M2 trigger, M0 PASS, M1 REJECT, T0/T1) is **user-stated**, tested by the user in the simulator. C0/C1 role unknown |
+| PLC communication layer (`plc/`) | IMPLEMENTED; FAKE-PLC tested; simulator reads/faults verified; simulator write handshake NOT yet run; HARDWARE UNVERIFIED | `PLCService` is the single owner of the link; only M0/M1 are writable, once per trigger, never retried; not integrated with the inspection pipeline or GUI |
 | Mock PLC, serial transport for the real PLC, reject controller | NOT IMPLEMENTED | |
 
 ## 4. Known limitations (summary)
