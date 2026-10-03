@@ -11,6 +11,7 @@ projects/**
 !projects/*/config.json
 
 sample/
+captures/
 
 __pycache__/
 *.pyc
@@ -33,6 +34,7 @@ YOLO_EXPORT/
 stage2_dataset/clean/
 stage2_dataset/source/
 stage2_dataset/yolo_export/
+stage2_dataset/yolo_seg_export/
 
 # Model weights are never pushed (checksums and how to rebuild are recorded in
 # models/stage2_yolo/MODEL_PROVENANCE.json). Logs and editor autosaves neither.
@@ -44,10 +46,13 @@ stage2_dataset/yolo_export/
 # YOLO runs: keep only the small evidence, not sample batches, tfevents, smoke
 # runs or raw args.yaml (it records a local home-directory path).
 models/*
+!models/MODEL_REGISTRY.json
 !models/stage2_yolo/
 models/stage2_yolo/*
 !models/stage2_yolo/MODEL_PROVENANCE.json
 !models/stage2_yolo/training_metadata.json
+!models/stage2_yolo/candidate_*.json
+!models/stage2_yolo/rebench_*.json
 !models/stage2_yolo/run_yolov8n/
 models/stage2_yolo/run_yolov8n/*
 !models/stage2_yolo/run_yolov8n/results.csv

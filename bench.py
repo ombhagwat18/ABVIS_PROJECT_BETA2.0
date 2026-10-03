@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -97,6 +98,12 @@ def frame_quality(frame: np.ndarray) -> dict:
 
 # ----------------------------------------------------------------- the sweep
 
+def fourcc_str(cap) -> str:
+    """The FOURCC the driver reports it is delivering ('' if it will not say)."""
+    v = int(cap.get(cv2.CAP_PROP_FOURCC))
+    return "".join(chr((v >> 8 * i) & 0xFF) for i in range(4)).replace(chr(0), "").strip() if v > 0 else ""
+
+
 # The comparison set from the architecture doc, plus two lower resolutions
 # worth knowing about when the line PC turns out to have no GPU.
 DEFAULT_COMBOS = [(1920, 1080, 15), (1920, 1080, 20), (1920, 1080, 30),
@@ -104,12 +111,17 @@ DEFAULT_COMBOS = [(1920, 1080, 15), (1920, 1080, 20), (1920, 1080, 30),
 
 
 def benchmark_camera(index: int, combos=None, seconds: float = 3.0,
-                     model=None, progress=print, should_stop=None) -> list[dict]:
+                     model=None, progress=print, should_stop=None, fourcc: str | None = "MJPG") -> list[dict]:
     """Run one camera through each (width, height, fps) and measure what it did.
 
     `model` is an optional infer.Model; when given, every fifth frame is also
     scored, so inference time is measured on the frames this configuration
     actually produces rather than on a stand-in.
+
+    `fourcc` is requested before the size, the same way the line opens its
+    cameras (infer.open_capture). Without MJPG a USB 2.0 webcam falls back to
+    uncompressed YUY2, which cannot carry 1920x1080 at 30 fps -- the sweep
+    would then report the bus limit, not what the line will get.
     """
     import infer
 
@@ -119,13 +131,11 @@ def benchmark_camera(index: int, combos=None, seconds: float = 3.0,
         if should_stop is not None and should_stop():
             break
         progress(f"{w}x{h} @ {fps} fps requested...")
-        cap = infer.open_capture(index)
+        cap = infer.open_capture(index, (w, h), fourcc)
         if not cap.isOpened():
             cap.release()
             rows.append({"requested": f"{w}x{h}@{fps}", "error": "cannot open camera"})
             continue
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
         cap.set(cv2.CAP_PROP_FPS, fps)
         for _ in range(5):                  # let auto-exposure settle first
             cap.read()
@@ -148,10 +158,11 @@ def benchmark_camera(index: int, combos=None, seconds: float = 3.0,
         elapsed = time.perf_counter() - t0
         actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        got_fourcc = fourcc_str(cap)
         cap.release()
 
         row = {"requested": f"{w}x{h}@{fps}",
-               "actual_size": f"{actual_w}x{actual_h}",
+               "actual_size": f"{actual_w}x{actual_h}", "fourcc": got_fourcc,
                "size_ok": (actual_w, actual_h) == (w, h),
                "frames": n,
                "fps": round(n / elapsed, 1) if elapsed else 0.0,
@@ -167,6 +178,95 @@ def benchmark_camera(index: int, combos=None, seconds: float = 3.0,
         progress(f"  -> {row['actual_size']} at {row['fps']} fps, "
                  f"latency {row['latency_ms']} ms, sharpness {row['sharpness']}")
     return rows
+
+
+_PROPS = {"auto_exposure": cv2.CAP_PROP_AUTO_EXPOSURE, "exposure": cv2.CAP_PROP_EXPOSURE,
+          "autofocus": cv2.CAP_PROP_AUTOFOCUS, "focus": cv2.CAP_PROP_FOCUS, "gain": cv2.CAP_PROP_GAIN,
+          "brightness_setting": cv2.CAP_PROP_BRIGHTNESS, "auto_wb": cv2.CAP_PROP_AUTO_WB,
+          "wb_temperature": cv2.CAP_PROP_WB_TEMPERATURE, "fps_reported": cv2.CAP_PROP_FPS}
+
+
+def _measure(caps: dict, seconds: float, keep: dict) -> dict:
+    """Read every open capture in turn for `seconds`; per source: frames, fps, quality, last frame."""
+    n = {k: 0 for k in caps}
+    q = {k: [] for k in caps}
+    t0 = time.perf_counter()
+    while time.perf_counter() - t0 < seconds:
+        for k, cap in caps.items():
+            got, frame = cap.read()
+            if got and frame is not None:
+                n[k] += 1
+                keep[k] = frame
+                if n[k] % 10 == 1:
+                    q[k].append(frame_quality(frame))
+    el = time.perf_counter() - t0
+    out = {}
+    for k in caps:
+        out[k] = {"frames": n[k], "fps": round(n[k] / el, 1),
+                  **({m: round(float(np.mean([x[m] for x in q[k]])), 1) for m in q[k][0]} if q[k] else {})}
+    return out
+
+
+def survey(indices, size=(1920, 1080), fourcc="MJPG", seconds=4.0, out_dir=None, progress=print) -> dict:
+    """What each camera really delivers in the line's capture mode, alone and all together.
+
+    Per camera: DirectShow name, delivered size / FOURCC / fps, the driver's exposure, focus, gain
+    and white-balance properties (as reported; -1/0 often means "not exposed by this driver"),
+    frame quality, and one saved full-resolution frame. Then all cameras opened at once at
+    `size`, 1280x720 and 640x480, because USB bandwidth is shared and one camera alone
+    proves nothing about two.
+    """
+    import json
+    import infer
+    names = infer.camera_names()
+    out_dir = Path(out_dir) if out_dir else None
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    rep = {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "requested": f"{size[0]}x{size[1]} {fourcc}",
+           "alone": {}, "together": {}}
+    for i in indices:
+        progress(f"camera {i} alone...")
+        t = time.perf_counter()
+        cap = infer.open_capture(i, size, fourcc)
+        r = {"index": i, "name": names[i] if i < len(names) else "", "opened": bool(cap.isOpened()),
+             "open_s": round(time.perf_counter() - t, 2)}
+        if r["opened"]:
+            for _ in range(15):                      # auto-exposure settles
+                cap.read()
+            keep = {}
+            r.update(_measure({i: cap}, seconds, keep)[i])
+            r["size"] = f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
+            r["fourcc"] = fourcc_str(cap)
+            r["props"] = {k: round(float(cap.get(p)), 2) for k, p in _PROPS.items()}
+            if i in keep:
+                r["frame_shape"] = list(keep[i].shape)
+                if out_dir:
+                    cv2.imwrite(str(out_dir / f"cam{i}_alone.png"), keep[i])
+        cap.release()
+        rep["alone"][str(i)] = r
+        progress(f"  {r}")
+    if len(indices) > 1:
+        for wh in (tuple(size), (1280, 720), (640, 480)):
+            progress(f"all together at {wh[0]}x{wh[1]}...")
+            caps = {i: infer.open_capture(i, wh, fourcc) for i in indices}
+            try:
+                for _ in range(10):
+                    for c in caps.values():
+                        c.read()
+                keep = {}
+                m = _measure(caps, seconds, keep)
+                for i, c in caps.items():
+                    m[i]["size"] = f"{int(c.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(c.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
+                    if out_dir and i in keep:
+                        cv2.imwrite(str(out_dir / f"cam{i}_together_{wh[0]}x{wh[1]}.png"), keep[i])
+            finally:
+                for c in caps.values():
+                    c.release()
+            rep["together"][f"{wh[0]}x{wh[1]}"] = {str(k): v for k, v in m.items()}
+            progress(f"  {m}")
+    if out_dir:
+        (out_dir / "survey.json").write_text(json.dumps(rep, indent=2))
+    return rep
 
 
 def best_combo(rows: list[dict]) -> dict | None:
@@ -222,4 +322,10 @@ def demo():
 
 
 if __name__ == "__main__":
-    demo()
+    import sys
+    if "--survey" in sys.argv:
+        # python bench.py --survey 2 3   -> captures/survey_<stamp>/ (frames + survey.json)
+        idx = [int(a) for a in sys.argv[sys.argv.index("--survey") + 1:] if a.isdigit()]
+        survey(idx, out_dir=Path("captures") / time.strftime("survey_%Y%m%d-%H%M%S"))
+    else:
+        demo()

@@ -216,14 +216,51 @@ def test_job_traffic_does_not_hide_triggers():
             assert t2 is not None and t2.id != t1.id, "second trigger hidden by job traffic"
         finally:
             stop.set(); th.join()
-        lad.ignore = True                                    # NOT_ACKED path: PLC clears M2 only, like the real ladder's REJECT
+        lad.ignore = True                                    # PLC clears M2 only and leaves M1 ON, like net 5
         r = [None]
         th = threading.Thread(target=lambda: r.__setitem__(0, svc.send_reject(t2.id))); th.start()
         time.sleep(0.1); fake.bits[M("M2")] = 0; th.join()
-        assert r[0].status == NOT_ACKED, r[0]
+        assert r[0].status == ACKED and r[0].cmd_held, r[0]
         fake.bits[M("M1")] = 0; lad.ignore = False
         lad.trigger()
-        assert svc.wait_for_trigger(1.5) is not None, "trigger after a NOT_ACKED command was missed"
+        assert svc.wait_for_trigger(1.5) is not None, "trigger after a held-M1 REJECT was missed"
+        lad.ignore = True                                    # a PASS whose M0 is never cleared is still NOT_ACKED
+        t3 = svc.current_trigger()
+        th = threading.Thread(target=lambda: r.__setitem__(0, svc.send_pass(t3.id))); th.start()
+        time.sleep(0.1); fake.bits[M("M2")] = 0; th.join()
+        assert r[0].status == NOT_ACKED, r[0]
+        fake.bits[M("M0")] = 0; lad.ignore = False
+    finally:
+        close(fake, lad, svc)
+
+
+def test_ladder_reject_cycle_and_masking():
+    """The decoded ladder: REJECT is ACKED as soon as M2 drops while M1 stays ON for T0 + T1, Y0 pulses
+    for ~T1, C1 counts it; and a bottle reaching X0 during that window raises NO trigger (net 5)."""
+    fake, lad, svc = rig(watch_x0=True)
+    try:
+        for _ in range(3):                                   # ordinary bottles: never reported as untriggered
+            lad.trigger(hold_s=0.03); t = svc.wait_for_trigger(1.0)
+            assert svc.send_pass(t.id).ok
+            time.sleep(0.08)
+        lad.trigger(); t = svc.wait_for_trigger(1.0)
+        r = svc.send_reject(t.id)
+        assert r.status == ACKED and r.cmd_held and r.ack_ms < 300, r
+        assert svc.untriggered == 0, [e.error for e in svc.events() if e.event == "BOTTLE_UNTRIGGERED"]
+        assert svc.read_bit("M1"), "M1 must be held through T0"
+        lad.trigger(hold_s=0.08)                             # second bottle while the reject cycle runs
+        assert svc.wait_for_trigger(0.12) is None, "a trigger got through while M1 was ON"
+        t_end = time.monotonic() + 1.0
+        while (svc.read_bit("M1") or len(lad.y0_log) < 2) and time.monotonic() < t_end:
+            pass                                             # M1 drops one scan before Y0 (net 7, then net 6)
+        assert not svc.read_bit("M1") and [v for _, v in lad.y0_log] == [1, 0], lad.y0_log
+        pulse = lad.y0_log[1][0] - lad.y0_log[0][0]
+        assert abs(pulse - 5 * lad.tick) < 0.065, pulse            # fake scans tick at ~15.6 ms on Windows
+        assert svc.read_word("C1") == 1 and svc.read_word("C0") == 3 and lad.x0_edges == 5
+        ev = [e for e in svc.events() if e.event == "BOTTLE_UNTRIGGERED"]
+        assert svc.untriggered == 1 and len(ev) == 1 and "net 5" in ev[0].error, [e.error for e in ev]
+        lad.trigger()                                        # after the cycle: triggers work again
+        assert svc.wait_for_trigger(1.0) is not None
     finally:
         close(fake, lad, svc)
 

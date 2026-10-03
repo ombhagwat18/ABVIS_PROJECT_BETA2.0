@@ -1,20 +1,26 @@
 """Handshake verification of the current machine contract, through PLCService.
 
     python -m plc.handshake_test --real --cycles PASS,REJECT,PASS --wait 60   # ISPSoft SIMULATOR
+    python -m plc.handshake_test --real --sim-x0 --csv trace.csv              # ...X0 pulsed for you, trace saved
     python -m plc.handshake_test --fake                                       # FAKE PLC (harness self-check)
 
---real  needs ISPSoft + COMMGR + the DVP-SS2 simulator running in RUN mode. For every cycle YOU raise
-        X0 in the simulator (the photoelectric sensor); this script never forces X0 or M2. It waits
-        for M2 to appear, sends the command ONLY via PLCService (M0 = PASS, M1 = REJECT), then
-        samples M0 M1 M2 Y0 Y1 and T0 T1 until the machine is idle again and checks:
-            PASS   : M0 cleared by the PLC, M2 cleared, Y0 never ON
-            REJECT : M1 cleared, M2 cleared, T0 runs, Y0 ON after ~T0, T1 runs, Y0 OFF after ~T1
+--real  needs ISPSoft + COMMGR + the DVP-SS2 simulator running in RUN mode with the ladder downloaded.
+        For every cycle the photo-eye X0 must rise: either YOU raise X0 in the simulator, or --sim-x0
+        pulses it through PLCService.simulator_test_write (refused on anything but a loopback simulator).
+        M2 is never forced. It waits for M2, sends the command ONLY via PLCService (M0 = PASS,
+        M1 = REJECT), then samples M0 M1 M2 Y0 Y1 and T0 T1 C0 C1 until the machine is idle and checks:
+            PASS   : M0 cleared by the PLC, M2 cleared, Y0 never ON, C0 +1
+            REJECT : M2 cleared at once (M1 is HELD by the ladder through T0 + T1), T0 runs, Y0 ON after
+                     ~T0, T1 runs, Y0 OFF after ~T1, M1 cleared at the end, C1 +1
+        --t0/--t1 are the presets to check against (default: the stated contract 1.5 s / 0.5 s).
         Results are SIMULATOR ONLY: they say nothing about a physical PLC's timing.
 --fake  runs the same harness against FakeLadder (scaled timers), to test the harness itself.
+--csv   writes every sample (cycle, verdict, t since command, M0 M1 M2 Y0 Y1 T0 T1 C0 C1).
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import statistics
 import sys
 import time
@@ -45,10 +51,15 @@ def observe_cycle(svc: PLCService, verdict: str, t_cmd: float, t0_s: float, t1_s
     return rows, y0_on, y0_off
 
 
-def check(verdict, res, rows, y0_on, y0_off, t0_s, t1_s, tol):
+def check(verdict, res, rows, y0_on, y0_off, t0_s, t1_s, tol, pre=None):
     """Return a list of (name, passed, detail)."""
-    out = [("PLC acknowledged (command bit + M2 cleared)", res.status == ACKED, f"{res.status} {res.detail}")]
+    out = [("PLC acknowledged (M2 cleared; PASS: M0 cleared too)", res.status == ACKED,
+            f"{res.status} {res.detail}" + ("  [M1 held by the ladder]" if res.cmd_held else ""))]
     last = rows[-1][1] if rows else {}
+    if pre is not None and last:
+        cnt = "C0" if verdict == "PASS" else "C1"
+        out.append((f"{cnt} counted the command (+1)", last.get(cnt) == pre.get(cnt, 0) + 1,
+                    f"{cnt} {pre.get(cnt)} -> {last.get(cnt)}"))
     out.append(("M0 and M1 both OFF afterwards", not last.get("M0") and not last.get("M1"),
                 f"M0={last.get('M0')} M1={last.get('M1')}"))
     out.append(("M2 OFF afterwards", not last.get("M2"), f"M2={last.get('M2')}"))
@@ -80,15 +91,19 @@ def _stats(name, vals, fails=0):
             f"min {v[0]:8.1f}  max {v[-1]:8.1f}  p95 {q(.95):8.1f}  p99 {q(.99):8.1f} ms   failures {fails}")
 
 
-def run(svc: PLCService, verdicts, wait_s, t0_s, t1_s, tol, label, trigger_hook=None) -> int:
+def run(svc: PLCService, verdicts, wait_s, t0_s, t1_s, tol, label, trigger_hook=None, csv_path=None) -> int:
     print(f"\n=== {label} :: {len(verdicts)} cycle(s): {','.join(verdicts)} ===")
     snap = svc.read_status()
     idle = {k: snap[k] for k in ("inputs", "internal", "outputs", "timers", "counters")}
     print("idle state before the run:", idle)
+    if not snap["plc_run"]:
+        print("PLC NOT IN RUN (M1000 = 0): the ladder is not executing, so X0 cannot raise M2. Download the "
+              "ladder in ISPSoft and put the simulator/PLC in RUN first.")
+        return 2
     if any(snap["internal"][d] for d in ("M0", "M1", "M2")) or any(snap["outputs"].values()):
         print("NOT IDLE: M0/M1/M2/Y0/Y1 already ON. Not starting; put the machine in a known idle state first.")
         return 2
-    results, all_ok = [], True
+    results, all_ok, trace = [], True, []
     for i, verdict in enumerate(verdicts, 1):
         if trigger_hook:
             trigger_hook()
@@ -104,7 +119,8 @@ def run(svc: PLCService, verdicts, wait_s, t0_s, t1_s, tol, label, trigger_hook=
         t_cmd = time.perf_counter()
         res = svc.submit_result(trig.id, verdict)
         rows, y0_on, y0_off = observe_cycle(svc, verdict, t_cmd, t0_s, t1_s, tail_s=t0_s + t1_s + 0.5)
-        checks = check(verdict, res, rows, y0_on, y0_off, t0_s, t1_s, tol)
+        checks = check(verdict, res, rows, y0_on, y0_off, t0_s, t1_s, tol, pre)
+        trace.extend((i, verdict, round(t, 4), smp) for t, smp in rows)
         ok = all(c[1] for c in checks)
         all_ok &= ok
         print(f"  trigger id {trig.id}  M2 seen; before command: {pre}")
@@ -117,6 +133,13 @@ def run(svc: PLCService, verdicts, wait_s, t0_s, t1_s, tol, label, trigger_hook=
         time.sleep(0.3)
         if trigger_hook is None and svc.current_trigger() is not None:
             print("  note: M2 already set again (X0 still high / a new bottle)")
+    if csv_path:
+        with open(csv_path, "w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["cycle", "verdict", "t_since_command_s"] + WATCH_BITS + WATCH_WORDS)
+            for cyc, v, t, smp in trace:
+                w.writerow([cyc, v, t] + [smp[k] for k in WATCH_BITS + WATCH_WORDS])
+        print(f"trace: {len(trace)} samples -> {csv_path}")
     # ---- summary
     print(f"\n--- summary ({label}) ---")
     n = len(results)
@@ -148,6 +171,10 @@ def main(argv=None) -> int:
     ap.add_argument("--cycles", default="PASS,REJECT,PASS,REJECT,REJECT,PASS")
     ap.add_argument("--wait", type=float, default=60.0, help="seconds to wait for each M2")
     ap.add_argument("--tol", type=float, default=0.25, help="tolerance (s) when comparing observed to intended T0/T1")
+    ap.add_argument("--t0", type=float, default=T0_S, help="T0 preset to check against, seconds (contract 1.5)")
+    ap.add_argument("--t1", type=float, default=T1_S, help="T1 preset to check against, seconds (contract 0.5)")
+    ap.add_argument("--sim-x0", action="store_true", help="pulse X0 in the SIMULATOR for each cycle (loopback only)")
+    ap.add_argument("--csv", default=None, help="write every sample to this CSV")
     a = ap.parse_args(argv)
     verdicts = [v.strip().upper() for v in a.cycles.split(",") if v.strip()]
     assert all(v in AM.COMMAND_BITS for v in verdicts), "cycles must be PASS or REJECT"
@@ -157,16 +184,22 @@ def main(argv=None) -> int:
         svc = PLCService(_client(fake, timeout=0.5), poll_s=0.01, status_period_s=0.2)
         svc.start(); svc.connect()
         try:
-            return run(svc, verdicts, 5.0, T0_S, T1_S, a.tol, "FAKE PLC (harness self-check, not evidence)",
-                       trigger_hook=lad.trigger)
+            return run(svc, verdicts, 5.0, a.t0, a.t1, a.tol, "FAKE PLC (harness self-check, not evidence)",
+                       trigger_hook=lambda: lad.trigger(hold_s=0.3), csv_path=a.csv)
         finally:
             svc.stop(); lad.stop(); fake.close()
     svc = PLCService(PLCClient(TcpTransport(a.host, a.port), station=a.station, timeout=1.0),
                      poll_s=0.02, status_period_s=0.5)
     svc.start()
+
+    def pulse_x0():                     # the photo-eye, via the guarded simulator-only stimulus
+        svc.simulator_test_write("X0", True)
+        time.sleep(0.3)
+        svc.simulator_test_write("X0", False)
     try:
         svc.connect()
-        return run(svc, verdicts, a.wait, T0_S, T1_S, a.tol, "ISPSoft SIMULATOR ONLY")
+        return run(svc, verdicts, a.wait, a.t0, a.t1, a.tol, "ISPSoft SIMULATOR ONLY",
+                   trigger_hook=pulse_x0 if a.sim_x0 else None, csv_path=a.csv)
     finally:
         svc.stop()
 

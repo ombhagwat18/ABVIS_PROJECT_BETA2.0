@@ -1,0 +1,701 @@
+{
+  "generated": "2026-10-03 11:39:49",
+  "note": "Built from files on disk by model_bench.py registry; nothing re-measured here.",
+  "classification": [
+    {
+      "name": "cls_resnet18_20260918-120030",
+      "stamp": "20260918-120030",
+      "arch": "resnet18",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20260918-120030\\model.pt",
+      "sha256": "869becd8a9aabe2f7a3dbd5a1eb49ca9375f084bf3b86fc23295178c801fef46",
+      "size_mb": 42.72,
+      "config": {
+        "epochs": 1,
+        "epochs_run": 1,
+        "batch": 16,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cpu",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "b5e01aa8d0ca878ec66a436c96b4956085dd1b06f4c6a7bac831fb744398fcd6",
+        "n_train": 879,
+        "n_val": 264,
+        "n_test": null
+      },
+      "val": {
+        "macro_f1": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "accuracy": 1.0
+      },
+      "test": null,
+      "test_leak_free": null,
+      "latency_ms_gpu": null,
+      "latency_ms_cpu": null,
+      "train_time_latency_ms": 53.43,
+      "status": "legacy split (no held-out test recorded)"
+    },
+    {
+      "name": "cls_efficientnet_b0_20260918-191743",
+      "stamp": "20260918-191743",
+      "arch": "efficientnet_b0",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20260918-191743\\model.pt",
+      "sha256": "d6380e19dc5c8723561dbb8357081002092b22da6bc381618c84fbf784e4ad63",
+      "size_mb": 15.57,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 25,
+        "batch": 32,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cpu",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 879,
+        "n_val": 264,
+        "n_test": null
+      },
+      "val": {
+        "macro_f1": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "accuracy": 1.0
+      },
+      "test": null,
+      "test_leak_free": null,
+      "latency_ms_gpu": null,
+      "latency_ms_cpu": null,
+      "train_time_latency_ms": 76.22,
+      "status": "legacy split (no held-out test recorded)"
+    },
+    {
+      "name": "cls_efficientnet_b1_20260918-220502",
+      "stamp": "20260918-220502",
+      "arch": "efficientnet_b1",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20260918-220502\\model.pt",
+      "sha256": "33bb33cb522f8b2f6ab606ea0b8d48f248b93fe2e60a93b915e0c443be553e46",
+      "size_mb": 25.24,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 25,
+        "batch": 32,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cpu",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 879,
+        "n_val": 264,
+        "n_test": null
+      },
+      "val": {
+        "macro_f1": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "accuracy": 1.0
+      },
+      "test": null,
+      "test_leak_free": null,
+      "latency_ms_gpu": null,
+      "latency_ms_cpu": null,
+      "train_time_latency_ms": 83.97,
+      "status": "legacy split (no held-out test recorded)"
+    },
+    {
+      "name": "cls_mobilenet_v3_small_20260919-000152",
+      "stamp": "20260919-000152",
+      "arch": "mobilenet_v3_small",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20260919-000152\\model.pt",
+      "sha256": "e4e4a6e98eba7f74d5e7692ed989d347d7bafecf4425cebc0ed9657fdcbeabb7",
+      "size_mb": 5.93,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 25,
+        "batch": 32,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cpu",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 879,
+        "n_val": 264,
+        "n_test": null
+      },
+      "val": {
+        "macro_f1": 0.8477,
+        "macro_precision": 0.9643,
+        "macro_recall": 0.8629,
+        "accuracy": 0.9805
+      },
+      "test": null,
+      "test_leak_free": null,
+      "latency_ms_gpu": null,
+      "latency_ms_cpu": null,
+      "train_time_latency_ms": 36.23,
+      "status": "legacy split (no held-out test recorded)"
+    },
+    {
+      "name": "cls_convnext_tiny_20260919-101315",
+      "stamp": "20260919-101315",
+      "arch": "convnext_tiny",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20260919-101315\\model.pt",
+      "sha256": "98caae3451be2346e66986cb7880b441c3c8812ec2fea37f3b4c395b23b6fc6c",
+      "size_mb": 106.19,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 25,
+        "batch": 32,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cpu",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 879,
+        "n_val": 264,
+        "n_test": null
+      },
+      "val": {
+        "macro_f1": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "accuracy": 1.0
+      },
+      "test": null,
+      "test_leak_free": null,
+      "latency_ms_gpu": null,
+      "latency_ms_cpu": null,
+      "train_time_latency_ms": 111.39,
+      "status": "legacy split (no held-out test recorded)"
+    },
+    {
+      "name": "cls_efficientnet_b0_20260919-164511",
+      "stamp": "20260919-164511",
+      "arch": "efficientnet_b0",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": true,
+      "checkpoint": "projects\\om_bottle\\models\\20260919-164511\\model.pt",
+      "sha256": "8c86b518835e084ef0d101223793dd38ddf533928bedc24258503469539748bb",
+      "size_mb": 15.57,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 25,
+        "batch": 32,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cuda",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 685,
+        "n_val": 220,
+        "n_test": 238
+      },
+      "val": {
+        "macro_f1": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "accuracy": 1.0
+      },
+      "test": {
+        "n_images": 238,
+        "macro_f1": 0.9351,
+        "macro_precision": 0.8868,
+        "macro_recall": 1.0,
+        "exact_match_accuracy": 0.8908,
+        "label_accuracy": 0.9853,
+        "pass_reject_accuracy": 0.958,
+        "false_pass": 0,
+        "false_reject": 10
+      },
+      "test_leak_free": {
+        "n_images": 218,
+        "macro_f1": 0.9558,
+        "macro_precision": 0.9232,
+        "macro_recall": 1.0,
+        "exact_match_accuracy": 0.9358,
+        "label_accuracy": 0.992,
+        "pass_reject_accuracy": 0.9541,
+        "false_pass": 0,
+        "false_reject": 10
+      },
+      "latency_ms_gpu": 32.8,
+      "latency_ms_cpu": 200.06,
+      "train_time_latency_ms": 9.16,
+      "status": "test-evaluated"
+    },
+    {
+      "name": "cls_efficientnet_b1_20260919-222031",
+      "stamp": "20260919-222031",
+      "arch": "efficientnet_b1",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20260919-222031\\model.pt",
+      "sha256": "47ed5011c8daa0261b37e647374efe61bb3ce610771e5f1b0b578c010ca5d4bb",
+      "size_mb": 25.24,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 25,
+        "batch": 32,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cuda",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 685,
+        "n_val": 220,
+        "n_test": 238
+      },
+      "val": {
+        "macro_f1": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "accuracy": 1.0
+      },
+      "test": {
+        "n_images": 238,
+        "macro_f1": 0.8452,
+        "macro_precision": 0.7862,
+        "macro_recall": 0.9351,
+        "exact_match_accuracy": 0.6807,
+        "label_accuracy": 0.9559,
+        "pass_reject_accuracy": 0.8782,
+        "false_pass": 10,
+        "false_reject": 19
+      },
+      "test_leak_free": {
+        "n_images": 218,
+        "macro_f1": 0.8384,
+        "macro_precision": 0.7758,
+        "macro_recall": 0.9242,
+        "exact_match_accuracy": 0.7064,
+        "label_accuracy": 0.9587,
+        "pass_reject_accuracy": 0.867,
+        "false_pass": 10,
+        "false_reject": 19
+      },
+      "latency_ms_gpu": 31.32,
+      "latency_ms_cpu": 72.13,
+      "train_time_latency_ms": 13.48,
+      "status": "test-evaluated"
+    },
+    {
+      "name": "cls_mobilenet_v3_small_20260920-102102",
+      "stamp": "20260920-102102",
+      "arch": "mobilenet_v3_small",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20260920-102102\\model.pt",
+      "sha256": "cfd45b7777043d94cdf22d98ee6e62ea912dd3091b041a623ea7bffbdeff07ad",
+      "size_mb": 5.93,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 25,
+        "batch": 32,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cuda",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 685,
+        "n_val": 220,
+        "n_test": 238
+      },
+      "val": {
+        "macro_f1": 0.864,
+        "macro_precision": 0.8507,
+        "macro_recall": 0.963,
+        "accuracy": 0.953
+      },
+      "test": {
+        "n_images": 238,
+        "macro_f1": 0.6315,
+        "macro_precision": 0.5866,
+        "macro_recall": 0.7132,
+        "exact_match_accuracy": 0.6723,
+        "label_accuracy": 0.938,
+        "pass_reject_accuracy": 0.895,
+        "false_pass": 6,
+        "false_reject": 19
+      },
+      "test_leak_free": {
+        "n_images": 218,
+        "macro_f1": 0.7532,
+        "macro_precision": 0.7195,
+        "macro_recall": 0.8289,
+        "exact_match_accuracy": 0.7018,
+        "label_accuracy": 0.9467,
+        "pass_reject_accuracy": 0.8899,
+        "false_pass": 5,
+        "false_reject": 19
+      },
+      "latency_ms_gpu": 21.68,
+      "latency_ms_cpu": 42.55,
+      "train_time_latency_ms": 4.95,
+      "status": "test-evaluated"
+    },
+    {
+      "name": "cls_resnet18_20260920-110121",
+      "stamp": "20260920-110121",
+      "arch": "resnet18",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20260920-110121\\model.pt",
+      "sha256": "600241fba246da89b299756348940a45fb008b53b442981b9cf9d6abc086a479",
+      "size_mb": 42.72,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 8,
+        "batch": 32,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cuda",
+        "patience": 5
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 685,
+        "n_val": 220,
+        "n_test": 238
+      },
+      "val": {
+        "macro_f1": 0.9333,
+        "macro_precision": 0.9048,
+        "macro_recall": 1.0,
+        "accuracy": 0.9909
+      },
+      "test": {
+        "n_images": 238,
+        "macro_f1": 0.7729,
+        "macro_precision": 0.7116,
+        "macro_recall": 0.8571,
+        "exact_match_accuracy": 0.8403,
+        "label_accuracy": 0.9737,
+        "pass_reject_accuracy": 0.958,
+        "false_pass": 0,
+        "false_reject": 10
+      },
+      "test_leak_free": {
+        "n_images": 218,
+        "macro_f1": 0.9225,
+        "macro_precision": 0.8677,
+        "macro_recall": 1.0,
+        "exact_match_accuracy": 0.8807,
+        "label_accuracy": 0.9851,
+        "pass_reject_accuracy": 0.9541,
+        "false_pass": 0,
+        "false_reject": 10
+      },
+      "latency_ms_gpu": 12.6,
+      "latency_ms_cpu": 94.66,
+      "train_time_latency_ms": 7.75,
+      "status": "test-evaluated"
+    },
+    {
+      "name": "cls_convnext_tiny_20261003-101425",
+      "stamp": "20261003-101425",
+      "arch": "convnext_tiny",
+      "task": "multi-label classification",
+      "project": "om_bottle",
+      "active_in_app": false,
+      "checkpoint": "projects\\om_bottle\\models\\20261003-101425\\model.pt",
+      "sha256": "5f6147d4da29f4e9235d5069c978bf89e167ed7e344814de2ccd88b5f1b2463b",
+      "size_mb": 106.19,
+      "config": {
+        "epochs": 25,
+        "epochs_run": 25,
+        "batch": 16,
+        "lr": 0.0003,
+        "input_wh": [
+          192,
+          448
+        ],
+        "device": "cuda",
+        "patience": null
+      },
+      "dataset_version": {
+        "labels_csv_sha256": "ea2494b8e83f9871c5d125fc128a84f12b14a708257ae42597b8700cfa0332af",
+        "n_train": 685,
+        "n_val": 220,
+        "n_test": 238
+      },
+      "val": {
+        "macro_f1": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "accuracy": 1.0
+      },
+      "test": {
+        "n_images": 238,
+        "macro_f1": 0.7644,
+        "macro_precision": 0.6922,
+        "macro_recall": 0.8896,
+        "exact_match_accuracy": 0.6807,
+        "label_accuracy": 0.9312,
+        "pass_reject_accuracy": 0.9202,
+        "false_pass": 0,
+        "false_reject": 19
+      },
+      "test_leak_free": {
+        "n_images": 218,
+        "macro_f1": 0.7814,
+        "macro_precision": 0.7264,
+        "macro_recall": 0.8712,
+        "exact_match_accuracy": 0.7385,
+        "label_accuracy": 0.9467,
+        "pass_reject_accuracy": 0.9128,
+        "false_pass": 0,
+        "false_reject": 19
+      },
+      "latency_ms_gpu": 19.83,
+      "latency_ms_cpu": 301.25,
+      "train_time_latency_ms": 17.05,
+      "status": "test-evaluated"
+    }
+  ],
+  "detection": [
+    {
+      "name": "det_yolov8n_stage2",
+      "arch": "yolov8n",
+      "task": "detection (bottle/cap/label)",
+      "deployed": true,
+      "checkpoint": "models/stage2_yolo/stage2_best.pt",
+      "sha256": "b7202b92f95a498d2de7d26568bfffe48118d0640eb56797f123dd9f51a534f2",
+      "size_mb": 6.23,
+      "n_params": 3006233,
+      "trained": "2026-10-02 14:20:31",
+      "dataset_version": {
+        "export_tree_sha256": "11db7388e499dd4930dd402316341c46be8eccfb65813b3f2efebd030b823bd9",
+        "annotations_sha256": "e4916747f1690adde030e05b2e3fe02d4bee8a378ce86e0985f6b9c08341dcd3",
+        "split_json_sha256": "c0fce3cdd5a70f829c88fe47b05a79260b6d0ed35873441428b086fad8eb834b"
+      },
+      "val": {
+        "map50": 0.9763506823884894,
+        "map50_95": 0.72978087133532,
+        "precision": 0.9978769501105326,
+        "recall": 0.9651994396519944,
+        "per_class": {
+          "bottle": {
+            "precision": 0.9983453728382731,
+            "recall": 0.9562043795620438,
+            "map50": 0.9886234063887694,
+            "map50_95": 0.7845467754624835
+          },
+          "cap": {
+            "precision": 0.9975317750623783,
+            "recall": 1.0,
+            "map50": 0.995,
+            "map50_95": 0.6497967240724525
+          },
+          "label": {
+            "precision": 0.9977537024309461,
+            "recall": 0.9393939393939394,
+            "map50": 0.9454286407766991,
+            "map50_95": 0.7549991144710235
+          }
+        }
+      },
+      "test": {
+        "map50": 0.9681920685683988,
+        "map50_95": 0.65999500096815,
+        "precision": 0.9361644876972104,
+        "recall": 0.968208652145044,
+        "per_class": {
+          "bottle": {
+            "precision": 0.9984373137189647,
+            "recall": 1.0,
+            "map50": 0.995,
+            "map50_95": 0.8159831646080098
+          },
+          "cap": {
+            "precision": 0.901795146468352,
+            "recall": 0.986013986013986,
+            "map50": 0.9870753390657455,
+            "map50_95": 0.5934754093836023
+          },
+          "label": {
+            "precision": 0.9082610029043147,
+            "recall": 0.9186119704211461,
+            "map50": 0.9225008666394507,
+            "map50_95": 0.570526428912838
+          }
+        }
+      },
+      "benchmark_gpu": {
+        "n_images": 87,
+        "device": "0",
+        "batch": 1,
+        "latency_ms_mean": 37.10332298850587,
+        "latency_ms_p50": 37.14100000000009,
+        "latency_ms_p95": 41.33286999999868,
+        "fps_end_to_end": 26.951763870578034,
+        "model_inference_ms_mean": 25.152625708744445,
+        "fps_model_only": 39.75728067437288
+      },
+      "benchmark_cpu": {
+        "n_images": 87,
+        "device": "cpu",
+        "batch": 1,
+        "latency_ms_mean": 309.4531091954023,
+        "latency_ms_p50": 304.3558000000033,
+        "latency_ms_p95": 454.211770000002,
+        "fps_end_to_end": 3.231507360194452,
+        "model_inference_ms_mean": 297.6819180894172,
+        "fps_model_only": 3.359290367443889
+      }
+    },
+    {
+      "name": "det_yolov8s_stage2",
+      "arch": "yolov8s",
+      "task": "detection (bottle/cap/label)",
+      "deployed": false,
+      "checkpoint": "models\\stage2_yolo\\bench_yolov8s\\weights\\best.pt",
+      "sha256": "dc340d0cd74831e7efdbe7336956bbc885da9e67d22cce5aa8a21fac6939badd",
+      "size_mb": 22.5,
+      "n_params": 11126745,
+      "trained": "2026-10-03 11:38:32",
+      "dataset_version": {
+        "yaml": "stage2_dataset/data.yaml",
+        "split_json_sha256": "c0fce3cdd5a70f829c88fe47b05a79260b6d0ed35873441428b086fad8eb834b",
+        "annotations_sha256": "e4916747f1690adde030e05b2e3fe02d4bee8a378ce86e0985f6b9c08341dcd3",
+        "export_tree_sha256": "11db7388e499dd4930dd402316341c46be8eccfb65813b3f2efebd030b823bd9",
+        "export_unchanged": true
+      },
+      "val": {
+        "map50": 0.9795708510638298,
+        "map50_95": 0.7436760228342294,
+        "precision": 0.9958737431257224,
+        "recall": 0.9764969985170247,
+        "per_class": {
+          "bottle": {
+            "precision": 1.0,
+            "recall": 0.9900970561571346,
+            "map50": 0.995,
+            "map50_95": 0.8057721802507902
+          },
+          "cap": {
+            "precision": 0.9938596459995503,
+            "recall": 1.0,
+            "map50": 0.995,
+            "map50_95": 0.6566077994551921
+          },
+          "label": {
+            "precision": 0.9937615833776171,
+            "recall": 0.9393939393939394,
+            "map50": 0.9487125531914894,
+            "map50_95": 0.7686480887967063
+          }
+        }
+      },
+      "test": {
+        "map50": 0.9734193331489118,
+        "map50_95": 0.6758613266182667,
+        "precision": 0.9338519810377184,
+        "recall": 0.9828178694158076,
+        "per_class": {
+          "bottle": {
+            "precision": 0.9979604780302797,
+            "recall": 1.0,
+            "map50": 0.995,
+            "map50_95": 0.8176412278229408
+          },
+          "cap": {
+            "precision": 0.915081682677296,
+            "recall": 1.0,
+            "map50": 0.9828180327868853,
+            "map50_95": 0.5947447951604043
+          },
+          "label": {
+            "precision": 0.8885137824055795,
+            "recall": 0.9484536082474226,
+            "map50": 0.9424399666598504,
+            "map50_95": 0.6151979568714554
+          }
+        }
+      },
+      "benchmark_gpu": {
+        "n_images": 87,
+        "device": "0",
+        "batch": 1,
+        "latency_ms_mean": 36.70956551724921,
+        "latency_ms_p50": 37.18770000000404,
+        "latency_ms_p95": 46.82981000000837,
+        "fps_end_to_end": 27.240856324766817,
+        "model_inference_ms_mean": 23.18392402824314,
+        "fps_model_only": 43.13333665093877
+      },
+      "benchmark_cpu": {
+        "n_images": 87,
+        "device": "cpu",
+        "batch": 1,
+        "latency_ms_mean": 510.1003114942514,
+        "latency_ms_p50": 472.97050000008767,
+        "latency_ms_p95": 756.5407100000472,
+        "fps_end_to_end": 1.960398724460041,
+        "model_inference_ms_mean": 497.74004125047003,
+        "fps_model_only": 2.0090808798257513
+      }
+    }
+  ],
+  "segmentation": []
+}
