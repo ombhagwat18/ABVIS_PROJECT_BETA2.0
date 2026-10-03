@@ -10,6 +10,51 @@ Test classes are never mixed: **FAKE PLC TEST** (in-process fake) / **SIMULATOR 
 
 ## 0. The ladder as actually saved, and what the simulator does (2026-10-03) -- READ THIS FIRST
 
+### 0.1 Current file: saved 2026-10-03 09:06 (VERIFIED from the file; simulator run PENDING)
+
+The project was re-saved at 09:06 (backup `final_year_2026-10-3-9-2-10.~bak`). Decoded the same way as below:
+
+| Net | Logic |
+|---|---|
+| 1 | `X1` -> `SET Y1` |
+| 2 | `X2` -> `RST Y1` |
+| 3 | `X0` (rising edge) -> `SET M2` |
+| 4 | `M0` -> `RST M2`, `RST M0`, `CNT C0 K9999` |
+| 5 | `M1` -> `TMR T0 K150`, `RST M2`, `CNT C1 K9999` |
+| 6 | `T0` -> `TMR T1 K50`, `OUT Y0` |
+| 7 | `T1` -> `RST M1`, `RST M2` *(new: replaces the `RST M1` that net 6 used to do)* |
+
+What follows from the file (INFERRED from the logic; reproduced exactly by `FakeLadder` in `plc/test_simulation.py`,
+**not yet observed on the simulator**):
+* **The one-scan Y0 flash is fixed.** M1 now stays ON until T1 completes, so Y0 is ON for ~T1, then net 7 drops M1,
+  and on the next scan T0, T1 and Y0 reset.
+* **Presets are still K150 / K50 = 15 s / 5 s** at the 100 ms base, not the stated contract K15 / K5 (1.5 s / 0.5 s).
+  Every REJECT therefore holds M1 for ~20 s. *Needs the ladder owner's decision; this project does not edit the ladder.*
+* **REJECT acknowledge semantics.** M2 drops at once (net 5), but M1 is HELD by design. `PLCService` now treats
+  "M2 cleared" as the acknowledgement for M1 (`address_map.HELD_UNTIL_DONE`, `CommandResult.cmd_held = True`). M1
+  clearing later means "reject cycle finished". PASS still needs M0 *and* M2 cleared.
+* **Triggers are masked during a reject cycle.** Net 5 resets M2 on every scan while M1 is ON, so a bottle reaching X0
+  in that window (T0 + T1 = 2 s with the contract presets, 20 s with the saved ones) raises **no trigger**. The same is
+  true if X0 rises while M2 is still ON (previous bottle not answered yet). With `watch_x0=True`, `PLCService` reads
+  X0 *before* M2 in every poll and reports each such X0 edge as a `BOTTLE_UNTRIGGERED` event. `machine_cycle` records
+  that bottle as FAULT "NOT INSPECTED" instead of losing it silently. This is a ladder limit on continuous handling;
+  only a ladder change removes it (see 0.2).
+* Only one reject can be in the PLC at a time (one T0). After a REJECT, the minimum bottle spacing is T0 + T1.
+
+### 0.2 What a ladder change would need (proposal for the ladder owner, NOT implemented)
+
+The software FIFO (`machine_cycle.py`) already knows when each bottle reaches the reject station. A ladder that
+removes the masking would separate "inspection answered" from "fire the cylinder":
+1. Make PASS and REJECT both acknowledge only the trigger (`RST M2`), not run a long timer on the command bit.
+2. Let Python send the REJECT at `scheduled_reject_time - T0` (already implemented: `dispatch_at`), with T0 a short,
+   fixed actuator lead time and T1 the pulse. Or keep T0 = travel and add a PLC-side shift register so several
+   rejects can be in flight.
+3. Never reset M2 from the reject timer rung (net 5 / net 7), so X0 edges during a reject still create triggers.
+
+Until then, `machine_cycle` works with the ladder as it is and reports every bottle it could not handle.
+
+### 0.3 Earlier file: saved 01:36 / 02:59 (historical; this is what the simulator measurements below used)
+
 **Correction:** `final_year.isp` is *not* encrypted. After a 0xAA-byte header it holds a raw-deflate stream
 (`zlib.decompressobj(-15)`) of ISPSoft's text project. Decoded from the file saved 2026-10-03 01:36 (**VERIFIED from the
 file**; node types read as 1 = NO contact, 2 = NC contact, 3 = rising-edge contact, 13 = OUT, 15 = SET, 16 = RST):
@@ -39,9 +84,8 @@ after one scan. Y0 is ON for about **one PLC scan**; T1 (K50 = 5 s) can never ti
 changed by this project; this needs the ladder owner's decision.** The M0/M1/M2 meanings in section C are confirmed by the
 file's own device comments; C0/C1 are counters of PASS / REJECT commands.
 
-Software consequence: `PLCService` acknowledges a command when the command bit *and* M2 are back to 0. With this ladder
-PASS acknowledges in ~25 ms, but REJECT cannot acknowledge within 1 s because M1 is deliberately held for 15 s, so it
-returns `NOT_ACKED`. That is reported, not hidden: the timeout was not raised.
+Software consequence (at the time): `PLCService` acknowledged a command only when the command bit *and* M2 were back
+to 0, so REJECT returned `NOT_ACKED` (M1 held for 15 s). Superseded by the M1 `HELD_UNTIL_DONE` rule in 0.1.
 
 ## A. Architecture
 
@@ -117,8 +161,10 @@ from the file**; the handshake test measures T0/T1 durations and compares them w
 
 ## E. REJECT handshake
 
-Same as D with M1. After the ack the **PLC** runs T0 -> Y0 ON -> T1 -> Y0 OFF. Python never times or drives Y0. The ack
-means "the PLC consumed the command", not "the bottle was ejected".
+Same as D with M1, except the acknowledgement is **M2 cleared** (the 09:06 ladder holds M1 ON through T0 + T1; see 0.1,
+`HELD_UNTIL_DONE`). After the ack the **PLC** runs T0 -> Y0 ON -> T1 -> Y0 OFF -> M1 OFF. Python never times or drives Y0.
+The ack means "the PLC consumed the command", not "the bottle was ejected"; `machine_cycle` watches Y0 ON/OFF (status
+poll, ~150 ms resolution) and records a FAULT if Y0 is never seen for a REJECT.
 
 ## F. Timing measurements
 
@@ -153,21 +199,28 @@ There is **no automatic reconnect and no automatic retry**. A reconnect never re
 
 ```
 python -m plc.test_simulation                       # FAKE: protocol/addressing/write policy/FAULTs (unit)
-python -m plc.test_service                          # FAKE: service + FakeLadder contract model (9 groups)
+python -m plc.test_service                          # FAKE: service + FakeLadder (scan emulation of the 09:06 ladder), 13 groups
 python -m plc.commissioning --selftest              # FAKE: HMI against fake PLC
 python -m plc.test_simulation --real --bench 200 --faults   # SIMULATOR, read-only
 python -m plc.handshake_test --fake                 # FAKE: the harness itself
 python -m plc.handshake_test --real --cycles PASS,REJECT,PASS,REJECT,REJECT,PASS --wait 60   # SIMULATOR, writes M0/M1
+python -m plc.handshake_test --real --sim-x0 --t0 1.5 --t1 0.5 --csv trace.csv   # ...X0 pulsed by Python, full trace
+python machine_cycle.py                             # FAKE: the whole per-bottle cycle against FakeLadder
 ```
+
+`FakeLadder` runs the seven decoded nets in order every scan, commits each scan atomically, and serves X from a
+scan-latched input image, as a real PLC answers Modbus between scans. Three test flakes during development were
+mid-scan reads in an earlier fake, not service bugs. It is still a FAKE: real scan time, serial timing and the real
+timer base are only measured by `--real`.
 
 ## I. Simulator limitations
 
 * The simulator answers any station and has no serial timing, no framing errors, no cable faults.
-* **Python cannot create the trigger.** X is an input and M2 is PLC-owned; the guard refuses to write them and the project
-  will not bypass it. Each live cycle therefore needs **you to raise X0 in the simulator**. (A test-only M2 stimulus from
-  Python was considered and not done: it bypasses the write policy and needs your explicit decision.)
-* If a second bottle arrives while M2 is still 1, M2 shows no new edge. Software cannot see it. If the ladder must count
-  bottles, that is what a counter or a second flag is for (C0/C1 may already do it; role unknown).
+* **Trigger stimulus:** `PLCService.simulator_test_write` may pulse X0 (and X1/X2/M0/M1/M2) **only** on a loopback
+  simulator link, one bit per write, logged as `SIM_TEST_WRITE`. `handshake_test --sim-x0` and the Production tab's
+  "Simulate bottle (X0)" use it. On a serial (real PLC) link it is refused.
+* If a second bottle arrives while M2 is still 1, or while M1 is ON, M2 shows no new edge. With `watch_x0=True` this is
+  now reported (`BOTTLE_UNTRIGGERED`), not silent, but the bottle is still not inspected (0.1).
 * Polling is ~20-50 ms with ~16 ms transactions: a trigger is noticed up to ~one poll period late.
 
 ## J. Physical PLC transition and COM-port ownership
@@ -194,12 +247,20 @@ application's Machine tab has the selector (Simulator TCP / Real PLC serial), Co
 "Test link" (10 heartbeats). Auto-connect happens only in simulator mode; a COM port is opened only on Connect. Simulator
 test switches and `simulator_test_write` refuse to work on a serial link. Modbus **RTU** is not implemented.
 
-## K. Status of the simulator write path: **NOT YET PROVEN against the simulator**
+## K. Status of the simulator write path for the 09:06 ladder: **NOT YET RUN**
 
-Python side: implemented and verified with a FAKE ladder. Simulator side: reads, fault and reconnect behaviour verified; the
-M0/M1 -> ladder -> M2 clear / T0 / Y0 / T1 observation has **not** been run, because it requires a real M2 and the only legitimate
-source is X0 in the simulator. Exact next step: start the simulator (RUN), then
-`python -m plc.handshake_test --real --cycles PASS,REJECT,PASS,REJECT,REJECT,PASS --wait 120` and raise X0 when it asks.
+The 01:36 ladder was exercised on the simulator (0.3). The 09:06 ladder has not been: on 2026-10-03 ~11:00 the
+`DVPSimulator_SS2` was started standalone, but it was in STOP with no program (`M1000 = 0`), and only ISPSoft can
+download the ladder. `handshake_test --real` now refuses to start in STOP and says so. Exact next steps:
+1. ISPSoft: open `final_year`, set T0 = **K15** and T1 = **K5** if the 1.5 s / 0.5 s contract stands (the saved file
+   has K150 / K50), compile, Simulation ON, download, RUN.
+2. `python -m plc.handshake_test --real --sim-x0 --cycles PASS --csv single_pass.csv`
+3. `... --cycles REJECT --csv single_reject.csv`
+4. `... --cycles PASS,REJECT,PASS,REJECT,REJECT,PASS --csv sequence.csv` (the harness waits for each reject cycle to
+   finish before the next X0, because a trigger during M1 would be masked). If the presets stay K150/K50, add
+   `--t0 15 --t1 5` to check against them instead.
+5. Freeze the contract (section C + 0.1) once those pass, then run the Production tab against the simulator
+   (Simulate bottle / auto-feed).
 
 ## L. Known unknowns / next hardware verification
 
