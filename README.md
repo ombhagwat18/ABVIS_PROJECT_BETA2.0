@@ -251,7 +251,7 @@ projects/<slug>/        labels.csv, config.json, project.json (images and checkp
 plc file/               PLC simulator script + ISPSoft project (ladder unreadable here)
 SYSTEM_ROADMAP/         project documentation
 FINAL_YEAR_BLACKBOOK/   project write-up
-docs/, PLAN.md, PROGRESS.md, PROJECT_MASTER_AUDIT.md   historical documents
+docs/, PLAN.md          original design docs (historical)
 app.py, index.html      earlier web version - unused (nothing imports or launches them)
 ```
 
@@ -324,8 +324,8 @@ Stage 2 export validation: `stage2_dataset/validate_yolo_export.py` (19 checks; 
 | [HARDWARE_INTEGRATION](SYSTEM_ROADMAP/HARDWARE_INTEGRATION.md) | Hardware, timing, unknowns |
 | [TRACEABILITY_PLAN](SYSTEM_ROADMAP/TRACEABILITY_PLAN.md) | Records today and later |
 
-Historical (kept, marked as such): [PLAN.md](PLAN.md), [PROGRESS.md](PROGRESS.md),
-[PROJECT_MASTER_AUDIT.md](PROJECT_MASTER_AUDIT.md). Contributor/agent notes: [CLAUDE.md](CLAUDE.md).
+Original design doc (historical): [PLAN.md](PLAN.md). Latest audit: [SYSTEM_AUDIT_2026-10-03.md](SYSTEM_AUDIT_2026-10-03.md).
+Contributor/agent notes: [CLAUDE.md](CLAUDE.md).
 
 ## Known limitations
 

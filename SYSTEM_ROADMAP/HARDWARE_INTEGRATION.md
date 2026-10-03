@@ -9,7 +9,7 @@ describes; the repository itself contains no measurements, drawings or test logs
 | Item | Role |
 |---|---|
 | Conveyor | Moves 250 ml Bisleri bottles past the inspection point to the reject location |
-| 2 x EMEET NOVA 4K cameras | Image acquisition (software supports multiple cameras; EMEET compatibility is untested) |
+| 2 x EMEET NOVA 4K cameras | Image acquisition. Both enumerate and stream on the dev PC (see Camera notes: one 1080p stream per USB 2.0 hub); not yet mounted on the machine |
 | Photoelectric bottle sensor | Detects a bottle arriving (not represented in software) |
 | Delta DVP-series PLC, programmed in ISPSoft | Deterministic machine control |
 | Festo DSNU cylinder + 5/2 solenoid valve | Reject actuator |
@@ -81,15 +81,22 @@ these quantities until they are measured.
 
 ## Camera notes
 
-- Live capture uses driver defaults. The benchmark tab can measure achievable resolution/FPS but its result is
-  **not** applied to the live camera.
+- The Live tab captures at driver defaults. The Production line requests `line_capture_wh` (default 1920x1080) with
+  `line_fourcc` (MJPG) and shows what the camera actually delivers.
 - No exposure, gain, focus or white-balance control; no automatic reconnect (a dead camera stays FAULT until
   restarted); no hardware trigger.
 - On Windows `time.monotonic()` has ~15.6 ms resolution; frame sequence numbers give the strict ordering.
-- Whether the two EMEET cameras enumerate and behave as expected is untested. On the development machine the probe found
-  index 0 (640x480 at driver defaults; device identity not recorded, delivering ~7.5-8.7 fps in room light) and index 1,
-  which is the **Iriun Webcam virtual camera** (black "Please start Iriun Webcam" frame when the app is not running).
-  Neither was confirmed to be an EMEET NOVA 4K.
+- **EMEET Nova 4K, measured on the development PC 2026-10-03 (cameras on the desk, NOT mounted on the machine):**
+  DirectShow order is 0 = USB2.0 HD UVC WebCam (laptop), 1 = Iriun Webcam (virtual), **2 and 3 = EMEET SmartCam Nova 4K**
+  (`infer.camera_names()` reads this; the Production tab picks the EMEETs by default). One EMEET alone: 640x480 default,
+  1920x1080 MJPG 30 fps, 3840x2160 MJPG ~14 fps, ~1 s to open. Both at once: **only one stream at 1920x1080 or
+  1280x720** (the second returns no frames, either open order, DSHOW or MSMF). Both stream at 640x480 (~30 fps each).
+  Cause: both are on the same Generic USB 2.0 hub (`VID_1A40&PID_0101`, Hub #3, ports 2 and 3); UVC isochronous bandwidth
+  is reserved per stream. **Fix: plug each EMEET into its own PC USB port (different root hub, ideally USB 3).**
+  Until then set `line_capture_wh` to `[640, 480]` for a two-camera line.
+- Placement, height, angle, field of view, lighting, reflection, focus and exposure in the current enclosure: **not
+  started** -- needs the cameras mounted on the machine. Start with one camera (1920x1080), check bottle/cap/label
+  visibility in the Production tab's live view and the YOLO boxes on the evidence image, then add the second.
 
 ## First hardware checklist (for Phase 5-8)
 
