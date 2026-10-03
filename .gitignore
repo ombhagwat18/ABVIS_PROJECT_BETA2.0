@@ -58,3 +58,8 @@ models/stage2_yolo/run_yolov8n/*
 models/stage2_yolo/test_eval/*
 !models/stage2_yolo/test_eval/PR_curve.png
 !models/stage2_yolo/test_eval/confusion_matrix_normalized.png
+
+# Unified vision dataset (vision_data.py). The manifests, report and export_info
+# ARE tracked; the exported images and the per-file hash cache are regenerable.
+vision_dataset/classification/*/
+vision_dataset/manifests/hash_cache.json

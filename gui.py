@@ -10,6 +10,7 @@ a queue drained by after().
 from __future__ import annotations
 
 import csv
+import gc
 import json
 import queue
 import sys
@@ -30,6 +31,9 @@ import charts
 import dataset as D
 import detect
 import infer
+from plc import (CONNECTED as PLC_CONNECTED, DEGRADED as PLC_DEGRADED, FAULT as PLC_FAULT, SERIAL_FORMATS, PLCClient,
+                 PLCService, SerialTransport, TcpTransport, serial_ports)
+from plc import address_map as PLC_AM
 
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
@@ -52,6 +56,40 @@ def bgr_to_ctk(frame: np.ndarray, size=None) -> ctk.CTkImage:
     return ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
 
 
+def plc_link(cfg: dict):
+    """settings.json -> (transport, station, target). 'tcp' is the ISPSoft simulator; 'serial' is the wired PLC
+    (serial link not yet verified on hardware). Nothing is opened here."""
+    station = int(cfg.get("plc_station", 1))
+    if cfg.get("plc_mode") == "serial":
+        return (SerialTransport(str(cfg.get("plc_com", "COM1")), int(cfg.get("plc_baud", 9600)),
+                                str(cfg.get("plc_format", "7E1"))), station, "Delta DVP PLC (serial)")
+    return (TcpTransport(str(cfg.get("plc_host", "127.0.0.1")), int(cfg.get("plc_port", 10002))), station,
+            "ISPSoft DVP-SS2 simulator")
+
+
+def plc_endpoint_info(port: int):
+    """Who is listening on a local TCP port and which OTHER programs are connected to it (e.g. COMMGR when
+    ISPSoft is online). None if psutil is not installed or the query fails. Read-only OS query."""
+    try:
+        import os
+        import psutil
+        me, listener, others = os.getpid(), None, set()
+
+        def name(pid):
+            try:
+                return f"{psutil.Process(pid).name()} (pid {pid})"
+            except Exception:                            # noqa: BLE001
+                return f"pid {pid}"
+        for c in psutil.net_connections(kind="tcp"):
+            if c.laddr and c.laddr.port == port and c.status == "LISTEN":
+                listener = name(c.pid)
+            if c.raddr and c.raddr.port == port and c.pid and c.pid != me:
+                others.add(name(c.pid))
+        return {"listener": listener, "others": sorted(others)}
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
 def chart_panel(parent, title, w, h, note) -> ctk.CTkCanvas:
     """A titled chart canvas + caption, the chrome shared by every chart in
     AnalysisTab and TrainTab."""
@@ -67,7 +105,7 @@ def chart_panel(parent, title, w, h, note) -> ctk.CTkCanvas:
 
 
 class App(ctk.CTk):
-    def __init__(self):
+    def __init__(self, plc_autoconnect=None):
         super().__init__()
         self.title("Bottle Inspection")
         self.geometry("1500x950")
@@ -79,8 +117,19 @@ class App(ctk.CTk):
         self.cfg: dict = {}
         self.cams = infer.CameraSet()
         self.q: queue.Queue = queue.Queue()
+        # Cyclic garbage is collected ONLY on the main thread (see pump). Automatic GC can run on any thread, and
+        # when it ran on a background thread it finalised Tk objects (tkinter Font.__del__) there, which blocked
+        # that thread for good -- seen freezing the PLC worker, 2026-10-03.
+        gc.disable()
+        self._gc_at = self._gc_full_at = time.monotonic()
 
         self.settings = D.load_settings()
+        # The ONE owner of the PLC link (plc/service.py). The Machine tab only talks to this object.
+        _tr, _st, _tg = plc_link(self.settings)
+        self.plc = PLCService(PLCClient(_tr, station=_st, target=_tg), poll_s=0.02, status_period_s=0.15)
+        # Auto-connect only to the simulator. A physical COM port is opened only when the operator presses Connect.
+        self.plc_autoconnect = (("--selftest" not in sys.argv and self.settings.get("plc_mode") != "serial")
+                                if plc_autoconnect is None else plc_autoconnect)
         self.apply_font_scale(self.settings.get("font_scale", 1.0), save=False)
 
         head = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=0)
@@ -106,6 +155,7 @@ class App(ctk.CTk):
         self.tab_train = TrainTab(self, self.tabs.tab("Train"))
         self.tab_analysis = AnalysisTab(self, self.tabs.tab("Analysis"))
         self.tab_live = LiveTab(self, self.tabs.tab("Live"))
+        self.tab_machine = MachineTab(self, self.tabs.tab("Machine"))
         self.tab_bench = BenchTab(self, self.tabs.tab("Camera"))
         self.tab_data = DataTab(self, self.tabs.tab("Data health"))
         self.tab_annotate = annotation_studio.AnnotationTab(self, self.tabs.tab("Annotate"))
@@ -115,12 +165,12 @@ class App(ctk.CTk):
         self.reload()
         self.after(60, self.pump)
 
-    TABS = ("Label", "Defects", "Train", "Analysis", "Live", "Camera",
+    TABS = ("Label", "Defects", "Train", "Analysis", "Live", "Machine", "Camera",
             "Data health", "Annotate", "Settings")
 
     def all_tabs(self):
         return (self.tab_label, self.tab_defects, self.tab_train, self.tab_analysis,
-                self.tab_live, self.tab_bench, self.tab_data, self.tab_annotate,
+                self.tab_live, self.tab_machine, self.tab_bench, self.tab_data, self.tab_annotate,
                 self.tab_settings)
 
     def apply_font_scale(self, scale: float, save: bool = True):
@@ -146,6 +196,14 @@ class App(ctk.CTk):
                     traceback.print_exc()
         except queue.Empty:
             pass
+        now = time.monotonic()
+        if now - self._gc_at >= 1.0:                     # the only place cyclic GC runs
+            self._gc_at = now
+            if now - self._gc_full_at >= 30.0:
+                self._gc_full_at = now
+                gc.collect()
+            else:
+                gc.collect(1)
         self.after(60, self.pump)
 
     def post(self, fn):
@@ -257,7 +315,581 @@ class App(ctk.CTk):
 
     def on_close(self):
         self.cams.stop()
+        self.tab_machine.close()
+        self.plc.stop()                      # sends nothing; the PLC clears M0/M1 itself
         self.destroy()
+
+
+# ------------------------------------------------------------------- Machine
+class ConveyorHMI(ctk.CTkToplevel):
+    """Small animated view of the line. Lamps, belt motion, sensor beam and reject pusher follow the real
+    PLC bits from PLCService's cached snapshot. The bottle's position is an illustration derived from those
+    bits (the PLC does not report where a bottle is)."""
+
+    W, H = 660, 330
+    BELT_Y, X_IN, X_STATION, X_PUSH, X_OUT = 170, 40, 220, 450, 620
+    SPEED = 130.0                                    # px/s, illustration only
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.title("Conveyor HMI")
+        self.geometry(f"{self.W + 20}x{self.H + 20}")
+        self.resizable(False, False)
+        self.cv = ctk.CTkCanvas(self, width=self.W, height=self.H, bg=BG, highlightthickness=0)
+        self.cv.pack(padx=10, pady=10)
+        self.bottle = None                           # {"x", "y", "mode"}: station / pass / reject / pushed
+        self.phase = 0.0
+        self.note = ""
+        self._t = time.monotonic()
+        self._alive = True
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.after(50, self._tick)
+
+    def close(self):
+        self._alive = False
+        self.destroy()
+
+    def _tick(self):
+        if not self._alive:
+            return
+        try:
+            self.step()
+        except Exception:
+            traceback.print_exc()
+        self.after(50, self._tick)
+
+    def step(self):
+        now = time.monotonic()
+        dt, self._t = min(0.2, now - self._t), now
+        svc = self.app.plc
+        snap = svc.snapshot() if svc.link_state() == PLC_CONNECTED else None
+        f = {}
+        if snap:
+            for k in ("inputs", "internal", "outputs", "timers", "counters"):
+                f.update(snap[k])
+            self._bottle(f, dt)
+            if f["Y1"]:
+                self.phase = (self.phase + self.SPEED * dt) % 40
+        else:
+            self.bottle = None
+        self.draw(f, svc.link_state())
+
+    def _bottle(self, f, dt):
+        b = self.bottle
+        rejecting = bool(f["M1"] or f["T0"] or f["Y0"] or f["T1"])
+        if f["M2"] and (b is None or b["mode"] == "pass"):
+            b = self.bottle = {"x": float(self.X_STATION), "y": 0.0, "mode": "station"}
+            self.note = ""
+        if b is None:
+            return
+        if b["mode"] == "station" and not f["M2"]:
+            b["mode"] = "reject" if rejecting else "pass"
+        if b["mode"] == "pass":
+            if rejecting:
+                b["mode"] = "reject"
+            elif f["Y1"]:
+                b["x"] += self.SPEED * dt
+                if b["x"] > self.X_OUT + 20:
+                    self.bottle = None
+        elif b["mode"] == "reject":
+            if f["Y0"]:
+                b["mode"], b["x"] = "pushed", float(self.X_PUSH)
+            elif not rejecting:                      # sequence ended and Y0 was never seen ON
+                b["mode"], self.note = "pass", "reject sequence ended - Y0 was not observed ON"
+            else:
+                b["x"] = min(float(self.X_PUSH), b["x"] + self.SPEED * dt)
+        elif b["mode"] == "pushed":
+            b["y"] += 220 * dt
+            if b["y"] > 95 and not f["Y0"]:
+                self.bottle = None
+
+    def draw(self, f, link):
+        c, y = self.cv, self.BELT_Y
+        c.delete("all")
+        on = lambda k: bool(f.get(k))
+        c.create_text(12, 14, anchor="w", text="CONVEYOR", font=("Segoe UI", 12, "bold"), fill=INK)
+        c.create_text(self.W - 12, 14, anchor="e", font=("Segoe UI", 11, "bold"),
+                      text=("RUNNING" if on("Y1") else "STOPPED") if f else f"NO PLC LINK ({link})",
+                      fill=(GOOD if on("Y1") else DIM) if f else BAD)
+        # belt + moving stripes + rollers
+        c.create_rectangle(self.X_IN, y, self.X_OUT, y + 26, fill="#cbd5e1", outline="#64748b", width=2)
+        x = self.X_IN + self.phase
+        while x < self.X_OUT - 4:
+            c.create_line(x, y + 4, x + 10, y + 22, fill="#64748b", width=2)
+            x += 40
+        for rx in (self.X_IN, self.X_OUT):
+            c.create_oval(rx - 13, y, rx + 13, y + 26, fill="#94a3b8", outline="#475569", width=2)
+        # sensor (X0) and camera (M2) at the inspection station
+        sx = self.X_STATION
+        c.create_rectangle(sx - 34, y - 76, sx - 26, y, fill=GOOD if on("X0") else "#94a3b8", outline="")
+        if on("X0"):
+            c.create_line(sx - 26, y - 30, sx + 30, y - 30, fill=BAD, width=2, dash=(4, 3))
+        c.create_text(sx - 30, y - 86, text="X0 sensor", font=("Segoe UI", 9), fill=GOOD if on("X0") else DIM)
+        c.create_rectangle(sx - 18, 36, sx + 18, 60, fill=WARN if on("M2") else "#94a3b8", outline="")
+        c.create_polygon(sx - 8, 60, sx + 8, 60, sx + 14, 72, sx - 14, 72, fill=WARN if on("M2") else "#94a3b8")
+        c.create_text(sx + 26, 48, anchor="w", font=("Segoe UI", 9, "bold"),
+                      text="INSPECT (M2)" if on("M2") else "camera", fill=WARN if on("M2") else DIM)
+        # reject pusher (Y0) and bin
+        px, ext = self.X_PUSH, 34 if on("Y0") else 0
+        c.create_rectangle(px - 16, y - 96, px + 16, y - 70, fill="#475569", outline="")
+        c.create_rectangle(px - 4, y - 70, px + 4, y - 58 + ext, fill=BAD if on("Y0") else "#94a3b8", outline="")
+        c.create_rectangle(px - 13, y - 58 + ext, px + 13, y - 50 + ext, fill=BAD if on("Y0") else "#94a3b8", outline="")
+        c.create_text(px + 22, y - 84, anchor="w", text="Y0 reject", font=("Segoe UI", 9, "bold" if on("Y0") else "normal"),
+                      fill=BAD if on("Y0") else DIM)
+        c.create_rectangle(px - 30, y + 44, px + 30, y + 110, outline="#64748b", width=2)
+        c.create_text(px, y + 120, text="reject bin", font=("Segoe UI", 9), fill=DIM)
+        c.create_text(self.X_OUT - 6, y + 44, anchor="e", text="pass ->", font=("Segoe UI", 9), fill=DIM)
+        if f:                                            # PLC counters: C0 = PASS commands, C1 = REJECT commands
+            c.create_text(px, y + 77, text=str(f["C1"]), font=("Segoe UI", 16, "bold"), fill=BAD)
+            c.create_text(self.X_OUT - 6, y + 64, anchor="e", text=f"PASS  {f['C0']}", font=("Segoe UI", 13, "bold"), fill=GOOD)
+            c.create_text(self.X_OUT - 6, y + 84, anchor="e", text=f"total {f['C0'] + f['C1']}", font=("Segoe UI", 9), fill=DIM)
+        # bottle
+        b = self.bottle
+        if b:
+            bx, by = b["x"], y - 2 + b["y"]
+            col = {"station": WARN, "reject": BAD, "pushed": BAD}.get(b["mode"], ACC)
+            c.create_rectangle(bx - 9, by - 40, bx + 9, by, fill="#dbeafe", outline=col, width=2)
+            c.create_rectangle(bx - 4, by - 52, bx + 4, by - 40, fill="#dbeafe", outline=col, width=2)
+            c.create_rectangle(bx - 5, by - 57, bx + 5, by - 52, fill=col, outline="")
+        # lamps: the real bits
+        lamps = (("X0", "sensor"), ("M2", "trigger"), ("M0", "pass"), ("M1", "reject"), ("Y1", "conveyor"), ("Y0", "solenoid"))
+        for i, (k, name) in enumerate(lamps):
+            lx = 22 + i * 106
+            col = (BAD if k in ("M1", "Y0") else GOOD) if on(k) else "#cbd5e1"
+            c.create_oval(lx, self.H - 30, lx + 14, self.H - 16, fill=col, outline="#64748b")
+            c.create_text(lx + 20, self.H - 23, anchor="w", text=f"{k} {name}", font=("Segoe UI", 9), fill=INK if on(k) else DIM)
+        if f:
+            c.create_text(12, self.H - 46, anchor="w", font=("Consolas", 10), fill=DIM,
+                          text=f"T0 {f['T0']}   T1 {f['T1']}   {self.note}")
+        c.create_text(self.W - 12, 32, anchor="e", font=("Segoe UI", 8), fill=DIM,
+                      text="lamps = real PLC bits; bottle position is illustrative")
+
+
+class MachineTab:
+    """Machine / PLC status. Reads the app's single PLCService; it never touches PLCClient.
+
+    Python owns: receiving the M2 trigger, the PASS/REJECT decision, sending M0/M1, showing state.
+    The PLC ladder owns: conveyor Y1, reject delay T0, solenoid Y0, pulse T1. Nothing here writes Y or T.
+    The simulator switches and the test command are commissioning tools, marked as such.
+    """
+
+    NAMES = {"X0": "Bottle Sensor", "X1": "Start", "X2": "Stop", "M2": "Inspection Trigger",
+             "M0": "PASS Command", "M1": "REJECT Command", "Y1": "Conveyor", "Y0": "Reject Solenoid",
+             "T0": "Reject Travel Delay", "T1": "Reject Pulse", "C0": "PASS count", "C1": "REJECT count"}
+    GROUPS = (("INPUTS", ("X0", "X1", "X2")), ("INTERNAL", ("M2", "M0", "M1")),
+              ("OUTPUTS", ("Y1", "Y0")), ("TIMERS (x0.1 s)", ("T0", "T1")), ("COUNTERS", ("C0", "C1")))
+    SIM = ("X0", "X1", "X2", "M2", "M0", "M1")       # simulator-only switches
+    MODES = {"Simulator (TCP)": "tcp", "Real PLC (serial)": "serial"}
+    LOG_LABEL = {"X0": "X0 SENSOR", "X1": "X1 START", "X2": "X2 STOP", "M2": "M2 TRIGGER", "M0": "M0 PASS CMD",
+                 "M1": "M1 REJECT CMD", "Y0": "Y0 REJECT", "Y1": "Y1 CONVEYOR", "T0": "T0 DELAY", "T1": "T1 PULSE",
+                 "C0": "C0 PASS COUNT", "C1": "C1 REJ COUNT"}
+
+    def __init__(self, app: App, parent):
+        self.app = app
+        self.cells: dict = {}
+        self.last_cmd = None
+        self._last_res = None
+        self.cmd_busy = False
+        self.msg = ("", True)
+        self._lock = threading.Lock()
+        self._log_n = -1
+        self._closed = False
+        self._started = False
+        self._hold: dict = {}                        # device -> monotonic time until which the switch is not mirrored
+        self.hmi = None
+
+        head = ctk.CTkFrame(parent, fg_color=PANEL)
+        head.pack(fill="x", pady=(0, 6))
+        self.state = ctk.CTkLabel(head, text="DISCONNECTED", font=("Segoe UI", 18, "bold"), text_color=DIM, width=170)
+        self.state.pack(side="left", padx=(12, 8), pady=8)
+        self.run_lbl = ctk.CTkLabel(head, text="PLC --", font=("Segoe UI", 13, "bold"), text_color=DIM, width=110)
+        self.run_lbl.pack(side="left")
+        self.info = ctk.CTkLabel(head, text="", text_color=DIM, font=MONO, justify="left", anchor="w")
+        self.info.pack(side="left", padx=10)
+        ctk.CTkButton(head, text="Disconnect", width=96, fg_color="transparent", border_width=1, text_color=INK,
+                      command=self.disconnect).pack(side="right", padx=(4, 12))
+        ctk.CTkButton(head, text="Connect", width=90, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
+                      command=self.connect).pack(side="right", padx=4)
+        ctk.CTkButton(head, text="Conveyor HMI", width=120, command=self.open_hmi).pack(side="right", padx=4)
+
+        cfg = app.settings
+        conn = ctk.CTkFrame(parent, fg_color=PANEL)
+        conn.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(conn, text="PLC LINK", font=("Segoe UI", 11, "bold"), text_color=DIM).pack(side="left", padx=(12, 8), pady=8)
+        self.mode = ctk.CTkOptionMenu(conn, values=list(self.MODES), width=160, command=lambda _=None: self._mode_changed())
+        self.mode.set(next(k for k, v in self.MODES.items() if v == ("serial" if cfg.get("plc_mode") == "serial" else "tcp")))
+        self.mode.pack(side="left")
+        holder = ctk.CTkFrame(conn, fg_color="transparent")
+        holder.pack(side="left", padx=6)
+        self.f_tcp = ctk.CTkFrame(holder, fg_color="transparent")
+        ctk.CTkLabel(self.f_tcp, text="Host").pack(side="left", padx=(4, 4))
+        self.host = ctk.CTkEntry(self.f_tcp, width=110)
+        self.host.insert(0, str(cfg.get("plc_host", "127.0.0.1")))
+        self.host.pack(side="left")
+        ctk.CTkLabel(self.f_tcp, text="Port").pack(side="left", padx=(8, 4))
+        self.port = ctk.CTkEntry(self.f_tcp, width=64)
+        self.port.insert(0, str(cfg.get("plc_port", 10002)))
+        self.port.pack(side="left")
+        self.f_ser = ctk.CTkFrame(holder, fg_color="transparent")
+        self.com = ctk.CTkOptionMenu(self.f_ser, values=["-"], width=230)
+        self.com.pack(side="left", padx=(4, 2))
+        ctk.CTkButton(self.f_ser, text="Scan", width=50, command=self.scan_ports).pack(side="left", padx=2)
+        self.baud = ctk.CTkOptionMenu(self.f_ser, values=["9600", "19200", "38400", "57600", "115200"], width=86)
+        self.baud.set(str(cfg.get("plc_baud", 9600)))
+        self.baud.pack(side="left", padx=2)
+        self.fmt = ctk.CTkOptionMenu(self.f_ser, values=sorted(SERIAL_FORMATS), width=70)
+        self.fmt.set(str(cfg.get("plc_format", "7E1")))
+        self.fmt.pack(side="left", padx=2)
+        ctk.CTkLabel(conn, text="Station").pack(side="left", padx=(4, 4))
+        self.station = ctk.CTkEntry(conn, width=40)
+        self.station.insert(0, str(cfg.get("plc_station", 1)))
+        self.station.pack(side="left")
+        ctk.CTkButton(conn, text="Test link", width=80, fg_color="transparent", border_width=1, text_color=INK,
+                      command=self.test_link).pack(side="left", padx=8)
+        self.conn_note = ctk.CTkLabel(conn, text="", text_color=DIM, font=("Segoe UI", 11), anchor="w", justify="left")
+        self.conn_note.pack(side="left", padx=4)
+        self.auto = ctk.CTkCheckBox(conn, text="auto-reconnect", width=120)
+        if cfg.get("plc_auto_reconnect", True):
+            self.auto.select()
+        self.auto.pack(side="right", padx=10)
+        self._com_map: dict = {}
+        self.scan_ports(select=str(cfg.get("plc_com", "")))
+        self._mode_changed()
+        # proof-of-life line: reply counter and data age tick while the link is real; endpoint = what answers
+        self.live_lbl = ctk.CTkLabel(parent, text="", font=MONO, text_color=DIM, anchor="w", justify="left")
+        self.live_lbl.pack(fill="x", padx=6, pady=(0, 4))
+        self._want_link = False                      # the operator asked for a link (Connect) and has not pressed Disconnect
+        self._last_auto = 0.0
+        self._op_busy = False
+        self._ep = (0.0, None)
+
+        self.flow_lbl = ctk.CTkLabel(parent, text="", font=("Segoe UI", 13, "bold"), text_color=DIM, anchor="w")
+        self.flow_lbl.pack(fill="x", padx=6, pady=(0, 6))
+
+        grid = ctk.CTkFrame(parent, fg_color="transparent")
+        grid.pack(fill="x", pady=(0, 6))
+        for col, (title, names) in enumerate(self.GROUPS):
+            box = ctk.CTkFrame(grid, fg_color=PANEL)
+            box.grid(row=0, column=col, sticky="nsew", padx=(0, 6))
+            grid.grid_columnconfigure(col, weight=1, uniform="g")
+            ctk.CTkLabel(box, text=title, font=("Segoe UI", 11, "bold"), text_color=DIM).pack(anchor="w", padx=10, pady=(8, 2))
+            for n in names:
+                row = ctk.CTkFrame(box, fg_color="transparent")
+                row.pack(fill="x", padx=8, pady=(1, 3))
+                ctk.CTkLabel(row, text=n, width=34, anchor="w", font=("Consolas", 13, "bold")).pack(side="left")
+                v = ctk.CTkLabel(row, text="--", width=50, corner_radius=6, fg_color="#94a3b8", text_color="white")
+                v.pack(side="left", padx=4)
+                ctk.CTkLabel(row, text=self.NAMES[n], text_color=DIM, font=("Segoe UI", 11)).pack(side="left")
+                self.cells[n] = v
+
+        ctl = ctk.CTkFrame(parent, fg_color=PANEL)
+        ctl.pack(fill="x", pady=(0, 6))
+        row = ctk.CTkFrame(ctl, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(8, 4))
+        ctk.CTkLabel(row, text="SIMULATOR TEST", font=("Segoe UI", 11, "bold"), text_color=WARN, width=120,
+                     anchor="w").pack(side="left")
+        self.sw = {}
+        for dev in self.SIM:
+            var = ctk.BooleanVar(value=False)
+            sw = ctk.CTkSwitch(row, text=dev, variable=var, width=70,
+                               command=lambda d=dev, v=var: self.sim_input(d, v.get()))
+            sw.pack(side="left", padx=(0, 6))
+            self.sw[dev] = (sw, var)
+        self.pulse_btn = ctk.CTkButton(row, text="Pulse X0", width=84, command=self.pulse_x0)
+        self.pulse_btn.pack(side="left", padx=8)
+        row = ctk.CTkFrame(ctl, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(0, 8))
+        ctk.CTkLabel(row, text="TEST COMMAND", font=("Segoe UI", 11, "bold"), text_color=WARN, width=120,
+                     anchor="w").pack(side="left")
+        self.arm = ctk.CTkCheckBox(row, text="arm", width=60)
+        self.arm.pack(side="left", padx=(0, 6))
+        self.btn_pass = ctk.CTkButton(row, text="PASS (M0)", width=100, fg_color=GOOD, state="disabled",
+                                      command=lambda: self.send("PASS"))
+        self.btn_pass.pack(side="left", padx=4)
+        self.btn_rej = ctk.CTkButton(row, text="REJECT (M1)", width=110, fg_color=BAD, state="disabled",
+                                     command=lambda: self.send("REJECT"))
+        self.btn_rej.pack(side="left", padx=4)
+        self.cmd_lbl = ctk.CTkLabel(row, text="", font=MONO, anchor="w", justify="left")
+        self.cmd_lbl.pack(side="left", padx=10)
+
+        self.log = ctk.CTkTextbox(parent, font=MONO, fg_color=PANEL, text_color=INK, height=170)
+        self.log.pack(fill="both", expand=True)
+        self.log.configure(state="disabled")
+        app.after(250, self._tick)
+        if app.plc_autoconnect:
+            app.after(400, self.connect)
+
+    # ------------------------------------------------------------ actions (never on the UI thread)
+    def _op(self, name, fn):
+        def run():
+            try:
+                out = fn()
+                msg = (out if isinstance(out, str) else "", True)
+            except Exception as e:                       # noqa: BLE001 - shown, never swallowed
+                msg = (f"{name} FAILED: {type(e).__name__}: {e}", False)
+            with self._lock:
+                self.msg = msg
+                self._op_busy = False
+        self._op_busy = True
+        threading.Thread(target=run, daemon=True).start()
+
+    def disconnect(self):
+        self._want_link = False                      # stops auto-reconnect until Connect is pressed again
+        self._op("disconnect", self.app.plc.disconnect)
+
+    # ------------------------------------------------------------ link configuration
+    def _mode_changed(self):
+        serial = self.MODES[self.mode.get()] == "serial"
+        (self.f_tcp if serial else self.f_ser).pack_forget()
+        (self.f_ser if serial else self.f_tcp).pack(side="left")
+        self.conn_note.configure(
+            text=("Physical PLC: serial link NOT yet verified on hardware. One program per COM port - "
+                  "go offline in ISPSoft/COMMGR first.") if serial else "ISPSoft simulator (COMMGR 'Simulation SE').",
+            text_color=WARN if serial else DIM)
+
+    def scan_ports(self, select: str = ""):
+        ports = serial_ports()
+        names = [f"{dev} - {desc}"[:44] for dev, desc in ports] or ["- no COM port found -"]
+        self._com_map = {n: dev for n, (dev, _) in zip(names, ports)}
+        self.com.configure(values=names)
+        self.com.set(next((n for n, d in self._com_map.items() if d == select), names[0]))
+
+    def link_from_ui(self) -> dict:
+        """The link settings as typed. Raises ValueError with a readable message; opens nothing."""
+        try:
+            station = int(self.station.get())
+            if not 1 <= station <= 247:
+                raise ValueError
+        except ValueError:
+            raise ValueError("station must be a number 1..247") from None
+        if self.MODES[self.mode.get()] == "serial":
+            dev = self._com_map.get(self.com.get())
+            if not dev:
+                raise ValueError("no COM port selected (plug in the PLC cable, then Scan)")
+            return {"plc_mode": "serial", "plc_com": dev, "plc_baud": int(self.baud.get()),
+                    "plc_format": self.fmt.get(), "plc_station": station}
+        try:
+            port = int(self.port.get())
+        except ValueError:
+            raise ValueError("TCP port must be a number") from None
+        if not self.host.get().strip():
+            raise ValueError("host is empty")
+        return {"plc_mode": "tcp", "plc_host": self.host.get().strip(), "plc_port": port, "plc_station": station}
+
+    def connect(self, apply_ui: bool = True):
+        """Initialise the link chosen above and prove the PLC answers. apply_ui=False keeps the service's
+        current transport (used by the self-test, which runs against a fake PLC)."""
+        svc = self.app.plc
+        link = None
+        if apply_ui:
+            try:
+                cfg = self.link_from_ui()
+            except ValueError as e:
+                with self._lock:
+                    self.msg = (f"connect: {e}", False)
+                return
+            self.app.settings.update(cfg)
+            D.save_settings(self.app.settings)
+            link = plc_link(self.app.settings)
+        self._want_link = True
+        if not self._started or svc is not getattr(self, "_started_svc", None):
+            svc.start()
+            self._started, self._started_svc = True, svc
+
+        def run():
+            if link is not None:
+                svc.reconfigure(*link)
+            lat = svc.connect()
+            return f"connected to {svc.client.transport.description}: PLC answered in {lat:.0f} ms"
+        self._op("connect", run)
+
+    def test_link(self):
+        def run():
+            r = self.app.plc.link_test(10)
+            return (f"link test: {r['replies']}/10 replies, median {r['median_ms']:.0f} ms, max {r['max_ms']:.0f} ms, "
+                    f"PLC {'RUN' if r['plc_run'] else 'NOT RUN'}")
+        self._op("link test", run)
+
+    def open_hmi(self):
+        if self.hmi is None or not self.hmi._alive:
+            self.hmi = ConveyorHMI(self.app)
+        self.hmi.lift()
+
+    def sim_input(self, dev, on):
+        """Simulator-only: X0/X1/X2 stand in for the sensor and buttons, M2/M0/M1 for the handshake bits."""
+        if not self.app.plc.simulator_mode:
+            return
+        self._hold[dev] = time.monotonic() + 0.7
+        self._op(f"simulator {dev} <- {int(on)}", lambda: self.app.plc.simulator_test_write(dev, bool(on)))
+
+    def pulse_x0(self):
+        if not self.app.plc.simulator_mode:
+            return
+
+        def run():
+            self.app.plc.simulator_test_write("X0", True)
+            time.sleep(0.4)
+            self.app.plc.simulator_test_write("X0", False)
+        self._op("simulator X0 pulse", run)
+
+    def send(self, verdict):
+        trig = self.app.plc.current_trigger()
+        if self.cmd_busy or trig is None or trig.state != "PENDING" or not self.arm.get():
+            return
+        self.cmd_busy = True
+        self.arm.deselect()                              # one press = one command
+        tid = trig.id
+
+        def run():
+            fn = self.app.plc.send_pass if verdict == "PASS" else self.app.plc.send_reject
+            res = fn(tid)
+            with self._lock:
+                self.last_cmd = res
+        threading.Thread(target=run, daemon=True).start()
+
+    def close(self):
+        self._closed = True
+        if self.hmi is not None and self.hmi._alive:
+            self.hmi.close()
+
+    def refresh(self):
+        pass
+
+    # ------------------------------------------------------------ periodic view update (main thread)
+    def _tick(self):
+        if self._closed:
+            return
+        try:
+            self._update()
+        except Exception:                                # a display glitch must never stop the loop
+            traceback.print_exc()
+        self.app.after(200, self._tick)
+
+    def _fmt_event(self, e):
+        t = time.strftime("%H:%M:%S", time.localtime(e.wall))
+        lab, val = None, ""
+        if e.event == "DEVICE_CHANGE":
+            lab, val = self.LOG_LABEL.get(e.device, e.device), e.ack
+        elif e.event == "TRIGGER":
+            lab, val = "INSPECTION", f"PENDING  (trigger #{e.trigger_id})" + ("  [after reconnect: may be stale]" if e.ack else "")
+        elif e.event == "COMMAND_SENT":
+            lab, val = "RESULT", f"{e.command}  (test command, trigger #{e.trigger_id})"
+        elif e.event == "COMMAND_WRITTEN":
+            lab, val = "PLC COMMAND", f"{e.device}  write ok {e.latency_ms:.0f} ms"
+        elif e.event == "COMMAND_ACKED":
+            lab, val = "PLC ACK", f"OK  {e.latency_ms:.0f} ms"
+        elif e.event in ("COMMAND_NOT_ACKED", "COMMAND_ACK_LOST", "COMMAND_WRITE_FAILED", "COMMAND_REFUSED"):
+            lab, val = ("PLC ACK" if "ACK" in e.event else "PLC COMMAND"), f"{e.event[8:]}  {e.error}"
+        elif e.event == "SIM_TEST_WRITE":
+            lab, val = "SIM TEST", e.ack.replace("SIMULATOR-ONLY stimulus: ", "")
+        elif e.event in ("TRIGGER_CANCELLED", "TRIGGER_LOST", "TRIGGER_OVERDUE"):
+            lab, val = "INSPECTION", f"{e.event[8:]}  {e.error}"
+        elif e.event in ("CONNECTED", "FAULT", "CONNECT_FAILED", "DISCONNECTED"):
+            lab, val = "PLC LINK", f"{e.event}  {e.error}"
+        return f"{t}  {lab:<13} {val}" if lab else None
+
+    def _update(self):
+        svc = self.app.plc
+        h = svc.health_check()
+        st = h["link_state"]
+        self.state.configure(text=st, text_color={PLC_CONNECTED: GOOD, PLC_DEGRADED: WARN, PLC_FAULT: BAD}.get(st, DIM))
+        snap = svc.snapshot() if st == PLC_CONNECTED else None
+        if snap is not None and snap["age_s"] > 1.5:     # connected but the values are old: do not show them as live
+            snap = None
+        running = bool(snap and snap["plc_run"])
+        self.run_lbl.configure(text="PLC --" if not snap else ("PLC RUN" if running else "PLC STOP"),
+                               text_color=DIM if not snap else (GOOD if running else BAD))
+        # ---- proof of life + what is actually answering
+        now_m = time.monotonic()
+        if now_m - self._ep[0] > 1.0:
+            port = getattr(svc.client.transport, "port", None)
+            self._ep = (now_m, plc_endpoint_info(port) if svc.simulator_mode and isinstance(port, int) else None)
+        ep = self._ep[1]
+        if not svc.simulator_mode:
+            where = f"endpoint: {svc.client.transport.description} (physical link)"
+        elif ep is None:
+            where = "endpoint: simulator (process info unavailable)"
+        else:
+            where = ("endpoint: " + (f"{ep['listener']} is running" if ep["listener"] else "NOTHING is listening on this port")
+                     + "   |   ISPSoft/COMMGR: "
+                     + ("ONLINE on the simulator: " + ", ".join(ep["others"]) if ep["others"] else
+                        "offline (not needed: the simulator keeps running the ladder until Simulation is stopped)"))
+        age = "--" if h["age_s"] is None else f"{h['age_s']:.1f} s"
+        self.live_lbl.configure(
+            text=f"{'LIVE ' if snap else 'NO DATA'}  replies {h['ok']}   last reply {age} ago   {where}",
+            text_color=DIM if snap else BAD)
+        # ---- auto-reconnect: only re-opens the link; no command is ever replayed (PLCService guarantees that)
+        if (st == PLC_FAULT and self._want_link and self.auto.get() and not self._op_busy
+                and now_m - self._last_auto > 3.0):
+            self._last_auto = now_m
+            self._op("auto-reconnect", svc.connect)
+        with self._lock:
+            res, msg = self.last_cmd, self.msg
+            if res is not None:
+                self.last_cmd = None
+        lat = "--" if h["last_latency_ms"] is None else f"{h['last_latency_ms']:.0f} ms"
+        lw = "never" if not h["last_ok_wall"] else time.strftime("%H:%M:%S", time.localtime(h["last_ok_wall"]))
+        bad = (not msg[1]) or bool(h["last_error"] and st != PLC_CONNECTED)
+        line2 = msg[0] if (msg[0] and (not msg[1] or st == PLC_CONNECTED)) else (h["last_error"] if bad else "")
+        self.info.configure(text=f"{h['transport']}   latency {lat}   last OK {lw}" + (f"\n{line2}" if line2 else ""),
+                            text_color=BAD if bad else DIM)
+        flat = {}
+        if snap:
+            for k in ("inputs", "internal", "outputs", "timers", "counters"):
+                flat.update(snap[k])
+        for n, w in self.cells.items():
+            if n not in flat:
+                w.configure(text="--", fg_color="#94a3b8")
+            elif n[0] == "C":
+                w.configure(text=str(flat[n]), fg_color=GOOD if n == "C0" else BAD)
+            elif n[0] == "T":
+                w.configure(text=str(flat[n]), fg_color="#1d4ed8" if flat[n] else "#94a3b8")
+            else:
+                w.configure(text="ON" if flat[n] else "OFF", fg_color=GOOD if flat[n] else "#94a3b8")
+        # switches mirror what the PLC reports, so none can claim a state the PLC does not have
+        live = svc.simulator_mode and st == PLC_CONNECTED and running    # no test input while the ladder is not running
+        now = time.monotonic()
+        for dev, (sw, var) in self.sw.items():
+            if dev in flat and now > self._hold.get(dev, 0) and bool(flat[dev]) != var.get():
+                var.set(bool(flat[dev]))
+            sw.configure(state="normal" if live else "disabled")
+        self.pulse_btn.configure(state="normal" if live else "disabled")
+        trig = svc.current_trigger() if st == PLC_CONNECTED else None
+        if res is not None:
+            self.cmd_busy = False
+            self._last_res = res
+        r = self._last_res
+        if not snap:
+            self.flow_lbl.configure(text=f"No PLC data ({st})", text_color=DIM)
+        elif not running:
+            self.flow_lbl.configure(text="PLC is in STOP: the ladder is not executing. Values below are memory contents only; "
+                                         "test inputs and commands are disabled.", text_color=BAD)
+        elif trig is not None and trig.state == "PENDING":
+            self.flow_lbl.configure(text=f"INSPECTION TRIGGER RECEIVED (M2 ON, trigger #{trig.id})  -  camera not linked yet: "
+                                         f"AI result: none  -  waiting for PASS / REJECT", text_color=WARN)
+        else:
+            self.flow_lbl.configure(text="Waiting for bottle sensor (X0 -> M2).   Conveyor "
+                                         + ("RUNNING" if flat["Y1"] else "STOPPED")
+                                         + f"   |   inspected {flat['C0'] + flat['C1']}:  PASS {flat['C0']}  REJECT {flat['C1']}"
+                                         + ("   REJECT SOLENOID ON" if flat["Y0"] else ""),
+                                    text_color=BAD if flat["Y0"] else DIM)
+        can = (st == PLC_CONNECTED and running and trig is not None and trig.state == "PENDING"
+               and bool(self.arm.get()) and not self.cmd_busy)
+        for b in (self.btn_pass, self.btn_rej):
+            b.configure(state="normal" if can else "disabled")
+        if r is not None:
+            tail = f"ack {r.ack_ms:.0f} ms" if r.status == "ACKED" else r.detail[:70]
+            self.cmd_lbl.configure(text=f"{r.command} #{r.trigger_id}: {r.status}  {tail}",
+                                   text_color=GOOD if r.status == "ACKED" else BAD)
+        evs = svc.events()
+        if len(evs) != self._log_n:
+            self._log_n = len(evs)
+            lines = [x for x in (self._fmt_event(e) for e in evs[-400:]) if x]
+            self.log.configure(state="normal")
+            self.log.delete("1.0", "end")
+            self.log.insert("end", "\n".join(reversed(lines[-120:])))      # newest first
+            self.log.configure(state="disabled")
 
 
 # --------------------------------------------------------------------- Label
@@ -2228,6 +2860,96 @@ def selftest():
         {"requested": "640x480@30", "error": "cannot open camera"}]
     app.tab_bench.show()
     app.update()
+
+    # Machine tab + conveyor HMI against a FAKE PLC (the self-test never touches a device)
+    from plc.test_simulation import FakeLadder, FakePLC, _client
+    fake = FakePLC()
+    lad = FakeLadder(fake, scale=0.5)
+    # generous timings: the camera probes started by other tabs can stall the process for a second or two
+    app.plc = PLCService(_client(fake, timeout=1.0), poll_s=0.02, status_period_s=0.1, stale_after_s=6.0)
+    mt = app.tab_machine
+    app.tabs.set("Machine")
+    mt.connect(apply_ui=False)
+
+    def until(cond, sec=12.0):
+        t0 = time.time()
+        while time.time() - t0 < sec and not cond():
+            app.update(); time.sleep(0.02)
+        if not cond():
+            import faulthandler
+            faulthandler.dump_traceback(all_threads=True)
+        return cond()
+    assert until(lambda: mt.state.cget("text") == "CONNECTED"), (mt.state.cget("text"), mt.msg, app.plc.health_check(),
+                                                                   [t.name for t in threading.enumerate()])
+    assert set(mt.sw) == {"X0", "X1", "X2", "M0", "M1", "M2"} and "Y0" not in mt.sw and "Y1" not in mt.sw
+    mt.open_hmi()
+    hmi = mt.hmi
+    assert until(lambda: str(mt.sw["M2"][0].cget("state")) == "normal"), "simulator switches not enabled on loopback"
+    mt.sw["M2"][1].set(True); mt.sim_input("M2", True)              # the M2 test switch raises a trigger
+    assert until(lambda: "TRIGGER RECEIVED" in mt.flow_lbl.cget("text")), mt.flow_lbl.cget("text")
+    assert until(lambda: mt.cells["M2"].cget("text") == "ON"), "M2 cell never showed ON"
+    assert "AI result: none" in mt.flow_lbl.cget("text")
+    assert until(lambda: hmi.bottle is not None and hmi.bottle["mode"] == "station"), "HMI shows no bottle at the station"
+    mt.send("REJECT")
+    app.update()
+    assert not [w for w in fake.writes if w[0] == PLC_AM.address_of("M1")], "command sent without arming"
+    mt.arm.select()
+    assert until(lambda: str(mt.btn_rej.cget("state")) == "normal")
+    mt.send("REJECT")
+    assert until(lambda: "ACKED" in mt.cmd_lbl.cget("text")), mt.cmd_lbl.cget("text")
+    assert [w for w in fake.writes if w[0] == PLC_AM.address_of("M1")] == [(PLC_AM.address_of("M1"), 1)], fake.writes
+    assert until(lambda: hmi.bottle is not None and hmi.bottle["mode"] == "pushed", 4.0), "HMI did not show the reject push"
+    assert until(lambda: hmi.bottle is None, 4.0), "rejected bottle never left the HMI"
+    assert until(lambda: "PLC ACK" in mt.log.get("1.0", "end"))
+    txt = mt.log.get("1.0", "end")
+    assert "M2 TRIGGER" in txt and "RESULT" in txt and "Y0 REJECT" in txt, txt
+    fake.regs[PLC_AM.address_of("C0")] = 7; fake.regs[PLC_AM.address_of("C1")] = 3     # counters shown as values
+    assert until(lambda: mt.cells["C0"].cget("text") == "7" and mt.cells["C1"].cget("text") == "3"), "counters not shown"
+    assert until(lambda: "PASS 7  REJECT 3" in mt.flow_lbl.cget("text")), mt.flow_lbl.cget("text")
+    assert until(lambda: "C0 PASS COUNT" in mt.log.get("1.0", "end")), "counter change not logged"
+    assert not any(w[0] in (PLC_AM.address_of("Y0"), PLC_AM.address_of("Y1")) for w in fake.writes), "a Y output was written"
+    hmi.close()
+    # live feedback: STOP greys the controls, a dead link shows NO DATA, auto-reconnect restores it without writing
+    assert until(lambda: mt.live_lbl.cget("text").startswith("LIVE")), mt.live_lbl.cget("text")
+    fake.bits[PLC_AM.address_of("M1000")] = 0
+    assert until(lambda: mt.run_lbl.cget("text") == "PLC STOP" and "STOP" in mt.flow_lbl.cget("text")), mt.run_lbl.cget("text")
+    assert until(lambda: str(mt.sw["X0"][0].cget("state")) == "disabled"), "test inputs stayed enabled in STOP"
+    fake.bits[PLC_AM.address_of("M1000")] = 1
+    assert until(lambda: mt.run_lbl.cget("text") == "PLC RUN")
+    n_w = len(fake.writes)
+    fake.mode = "close"
+    assert until(lambda: mt.state.cget("text") == "FAULT" and mt.live_lbl.cget("text").startswith("NO DATA")), mt.state.cget("text")
+    assert mt.cells["M2"].cget("text") == "--", "stale value shown on a dead link"
+    fake.mode = "ok"
+    assert until(lambda: mt.state.cget("text") == "CONNECTED", 15.0), "auto-reconnect did not restore the link"
+    assert len(fake.writes) == n_w, "auto-reconnect wrote to the PLC"
+    mt.disconnect()
+    assert until(lambda: mt.state.cget("text") == "DISCONNECTED")
+    t_end = time.time() + 4.0
+    while time.time() < t_end:
+        app.update(); time.sleep(0.02)
+    assert mt.state.cget("text") == "DISCONNECTED", "auto-reconnect ignored the operator's Disconnect"
+    mt.connect(apply_ui=False)
+    assert until(lambda: mt.state.cget("text") == "CONNECTED")
+    # link panel: both modes build a transport from the fields without opening anything
+    mt.mode.set("Simulator (TCP)"); mt._mode_changed()
+    assert mt.link_from_ui()["plc_mode"] == "tcp" and plc_link(mt.link_from_ui())[0].description.startswith("TCP ")
+    mt.mode.set("Real PLC (serial)"); mt._mode_changed(); app.update()
+    mt._com_map = {"COM99 - test": "COM99"}; mt.com.configure(values=["COM99 - test"]); mt.com.set("COM99 - test")
+    lk = plc_link(mt.link_from_ui())
+    assert lk[0].description == "SERIAL COM99 9600 7E1" and "NOT yet verified" in mt.conn_note.cget("text"), lk[0].description
+    mt.station.delete(0, "end"); mt.station.insert(0, "x")
+    try:
+        mt.link_from_ui(); raise AssertionError("bad station accepted")
+    except ValueError:
+        pass
+    mt.station.delete(0, "end"); mt.station.insert(0, "1")
+    mt.mode.set("Simulator (TCP)"); mt._mode_changed()
+    mt.test_link()
+    assert until(lambda: "link test: 10/10" in mt.info.cget("text")), mt.info.cget("text")
+    app.plc.stop()
+    lad.stop()
+    fake.close()
 
     app.cams.stop()
     app.destroy()

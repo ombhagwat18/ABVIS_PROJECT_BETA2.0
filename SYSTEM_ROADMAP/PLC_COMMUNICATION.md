@@ -1,162 +1,211 @@
 # PLC Communication
 
-The Python <-> PLC bridge, proven against the **ISPSoft DVP-SS2 simulator**. This is a *simulator* result:
-no physical Delta PLC has been connected.
+The Python <-> PLC foundation: transport, device map, guarded PASS/REJECT commands, trigger handling, fault
+behaviour and a commissioning window. **Everything below that was measured was measured against the ISPSoft
+DVP-SS2 *simulator*. No physical PLC has been connected.**
 
-> **Source of truth is the ladder in ISPSoft, and it cannot be read from this repository** (`final_year.isp` is a
-> proprietary binary). So this page separates what was *measured* from what is *known about the machine*: the
-> communication path and device addressing are verified; **what each device means is UNKNOWN**, and the
-> write -> ladder -> read test has **not** been run because no safe command bit has been identified.
+Labels used: **VERIFIED** (observed on this machine, say where) - **USER-STATED** (given by the user, not re-derivable
+here) - **INFERRED** (reasoned or from general Delta knowledge, not tested) - **UNKNOWN** - **REQUIRES PHYSICAL TEST**.
+Test classes are never mixed: **FAKE PLC TEST** (in-process fake) / **SIMULATOR TEST** (ISPSoft) / **PHYSICAL PLC TEST** (none yet).
 
-## 1. Architecture
+## 0. The ladder as actually saved, and what the simulator does (2026-10-03) -- READ THIS FIRST
+
+**Correction:** `final_year.isp` is *not* encrypted. After a 0xAA-byte header it holds a raw-deflate stream
+(`zlib.decompressobj(-15)`) of ISPSoft's text project. Decoded from the file saved 2026-10-03 01:36 (**VERIFIED from the
+file**; node types read as 1 = NO contact, 2 = NC contact, 3 = rising-edge contact, 13 = OUT, 15 = SET, 16 = RST):
+
+| Net | Logic |
+|---|---|
+| 1 | `X1` -> `SET Y1` |
+| 2 | `X2` -> `RST Y1` |
+| 3 | `X0` (rising edge) -> `SET M2` |
+| 4 | `M0` -> `RST M2`, `RST M0`, `CNT C0 K9999` |
+| 5 | `M1` -> `TMR T0 K150`, `RST M2`, `CNT C1 K9999` |
+| 6 | `T0` -> `TMR T1 K50`, `OUT Y0`, `RST M1`, `RST M2` |
+
+(The project was re-saved 02:59 with identical logic. A second REJECT run caught Y0 ON in exactly 1 of 126 samples, at ~15.0 s, OFF again ~80 ms later, T1 still 0 -- the one-scan flash.)
+
+Simulator behaviour matches this file exactly (**VERIFIED on the simulator**, one REJECT sampled every ~75 ms for 15 s):
+M2 clears at once; M1 stays ON while T0 counts 0 -> 150 (**15.0 s**, 100 ms base); at T0 = 150 M1 and T0 clear together;
+**Y0 was ON in 0 of 187 samples and T1 never left 0**; C1 +1. PASS: M0 and M2 clear within ~14-36 ms, C0 +1, Y0 never ON.
+
+**Why Y0 never appears (follows from net 6, not from a guess):** when T0 completes, the same rung does `OUT Y0` *and*
+`RST M1`. M1 is T0's enable (net 5), so on the next scan T0 drops, the rung goes false, Y0 turns OFF and T1 is reset
+after one scan. Y0 is ON for about **one PLC scan**; T1 (K50 = 5 s) can never time out. No Y1/X1 interlock exists on Y0.
+
+**Mismatch with the stated contract** (T0 ~1.5 s, T1 ~0.5 s, Y0 pulse of T1): the *earlier* backups
+(`final_year_2026-10-2-*.~bak`, up to 23:31) contain exactly that design -- net 5 `(M1 or T0)... TMR T0 K15`, net 6
+`(T0 or Y0) and not T1 -> TMR T1 K5, OUT Y0`. The 01:36 edit replaced it with the table above. **The ladder was not
+changed by this project; this needs the ladder owner's decision.** The M0/M1/M2 meanings in section C are confirmed by the
+file's own device comments; C0/C1 are counters of PASS / REJECT commands.
+
+Software consequence: `PLCService` acknowledges a command when the command bit *and* M2 are back to 0. With this ladder
+PASS acknowledges in ~25 ms, but REJECT cannot acknowledge within 1 s because M1 is deliberately held for 15 s, so it
+returns `NOT_ACKED`. That is reported, not hidden: the timeout was not raised.
+
+## A. Architecture
 
 ```
- vision software --(PASS / REJECT / FAULT)--> PLCClient --Transport--> PLC (ladder) --> conveyor / sensor / reject
-                                              plc/client.py            owns deterministic timing and outputs
+ inspection engine (later)  --PLCLink-->  PLCService  --PLCClient--> Transport --> PLC ladder --> conveyor / sensor / reject
+ (PASS/REJECT decision)                   plc/service.py plc/client.py  TcpTransport (sim)        owns all timing and outputs
+                                          1 worker thread               SerialTransport: NOT written
 ```
 
 | Piece | File | Role |
 |---|---|---|
 | Framing | `plc/protocol.py` | Modbus ASCII frames, LRC, exception replies. Pure functions |
-| Device map | `plc/address_map.py` | Names -> Modbus addresses; what is verified, what is UNKNOWN; **write policy** |
-| Client | `plc/client.py` | `PLCClient`: connect/disconnect/reconnect, reads, guarded writes, heartbeat, health |
-| Transport | `TcpTransport` in `client.py` | **Only this changes for the real PLC.** A serial Transport is *not implemented* |
-| Tests | `plc/test_simulation.py` | Unit tests (fake PLC) and the separate `--real` simulator tests |
-| Commissioning window | `plc/commissioning.py` | Small test window, not a dashboard |
+| Device map | `plc/address_map.py` | The single map: addresses, meanings, safety class, write policy, command/trigger bits |
+| Client | `plc/client.py` | Low-level reads, guarded writes, health. Thread-safe per transaction. Application code should not use it directly |
+| **Service** | `plc/service.py` | **The one owner of the link.** Worker thread, polling, M2 trigger events, at-most-once PASS/REJECT with acknowledgement, event log |
+| Transport | `TcpTransport` in `client.py` | Simulator only. The `Transport` protocol (`open/close/send/recv_frame`) is what a serial port must implement |
+| Tests | `plc/test_simulation.py`, `plc/test_service.py` (fake), `plc/handshake_test.py` (simulator), `plc/commissioning.py --selftest` | see section H |
+| Window | `plc/commissioning.py` | Commissioning only; not a production dashboard |
 
-The application above `PLCClient` never sees sockets, frames or addresses. Python sends a high-level command and
-reads state; **the PLC ladder owns actuator timing**. Python must never try to generate a millisecond pulse (the
-measured link latency below is ~12 ms with outliers, which is why).
+The inspection side depends on the `PLCLink` surface: `connect, disconnect, is_connected, read_bit, read_word, read_status,
+wait_for_trigger, send_pass, send_reject, health_check`. No YOLO, camera or image type appears in `plc/`.
+Raw `write_bit/write_word` exist only on `PLCClient` and are refused for everything except M0/M1.
 
-## 2. Simulator connection -- verified
+Old assets: `plc file/delta_sim_test.py` is a standalone manual keypad script and **is not part of the system**. It
+hard-codes M0/M1/M2/Y0/Y1 addresses (matching the current map) but labels M0 "GOOD" / M1 "REJECT"; the current contract
+(M0 = PASS command, M1 = REJECT command) agrees, but that comment is not independent evidence. `plc_modbus_gui.py` does not exist.
+It is superseded by `plc/`; leave it or delete it, but nothing imports it. There is **one** PLC implementation.
+
+## B. Simulator configuration (VERIFIED 2026-10-02/03)
 
 | Setting | Value | Evidence |
 |---|---|---|
-| Simulator | **DVP SS2 / EC3_8K Simulator** (`DVPSimulator_SS2.exe`) | process list; COMMGR log "DVP SS2/EC3_8K Simulator running, Port:10002" |
-| Transport | TCP | `netstat`: `DVPSimulator_SS2.exe` LISTENING on `0.0.0.0:10002` |
-| Host / port | `127.0.0.1` : `10002` | `DriverInfo.dri` `LocalIPAddr="127.0.0.1" DVPSimPortNumber="10002"`; connect succeeded |
-| COMMGR driver | "Simulaiton SE", ID 14114, `CommInterface=7`, timeout 3000 ms x3 retries | `DriverInfo.dri` |
-| COMMGR server port | 8895 (ISPSoft <-> COMMGR) | `DriverInfo.dri` `ServerPort`; `netstat` ESTABLISHED to ISPSoft |
-| Protocol | **Modbus ASCII**: `:` + hex(station, function, data) + hex(LRC) + CR LF | raw frames exchanged with the simulator |
-| Station | **1** (the simulator also answers other station IDs, so it does **not** enforce the number; a real PLC will) | probe with station 2 got a reply |
-| LRC | `(-sum(bytes)) & 0xFF` | simulator accepted our frames and our parser verified its replies |
-| Functions | FC01 read coils, FC02 read inputs, FC03 read registers; FC05/FC06 implemented but unused | see below |
-| Timeout | client default 1.0 s per transaction (configurable) | -- |
+| Simulator | DVP SS2/EC3_8K (`DVPSimulator_SS2.exe`) | process list; listening on `0.0.0.0:10002` (netstat) |
+| COMMGR driver | "Simulaiton SE" (sic), `CON_INTERFACE=7` | `final_year.ini`, `DriverInfo.dri` |
+| Transport / address | TCP `127.0.0.1:10002` | connect succeeds |
+| Protocol / station | Modbus ASCII over TCP, station 1 (the simulator answers any station: it does not enforce it) | frames exchanged; station-2 probe answered |
+| ISPSoft session | ISPSoft <-> COMMGR session (port 8895) stayed connected while Python talked to port 10002 | netstat ESTABLISHED, no new COMMGR errors |
 
-Our direct connection to port 10002 ran **alongside** the ISPSoft<->COMMGR session; that session stayed
-connected and the COMMGR log showed no new errors. Whether the simulator would accept *two simultaneous
-writers* was not tested.
+## C. Device map (single source: `plc/address_map.py`)
 
-## 3. Device map
+X and Y are octal, M/T/C decimal. Meanings were USER-STATED and are now confirmed by the decoded ladder (section 0). Addressing was **VERIFIED** by reading the simulator (and M by Delta's RUN relays
+M1000..M1003 = 1,0,0,1).
 
-Addressing follows Delta's convention (**X and Y are octal**; M, T, C, D decimal). `plc/address_map.py` is the single
-source; its unit tests pin the arithmetic (e.g. `Y10 = 0x0508`, `M10 = 0x080A`, `M1000 = 0x0BE8`).
-
-| Device | Modbus address | Read | Observed 2026-10-02 | Meaning | In your ladder list | Writable |
+| Device | Modbus addr | Type / direction | Meaning | Python access | Safety class | Sim read |
 |---|---|---|---|---|---|---|
-| X0 X1 X2 | 0x0400.. | **FC02** (FC01 -> exception 02) | 0 0 0 | **UNKNOWN** | yes | never |
-| M0 M1 M2 | 0x0800..0802 | FC01 | 0, **1**, 0 | **UNKNOWN** | yes | no (allow-list empty) |
-| M10 M11 M12 | 0x080A..080C | FC01 | 0 0 0 | **UNKNOWN** | yes | no |
-| Y0 Y2 Y3 | 0x0500, 0502, 0503 | FC01 | Y0 **toggled ON/OFF while watched**, Y2 0, Y3 0 | **UNKNOWN** | yes | never |
-| **Y1** | 0x0501 | FC01 | **ON** | UNKNOWN | **no -- not in the list** | never |
-| T0 T1 T3 T4 T5 | 0x0600.. | contact FC01, value **FC03** | all 0 (idle) | **UNKNOWN** | yes | no |
-| M1000 | 0x0BE8 | FC01 | 1 | "PLC in RUN" (Delta special relay) | -- | no |
+| X0 | 0x0400 FC02 | input | photoelectric sensor, bottle at station | read | input | yes |
+| X1 | 0x0401 FC02 | input | start button (SET Y1) | read | input | yes |
+| X2 | 0x0402 FC02 | input | stop button (RESET Y1) | read | input | yes |
+| Y0 | 0x0500 FC01 | output | reject solenoid | read only | **never written** | yes |
+| Y1 | 0x0501 FC01 | output | conveyor motor | read only | **never written** | yes |
+| M2 | 0x0802 FC01 | internal | PLC -> Python trigger: bottle ready | read only | PLC-owned | yes |
+| M0 | 0x0800 FC01/FC05 | internal | Python -> PLC PASS command; PLC resets M0 and M2 | **write 1 via PLCService** | COMMAND | yes |
+| M1 | 0x0801 FC01/FC05 | internal | Python -> PLC REJECT command; PLC resets M1 and M2, then T0 -> Y0 -> T1 | **write 1 via PLCService** | COMMAND | yes |
+| T0 | 0x0600 (FC01 contact, FC03 value) | timer | travel delay, intended K15 = 1.5 s (100 ms base) | read only | timer | yes |
+| T1 | 0x0601 | timer | reject pulse, intended K5 = 0.5 s | read only | timer | yes |
+| C0, C1 | 0x0E00, 0x0E01 (FC03 value) | counter | **UNKNOWN role** (user reports counter blocks; role not stated; the encrypted ladder cannot be read) | read only | counter | read OK, idle 0 |
+| M1000 | 0x0BE8 | special relay | PLC RUN (Delta-defined) | read only | heartbeat | yes |
 
-How the addressing was verified: every device above was read successfully from the running simulator. The M base
-is independently confirmed by Delta's special relays, which are defined by the PLC family and not by this ladder:
-`M1000..M1003` read **1,0,0,1**, exactly the RUN pattern (M1000 = ON while running, M1001 = OFF, the two first-scan
-pulses already past). The PLC is therefore in RUN. Y0 changing between reads shows the ladder is executing.
+The previous map listed M10-M12, T3-T5, Y2, Y3 as "in the ladder list". They are not in the current contract and were
+removed from the map (any valid name still resolves through `lookup()` as UNKNOWN / read-only). The older Y1 mystery
+("ON but not in the list") is resolved: Y1 is the conveyor.
+`.isp`/`.ini` in the working tree are newer than the ones the earlier verification used (modified 2026-10-03 01:36); the
+contract above is the user's statement about that current ladder. **C0/C1 meaning and the T0/T1 timer *base* are not verifiable
+from the file**; the handshake test measures T0/T1 durations and compares them with the intended values.
 
-**What is NOT verified, and must stay that way until someone who has read the ladder says otherwise:**
-what any of these devices *do*. The old comments in `plc file/delta_sim_test.py` (M0 = GOOD, M1 = REJECT, Y0/Y1)
-are **not** confirmed by anything here and must not be reused. **Y1 being ON but absent from your device list needs
-a look** -- either the list is incomplete or the output is driven by something unexpected.
+## D. PASS handshake (contract; Python side implemented and FAKE-tested; simulator run pending, see K)
 
-From ISPSoft's compile output: the program is `final_year_conveyor_project`, 6 networks, 32 steps. The last
-compile/download was 15:56 on 2026-10-02 and the saved `.isp` is byte-identical to the 15:56 `~isp`, so the
-simulator is very likely running the saved ladder (not proven).
+1. X0 -> ladder sets M2. `PLCService` sees M2 rising -> `Trigger(id)`; `wait_for_trigger()` delivers it once.
+2. Application inspects, calls `send_pass(trigger.id)`.
+3. Service re-reads M2/M0/M1 and requires M2 = 1, M0 = 0, M1 = 0; marks the trigger answered **before** sending;
+   writes M0 = 1 once.
+4. PLC resets M0 and M2 -> service sees both 0 -> `ACKED` (with write->response and write->ack latency). Y0 must stay OFF.
 
-## 4. Write policy
+## E. REJECT handshake
 
-Default: **Python cannot write anything.**
-* X inputs and Y outputs are never writable (`ALLOW_OUTPUT_WRITES = False`; Y stays refused even if listed).
-* M/D bits are writable only if named in `address_map.WRITE_ALLOWLIST`, which is **empty**.
-* A refused write raises `PLCWriteNotAllowed` **before any bytes are sent** (unit-tested).
-* The commissioning window has **no** output-forcing control; its only write control is the "command bit", disabled
-  unless exactly one bit is allow-listed.
+Same as D with M1. After the ack the **PLC** runs T0 -> Y0 ON -> T1 -> Y0 OFF. Python never times or drives Y0. The ack
+means "the PLC consumed the command", not "the bottle was ejected".
 
-## 5. Health, faults, reconnect
+## F. Timing measurements
 
-* States: `DISCONNECTED` (never connected / closed on purpose), `CONNECTED`, `FAULT` (an error occurred).
-* Any timeout, malformed/garbage reply, bad LRC, wrong station or closed connection raises a `PLCError` and moves to
-  `FAULT`; the socket is closed because the stream may be out of step.
-* In `FAULT`/`DISCONNECTED` every call raises immediately and **sends nothing** (unit-tested: the fake PLC sees no
-  traffic). There are no hidden retries and no automatic reconnect -- `reconnect()` is an explicit call.
-* A valid Modbus *exception* reply (e.g. illegal address) leaves the link `CONNECTED` and is counted separately.
-* `heartbeat()` reads the RUN relay: read-only, returns latency and whether the PLC is in RUN, raises on any failure.
-* `health()` exposes last good reply time (monotonic), last latency, last error, counters. A comms failure is never
-  presented as a value and must never be read as PASS.
+* Read latency, **SIMULATOR ONLY** (N = 200, 2026-10-03): single/block/input/word reads median ~16-17 ms, mean ~19-20 ms,
+  p95 ~32 ms, p99 ~33-41 ms, max 106 ms, 0 failures; `read_status()` (now 6 transactions) mean 120 ms; connect+heartbeat+
+  disconnect mean 25 ms; wrong port -> `PLCConnectionError`/FAULT after ~2.0 s (Windows retries a refused loopback connect).
+  (Yesterday's run: ~12-13 ms, `read_status` 64 ms. Simulator pacing varies with machine load.)
+* Write request -> response, write -> PLC ack, command -> Y0 ON, Y0 ON -> OFF: **`python -m plc.handshake_test --real`
+  prints these (N, mean, median, min, max, p95, p99, failures). NOT YET MEASURED on the simulator** (see K).
+* None of this is real-PLC or machine timing.
 
-## 6. How to test
+## G. Failure behaviour
+
+| Case | Behaviour | Test class |
+|---|---|---|
+| wrong port / simulator down | `PLCConnectionError`, link **FAULT**, `is_connected()` False, FAULT event | FAKE + SIMULATOR |
+| timeout, garbage, bad LRC, wrong station, peer close | `PLCError`, FAULT, socket closed, FAULT event, snapshot withheld | FAKE |
+| command / read during FAULT or DISCONNECTED | refused before any byte is sent | FAKE + SIMULATOR |
+| link lost while M2 active | trigger -> `LOST`; after explicit `connect()` M2 seen again is a **new** trigger flagged `after_reconnect` | FAKE |
+| write sent, reply lost | `WRITE_FAILED`, FAULT, **not retried**, `unresolved_command` flagged | FAKE |
+| written but PLC never consumes it | `NOT_ACKED`, **not retried**, flagged | FAKE |
+| written, link dies before ack | `ACK_LOST`, not retried | by construction (same path), not separately tested |
+| second answer to same trigger / 8 racing threads | exactly 1 write on the wire | FAKE |
+| trigger not answered in `trigger_overdue_s` | `TRIGGER_OVERDUE` event; not dropped | FAKE |
+| no good reply for `stale_after_s` | link state **DEGRADED** (never "connected") | FAKE |
+| 20 reconnects, shutdown while connected | clean, no writes | SIMULATOR |
+
+There is **no automatic reconnect and no automatic retry**. A reconnect never replays a command. After `WRITE_FAILED` /
+`NOT_ACKED` / `ACK_LOST` the application must read the PLC and decide; the service will not decide for it.
+
+## H. Tests (what exists and how to run)
 
 ```
-python -m plc.test_simulation                       # unit tests, fake PLC (no simulator needed)
-python -m plc.commissioning --selftest              # window against a fake PLC
-python -m plc.test_simulation --real                # READ-ONLY report from the real ISPSoft simulator
-python -m plc.test_simulation --real --bench 400    # + read latency / reconnect / failure behaviour (read-only)
-python -m plc.commissioning                         # the window against the simulator
-# NOT run yet -- needs a command bit chosen by someone who has read the ladder:
-python -m plc.test_simulation --real --write-test M<n> --expect Y<k>[,...]
+python -m plc.test_simulation                       # FAKE: protocol/addressing/write policy/FAULTs (unit)
+python -m plc.test_service                          # FAKE: service + FakeLadder contract model (9 groups)
+python -m plc.commissioning --selftest              # FAKE: HMI against fake PLC
+python -m plc.test_simulation --real --bench 200 --faults   # SIMULATOR, read-only
+python -m plc.handshake_test --fake                 # FAKE: the harness itself
+python -m plc.handshake_test --real --cycles PASS,REJECT,PASS,REJECT,REJECT,PASS --wait 60   # SIMULATOR, writes M0/M1
 ```
 
-ISPSoft and COMMGR must be running with the DVP-SS2 simulator started. `--write-test` allow-lists exactly the bit you
-name, for that process only, always restores it afterwards, and reports PASS only if every expected device changed.
+## I. Simulator limitations
 
-## 7. Results (2026-10-02, this machine, ISPSoft simulator)
+* The simulator answers any station and has no serial timing, no framing errors, no cable faults.
+* **Python cannot create the trigger.** X is an input and M2 is PLC-owned; the guard refuses to write them and the project
+  will not bypass it. Each live cycle therefore needs **you to raise X0 in the simulator**. (A test-only M2 stimulus from
+  Python was considered and not done: it bypasses the write policy and needs your explicit decision.)
+* If a second bottle arrives while M2 is still 1, M2 shows no new edge. Software cannot see it. If the ladder must count
+  bottles, that is what a counter or a second flag is for (C0/C1 may already do it; role unknown).
+* Polling is ~20-50 ms with ~16 ms transactions: a trigger is noticed up to ~one poll period late.
 
-* **Unit tests (fake PLC): pass**, 3 consecutive runs. They caught a real bug (a failed connect left the state
-  `DISCONNECTED` instead of `FAULT`), now fixed.
-* **Real read test: PASS.** Connected, PLC in RUN, every device in the table read back; first heartbeat ~9 ms.
-* **Commissioning window against the simulator:** CONNECTED, ~9 ms latency, 96 transactions / 0 errors in a short
-  poll, Y0 seen changing.
+## J. Physical PLC transition and COM-port ownership
 
-**ISPSoft simulator communication benchmark** (read-only, N = 400 per case; *not* real-PLC performance):
+**Known:** a DVP14SS2 family PLC (user: DVP14SS2-1TRW; the usual catalogue numbers are DVP14SS211R/T, so the exact variant
+suffix is **UNKNOWN**), a Delta cable the user owns (type **UNKNOWN**), Modbus ASCII with LRC works against the simulator.
+**INFERRED from general Delta documentation, not tested here:** SS2 CPUs have an RS-232 programming port (COM1) and an RS-485
+port (COM2, terminal block), both support Modbus ASCII/RTU, factory default is ASCII 7E1 9600 baud station 1 on COM1, and the
+`0x0400/0500/0600/0800` base addresses match this series. **UNKNOWN / REQUIRES PHYSICAL TEST:** COM number, baud, parity, data/stop
+bits, ASCII vs RTU, station, USB-serial driver, whether the cable is RS-232 or RS-485, and whether the PLC's COM1 can be used
+while a programming cable is also needed.
 
-| Case | mean | median | p95 | p99 | min | max | failures |
-|---|---|---|---|---|---|---|---|
-| single bit read (FC01) | 13.0 | 14.7 | 17.1 | 18.5 | 3.2 | 24.2 ms | 0 |
-| 16-bit block read (FC01) | 12.9 | 13.6 | 17.1 | 20.7 | 5.8 | 97.5 ms | 0 |
-| input read (FC02) | 12.9 | 12.8 | 17.2 | 24.5 | 4.8 | 64.3 ms | 0 |
-| word read (FC03, T0..T5) | 12.3 | 12.3 | 16.9 | 17.8 | 3.7 | 22.9 ms | 0 |
-| `read_status()` (5 transactions) | 64.1 | 63.8 | 81.0 | 87.6 | 46.0 | 192.9 ms | 0 |
-| connect + heartbeat + disconnect (N = 50) | 21.5 | 18.9 | 39.8 | 42.7 | 4.9 | 42.7 ms | 0 |
+**Ownership (the real constraint):** a serial port is opened by one process at a time. While ISPSoft is online through COMMGR,
+COMMGR holds the COM port and Python cannot open it (and vice versa). Therefore at machine runtime either (1) ISPSoft/COMMGR
+is closed and Python owns the port, or (2) a second physical port is used (RS-485 COM2 via a USB-RS485 adapter for Python,
+programming cable stays on COM1). Option (2) is the recommended arrangement if the ladder is still being edited; it **REQUIRES
+PHYSICAL TEST**. The application must acquire the port on `connect()`, release it on `stop()` (already true for `Transport.close()`),
+and tell the operator clearly when the port is busy (an open failure becomes `PLCConnectionError` -> FAULT, which is correct).
+`SerialTransport` (in `plc/client.py`, pyserial) now exists: Modbus ASCII over a COM port with selectable port, baud and
+format (7E1/7O1/7N2/8N1/8E1/8O1). **It is NOT TESTED ON HARDWARE** -- only its framing is tested, on pyserial's `loop://`
+echo port (FAKE). The port/baud/format/station must be read from the real PLC, not assumed (Delta default 9600 7E1 station 1
+is INFERRED). `PLCService.reconfigure()` switches the one service between the simulator and the serial link; the main
+application's Machine tab has the selector (Simulator TCP / Real PLC serial), Connect, Disconnect and a read-only
+"Test link" (10 heartbeats). Auto-connect happens only in simulator mode; a COM port is opened only on Connect. Simulator
+test switches and `simulator_test_write` refuse to work on a serial link. Modbus **RTU** is not implemented.
 
-Latency is ~12 ms regardless of block size, so cost is per transaction: batch reads (`read_many`,
-`read_words_many`). A wrong port ends as `PLCConnectionError` -> `FAULT` after ~2 s (Windows retries a refused
-loopback connect). **Write latency, write -> response latency and repeated-command reliability were not measured:
-they need a write, and no command bit has been chosen.**
+## K. Status of the simulator write path: **NOT YET PROVEN against the simulator**
 
-## 8. Limitations -- simulator vs the real PLC
+Python side: implemented and verified with a FAKE ladder. Simulator side: reads, fault and reconnect behaviour verified; the
+M0/M1 -> ladder -> M2 clear / T0 / Y0 / T1 observation has **not** been run, because it requires a real M2 and the only legitimate
+source is X0 in the simulator. Exact next step: start the simulator (RUN), then
+`python -m plc.handshake_test --real --cycles PASS,REJECT,PASS,REJECT,REJECT,PASS --wait 120` and raise X0 when it asks.
 
-* This is a **simulator**; its pacing (~12 ms per reply), station handling and single local TCP link say nothing
-  about a wired DVP. A real PLC will enforce the station number and add serial timing.
-* The real link is probably serial (RS-485) or a Delta Ethernet module -- **not known**: PLC model, port, baud rate,
-  parity/data bits and ASCII vs RTU are all unknown here. A serial `Transport` does not exist yet.
-* Device **meanings**, the command bit, the safe test point and whether the saved `.isp` matches what the simulator
-  runs are unverified. Y1's behaviour is unexplained.
-* `time.monotonic()` freshness / Windows scheduling jitter apply; Python is not a real-time controller.
+## L. Known unknowns / next hardware verification
 
-## 9. Migration to the real Delta PLC (plan, not done)
-
-1. Read the real PLC's COM settings (ISPSoft hardware config) and wiring; record model and station.
-2. Write a `SerialTransport` (pyserial; ASCII or RTU per the PLC) implementing the same four `Transport` methods.
-3. Re-run `python -m plc.test_simulation --real`-style read-only checks against the PLC with **outputs de-energised
-   or the reject disabled**, before any write.
-4. Re-measure latency on the real link; budget it in the timing model ([HARDWARE_INTEGRATION.md](HARDWARE_INTEGRATION.md)).
-5. Only then allow-list a command bit, and add a heartbeat/watchdog the **ladder** enforces (a stale PC must put the
-   machine in a safe state without PC involvement).
-
-## 10. Decision needed to finish this phase
-
-The write -> ladder -> read test needs **one internal M bit that the current ladder treats as a software command**
-(and what it should change). That choice must come from the ladder, not from guessing. See the final report.
+1. Simulator handshake result (above) and the observed T0/T1 against 1.5 s / 0.5 s.
+2. C0/C1 role (and whether the ladder uses them to count bottles/rejects).
+3. Physical: COM port, serial settings, ASCII vs RTU, station, cable pinout, port ownership with ISPSoft.
+4. Physical: real read latency; real X0 -> M2 behaviour with debounce/bounce; M2 chatter.
+5. Heartbeat/watchdog in the **ladder** (stale PC -> safe state without PC involvement). Not present in the stated contract.
+6. What the ladder does if M0 and M1 are both set, or either is set with M2 = 0 (the service never does either).

@@ -1,0 +1,328 @@
+{
+  "schema": "vision-dataset-report/1",
+  "classification": {
+    "project": "om_bottle",
+    "labels_csv": "projects/om_bottle/labels.csv",
+    "rows": 1143,
+    "defects": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap",
+      "water_level"
+    ],
+    "malformed_rows": [],
+    "missing_image_files": [],
+    "image_files_without_row": [],
+    "duplicate_rows": [],
+    "reviewed": 1143,
+    "per_defect": {
+      "damaged_bottle": 319,
+      "damaged_label": 229,
+      "missing_cap": 0,
+      "missing_label": 30,
+      "skewed_bottle": 166,
+      "skewed_label": 70,
+      "tilt_cap": 145,
+      "water_level": 112
+    },
+    "good": 72,
+    "multi_label_rows": 0,
+    "defects_with_zero_images": [
+      "missing_cap"
+    ],
+    "exact_duplicate_groups": [
+      [
+        "-ve/Skewed Label/snap_099.jpg",
+        "-ve/Skewed Label/snap_100.jpg"
+      ]
+    ],
+    "unreadable_images": [],
+    "image_sizes": {
+      "2537x1927": 1143
+    },
+    "scene_source": "projects/om_bottle/scenes.json (cache key matches the current image list)",
+    "scenes": 112,
+    "cross_folder_same_scene_pairs": 403,
+    "cross_folder_linked_folders": [
+      "+ve <-> -ve/Skewed Label",
+      "-ve/Damaged Label <-> -ve/Tilt Cap",
+      "-ve/Missing Label <-> -ve/Skewed Bottle",
+      "-ve/Skewed Label <-> -ve/Tilt Cap",
+      "-ve/Tilt Cap <-> -ve/Water Level"
+    ],
+    "scenes_after_merging_cross_folder_links": 106,
+    "classes_given_val_instead_of_test": [],
+    "split_method": "dataset.split_train_val_test (scene-based, per-folder quota, seed 0, val 0.20 / test 0.15) on scenes merged across folders; a straddling scene moves whole to the split holding most of it",
+    "images_moved_to_remove_cross_folder_leak": 27,
+    "scene_leaks": [],
+    "yolo_cls_classes": [
+      "damaged_bottle",
+      "damaged_label",
+      "good",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap",
+      "water_level"
+    ],
+    "split_counts": {
+      "train": 688,
+      "val": 237,
+      "test": 218
+    },
+    "split_per_class": {
+      "damaged_bottle": {
+        "train": 194,
+        "val": 61,
+        "test": 64
+      },
+      "damaged_label": {
+        "train": 143,
+        "val": 51,
+        "test": 35
+      },
+      "good": {
+        "train": 41,
+        "val": 12,
+        "test": 19
+      },
+      "missing_label": {
+        "train": 18,
+        "val": 12,
+        "test": 0
+      },
+      "skewed_bottle": {
+        "train": 98,
+        "val": 37,
+        "test": 31
+      },
+      "skewed_label": {
+        "train": 37,
+        "val": 9,
+        "test": 24
+      },
+      "tilt_cap": {
+        "train": 91,
+        "val": 32,
+        "test": 22
+      },
+      "water_level": {
+        "train": 66,
+        "val": 23,
+        "test": 23
+      }
+    },
+    "scenes_per_class": {
+      "damaged_bottle": 25,
+      "damaged_label": 21,
+      "good": 8,
+      "missing_label": 2,
+      "skewed_bottle": 17,
+      "skewed_label": 8,
+      "tilt_cap": 18,
+      "water_level": 12
+    },
+    "classes_missing_from_a_split": {
+      "missing_label": [
+        "test"
+      ]
+    },
+    "not_exportable_as_single_class": []
+  },
+  "detection": {
+    "annotations": "stage2_dataset/annotations.json",
+    "annotations_sha256": "e4916747f1690adde030e05b2e3fe02d4bee8a378ce86e0985f6b9c08341dcd3",
+    "split_sha256": "c0fce3cdd5a70f829c88fe47b05a79260b6d0ed35873441428b086fad8eb834b",
+    "task": "detection",
+    "classes": [
+      "bottle",
+      "cap",
+      "label"
+    ],
+    "images": 594,
+    "schema_valid": true,
+    "split_source": "stage2_dataset/split.json",
+    "images_in_two_splits": [],
+    "annotated_without_split": [],
+    "split_without_annotation": [],
+    "scene_leaks": [],
+    "scene_id_disagrees_with_review_manifest": [],
+    "split_counts": {
+      "train": 418,
+      "val": 89,
+      "test": 87
+    },
+    "scenes": {
+      "train": 25,
+      "val": 7,
+      "test": 7
+    },
+    "boxes": 1994,
+    "boxes_per_class": {
+      "bottle": 739,
+      "cap": 709,
+      "label": 546
+    },
+    "boxes_per_split": {
+      "train": {
+        "bottle": 446,
+        "cap": 435,
+        "label": 350
+      },
+      "val": {
+        "bottle": 137,
+        "label": 99,
+        "cap": 131
+      },
+      "test": {
+        "label": 97,
+        "cap": 143,
+        "bottle": 156
+      }
+    },
+    "box_problems": {},
+    "boxes_with_an_edge_past_the_frame": {
+      "count": 91,
+      "max_overshoot": 0.0408,
+      "note": "centre inside the image; Ultralytics clips these at load"
+    },
+    "images_without_boxes": [],
+    "images_not_reviewed": [],
+    "polygons": 0,
+    "images_without_label_box": 140,
+    "images_with_several_bottles": 51,
+    "yolo_export": {
+      "present": true,
+      "missing_files": [],
+      "label_files_differ_from_annotations": [],
+      "images_differ_from_clean": [],
+      "unexpected_or_misplaced_images": [],
+      "images_on_disk": {
+        "train": 418,
+        "val": 89,
+        "test": 87
+      },
+      "portable_data_yaml": "stage2_dataset/data.yaml",
+      "data_yaml_names_ok": true
+    },
+    "image_sizes": {
+      "1780x1000": 606
+    },
+    "exact_duplicate_groups": []
+  },
+  "segmentation": {
+    "sources": [
+      {
+        "file": "stage2_dataset/annotations.json",
+        "task": "detection",
+        "classes": [
+          "bottle",
+          "cap",
+          "label"
+        ],
+        "images": 594,
+        "images_with_polygons": 0,
+        "polygons": 0,
+        "polygons_per_class": {}
+      },
+      {
+        "file": "projects/bottle_detection/annotations.json",
+        "task": "detection",
+        "classes": [
+          "bottle",
+          "cap",
+          "label"
+        ],
+        "images": 1,
+        "images_with_polygons": 0,
+        "polygons": 0,
+        "polygons_per_class": {}
+      }
+    ],
+    "polygons_total": 0,
+    "ready": false,
+    "why_not_ready": "no polygon annotations exist"
+  },
+  "cross_dataset": {
+    "byte_identical_images": 0,
+    "nearest_cross_dataset_thumbnail_distance": {
+      "min": 79.45,
+      "median": 113.08
+    },
+    "same_scene_threshold": 4.0,
+    "images_within_threshold": 0,
+    "images_with_both_classification_and_detection_labels": 0
+  },
+  "checkpoints": {
+    "models/stage2_yolo/stage2_best.pt": {
+      "sha256": "b7202b92f95a498d2de7d26568bfffe48118d0640eb56797f123dd9f51a534f2",
+      "bytes": 6226585,
+      "mtime": 1790931029
+    },
+    "yolov8n.pt": {
+      "sha256": "31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95",
+      "bytes": 6534387,
+      "mtime": 1790912290
+    },
+    "yolov8s.pt": {
+      "sha256": "268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d",
+      "bytes": 22573363,
+      "mtime": 1790914254
+    },
+    "projects/om_bottle/models/20260918-120030/model.pt": {
+      "sha256": "869becd8a9aabe2f7a3dbd5a1eb49ca9375f084bf3b86fc23295178c801fef46",
+      "bytes": 44792834,
+      "mtime": 1789713030
+    },
+    "projects/om_bottle/models/20260918-191743/model.pt": {
+      "sha256": "d6380e19dc5c8723561dbb8357081002092b22da6bc381618c84fbf784e4ad63",
+      "bytes": 16330186,
+      "mtime": 1789739263
+    },
+    "projects/om_bottle/models/20260918-220502/model.pt": {
+      "sha256": "33bb33cb522f8b2f6ab606ea0b8d48f248b93fe2e60a93b915e0c443be553e46",
+      "bytes": 26470138,
+      "mtime": 1789749302
+    },
+    "projects/om_bottle/models/20260919-000152/model.pt": {
+      "sha256": "e4e4a6e98eba7f74d5e7692ed989d347d7bafecf4425cebc0ed9657fdcbeabb7",
+      "bytes": 6214938,
+      "mtime": 1789756312
+    },
+    "projects/om_bottle/models/20260919-101315/model.pt": {
+      "sha256": "98caae3451be2346e66986cb7880b441c3c8812ec2fea37f3b4c395b23b6fc6c",
+      "bytes": 111348562,
+      "mtime": 1789792996
+    },
+    "projects/om_bottle/models/20260919-164511/model.pt": {
+      "sha256": "8c86b518835e084ef0d101223793dd38ddf533928bedc24258503469539748bb",
+      "bytes": 16330186,
+      "mtime": 1789816511
+    },
+    "projects/om_bottle/models/20260919-222031/model.pt": {
+      "sha256": "47ed5011c8daa0261b37e647374efe61bb3ce610771e5f1b0b578c010ca5d4bb",
+      "bytes": 26470138,
+      "mtime": 1789836631
+    },
+    "projects/om_bottle/models/20260920-102102/model.pt": {
+      "sha256": "cfd45b7777043d94cdf22d98ee6e62ea912dd3091b041a623ea7bffbdeff07ad",
+      "bytes": 6214938,
+      "mtime": 1789879862
+    },
+    "projects/om_bottle/models/20260920-110121/model.pt": {
+      "sha256": "600241fba246da89b299756348940a45fb008b53b442981b9cf9d6abc086a479",
+      "bytes": 44790786,
+      "mtime": 1789882281
+    }
+  },
+  "manifest": {
+    "file": "vision_dataset/manifests/unified_manifest.csv",
+    "rows": 1749,
+    "classification_rows": 1143,
+    "detection_rows": 606
+  }
+}
