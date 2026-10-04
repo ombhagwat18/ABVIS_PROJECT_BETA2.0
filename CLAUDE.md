@@ -17,7 +17,7 @@ A bottle-inspection system for a QC conveyor (first target: 250 ml bottles), in 
 
 Git repo on `main`; `.gitignore` is whitelist-style (see below).
 
-`app.py` (FastAPI) + `index.html` are an earlier browser-based version of the app: dead
+`legacy/web_dashboard/` (`app.py` FastAPI + `index.html`) are an earlier browser-based version of the app: dead
 code (nothing imports them, `run.bat` never launches them, and `app.py`'s write endpoints
 have no auth). The desktop app is the application. Don't extend them; ask before deleting.
 
@@ -58,6 +58,7 @@ python migrate.py --demo
 python vision_data.py        # unified dataset prep: class mapping, cross-folder scene merge, leak fix, box checks
 python decision.py           # per-bottle decision rules, frame vote, camera fusion
 python segment.py            # segmentation runtime interface (fake model; no weights exist yet)
+python autoannotate.py       # model box proposals: kept out of boxes/export until accepted
 python machine_cycle.py      # full cycle: FAKE PLC emulating the decoded ladder + fake cameras/detector
 python stage2_dataset/seg_pipeline.py --selftest
 python gui.py --selftest     # builds every real tab (incl. Machine against a fake PLC), no device I/O
@@ -335,7 +336,7 @@ evaluates test once. Result and the full chain back to the data are in
 `models/stage2_yolo/MODEL_PROVENANCE.json`. **Windows gotcha:** Ultralytics
 `val()` defaults to 8 dataloader workers (~500 MB each); on a 16 GB machine
 that exhausted the paging file and hung runs. Always pass `workers=` to *both*
-`train()` and every `val()`. `yolo_train.py` is an older synthetic smoke test,
+`train()` and every `val()`. `legacy/yolo_train_smoke_test.py` is an older synthetic smoke test,
 not the real training script. Weights (`*.pt`) are never committed.
 
 Segmentation (label outline) is in progress and has **no trained model**:
@@ -378,6 +379,14 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   FAULT > REJECT > PASS. A missing detection box becomes a defect only through the vote,
   and "no bottle found" is FAULT. `RULES` thresholds are development defaults, overridable
   via `settings.json` `decision_rules`.
+- **Safety latch (software layer only; the hardware E-stop must cut power by itself):** `MachineCycle.halt(reason)`
+  latches; while halted no M0/M1 is ever sent, each trigger becomes a FAULT bottle "NOT ANSWERED", scheduled REJECTs
+  are cancelled. Halts come from the Production tab STOP button, a hardware E-stop input (`estop_device`, e.g. `X3`;
+  `estop_active_high` false = NC contact; an unreadable input counts as pressed), `fault_latch_after` consecutive
+  FAULT bottles (default 3), or a crashed cycle. `reset()` is refused while the E-stop input still reads pressed.
+- **`autoannotate.py`** — detector proposals live under `"proposals"` in `annotations.json`, never in `"boxes"`, so
+  `annotate.export_yolo_*` cannot export them; accept moves them to `boxes` (`source: "auto"`), the image stays
+  `reviewed: false`. Annotate tab: Propose boxes / Accept / Reject / Next: least sure (active learning).
 - **`machine_cycle.py`** — `Inspector` + `MachineCycle`: one deadline-driven thread. Every
   bottle ends with exactly one final result. FAULT is physically rejected by default
   (`fault_action: "REJECT"`). A REJECT that would miss its deadline is not fired late (answered

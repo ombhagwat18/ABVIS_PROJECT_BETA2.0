@@ -76,7 +76,7 @@ capture
 | Valve + cylinder response | **Unmeasured** (a datasheet value is not a measurement of this installation) |
 
 **Actual hardware measurements are required** before any claim that the chain fits. The timing model is Phase 5
-of [IMPLEMENTATION_PLAN.md](../roadmap/IMPLEMENTATION_PLAN.md), and nothing in the software should hard-code a value for
+of [PROGRESS_PLAN.md](../roadmap/PROGRESS_PLAN.md), and nothing in the software should hard-code a value for
 these quantities until they are measured.
 
 ## Camera notes

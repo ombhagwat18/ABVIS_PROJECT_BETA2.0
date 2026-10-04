@@ -10,7 +10,7 @@ Sources: the `*Tab` classes in `gui.py`, `annotation_studio.py`, and `docs/roadm
 | **Label** | Grid of images; tick defects (multi-label), mark reviewed, trash/undo, import a pre-sorted folder, AI pre-labels (suggestions only; never training data until a person accepts) | No -- only when preparing a dataset |
 | **Defects** | Add / rename / delete defect classes (adds a `labels.csv` column + `-ve/<Class>/` folder). This is what makes the system product-agnostic | No -- per new product |
 | **Data health** | Class balance, scene count, ROI check, "Re-measure ROI" (`calibrate.py`), duplicate/leak warnings | Yes, **after mounting the cameras**: re-measure the ROI |
-| **Annotate** (Annotation Studio) | Draw bottle/cap/label **boxes** and **polygons** (label outline), review flag, export YOLO detection/segmentation | No -- per new product; feeds the Stage 2 detector and the (untrained) segmenter |
+| **Annotate** (Annotation Studio) | Draw bottle/cap/label **boxes** and **polygons** (label outline), review flag, export YOLO detection/segmentation. **Auto-annotate:** the detector proposes boxes (dashed amber), you accept/reject, "Next: least sure" jumps to the image the model is least confident about | No -- per new product; feeds the Stage 2 detector and the (untrained) segmenter |
 
 ## MODEL -- train and judge
 
@@ -25,7 +25,7 @@ Sources: the `*Tab` classes in `gui.py`, `annotation_studio.py`, and `docs/roadm
 |---|---|---|
 | **Live** | Opens cameras and scores frames **continuously** (Classifier / Classifier + YOLO / YOLO only), draws boxes, shows PASS/REJECT/FAULT per camera and combined | **Tuning and checking views** -- see what the model sees; verify placement, ROI, lighting. Not connected to the PLC. This is your "does it see the bottle properly" screen |
 | **Machine** | PLC I/O monitor (X inputs, M bits, Y outputs, link state) + **operator-armed test** PASS/REJECT writes (M0/M1). Auto-connects only to the simulator | **Commissioning**: prove wiring/addresses before running the line. Not an operating screen |
-| **Production** | The real run: Start line -> waits for the X0/M2 trigger -> captures frames after it -> decides -> schedules M0/M1. Counters, FIFO of bottles with deadlines, last bottle + evidence thumbnail, alarms, daily CSV | **The operator screen.** This is the tab that runs the machine |
+| **Production** | The real run: Start line -> waits for the X0/M2 trigger -> captures frames after it -> decides -> schedules M0/M1. Counters, FIFO of bottles with deadlines, last bottle + evidence thumbnail, alarms, daily CSV. **STOP** latches a software halt (no PLC command is sent, bottles are logged FAULT "not answered") until **Reset halt**; an optional E-stop input (e.g. X3) halts it automatically, as do N consecutive FAULTs | **The operator screen.** This is the tab that runs the machine |
 | **Camera** (BenchTab) | Measures what each camera mode *actually* delivers (real FPS, latency, jitter, **sharpness**); the focus/exposure/WB lock editor (`camera_controls`); CPU/RAM/GPU | **Camera setup**: choose resolution, lock autofocus/exposure. Refuses to run while Live has cameras open |
 
 ## SYSTEM

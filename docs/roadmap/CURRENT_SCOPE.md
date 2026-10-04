@@ -16,7 +16,7 @@ One bottle enters
 
 **Principle:** AI decides *what* the object/defect is. The PLC decides *how* the physical machine responds.
 
-## In scope now (dependency order -- see [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md))
+## In scope now (dependency order -- see [PROGRESS_PLAN.md](PROGRESS_PLAN.md))
 
 | # | Item | State today |
 |---|---|---|

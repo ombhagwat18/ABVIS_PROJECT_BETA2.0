@@ -48,7 +48,7 @@ Unavailable information is `None` / empty; values are never invented.
 - Associate the detector/classifier model and version (including the YOLO checkpoint checksum) with each record.
 - Evidence association: save the triggering frame for REJECT/FAULT and fill `evidence_path`.
 - Simple production counters (total / pass / reject / fault) derived from records.
-- Per-bottle inspection ids once an inspection window exists (Phase 2 of [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)).
+- Per-bottle inspection ids once an inspection window exists (see [PROGRESS_PLAN.md](PROGRESS_PLAN.md)).
 
 ## 3. Future (deferred until the machine is proven)
 

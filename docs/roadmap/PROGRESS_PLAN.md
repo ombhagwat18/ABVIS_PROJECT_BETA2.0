@@ -1,7 +1,7 @@
 # Progress and flow plan
 
 Status legend: DONE (software-verified) / NEXT (do on or right after the first hardware day) / LATER.
-Companion: `FEATURE_STATUS.md` (per-feature truth), `IMPLEMENTATION_PLAN.md` (phases), `docs/hardware/CAMERA_PLACEMENT_AND_LINE_PLAN.md`.
+Companion: `FEATURE_STATUS.md` (per-feature truth), `CURRENT_SCOPE.md` (what is in scope now), `docs/hardware/CAMERA_PLACEMENT_AND_LINE_PLAN.md`.
 
 ## Flow of the whole system
 

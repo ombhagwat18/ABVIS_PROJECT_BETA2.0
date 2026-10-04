@@ -1,7 +1,7 @@
 # Current System
 
 What actually exists in this repository today -- nothing more. For what is *planned*, see
-[FUTURE_ENHANCEMENTS.md](FUTURE_ENHANCEMENTS.md) and [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+[FUTURE_ENHANCEMENTS.md](FUTURE_ENHANCEMENTS.md) and [PROGRESS_PLAN.md](PROGRESS_PLAN.md).
 
 **Status vocabulary** used throughout this document:
 
@@ -44,7 +44,7 @@ optional, beside the classifier (Live tab selector: "Classifier" | "Classifier +
 ```
 
 **YOLO TRAINING = COMPLETE. YOLO RUNTIME = CURRENT DEVELOPMENT. PHYSICAL MACHINE = NOT TESTED.**
-The detector is wired in as an opt-in, *observational* path ([IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md), Phase 1).
+The detector is wired in as an opt-in, *observational* path ([PROGRESS_PLAN.md](PROGRESS_PLAN.md)).
 The default (`Classifier`) is exactly the previous behavior.
 
 ## 3. Component status
