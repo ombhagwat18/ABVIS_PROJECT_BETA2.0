@@ -1,4 +1,4 @@
-> **HISTORICAL design document (Stage 1 classifier era).** Its rationale for the crop pipeline, scene-based split and the known-bugs list is still valid. Statements that bounding boxes / detection were "deliberately skipped" are **superseded**: a Stage 2 YOLO detection dataset and YOLOv8n model now exist (offline, not yet in the runtime). Current scope and status: [`SYSTEM_ROADMAP/`](SYSTEM_ROADMAP/README.md).
+> **HISTORICAL design document (Stage 1 classifier era).** Its rationale for the crop pipeline, scene-based split and the known-bugs list is still valid. Statements that bounding boxes / detection were "deliberately skipped" are **superseded**: a Stage 2 YOLO detection dataset and YOLOv8n model now exist (offline, not yet in the runtime). Current scope and status: [`docs/roadmap/`](docs/roadmap/README.md).
 
 # Bottle Inspection — Plan
 

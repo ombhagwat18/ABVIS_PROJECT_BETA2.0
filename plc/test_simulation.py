@@ -138,7 +138,7 @@ class FakePLC:
 
 class FakeLadder:
     """FAKE PLC program: a scan-by-scan emulation of the ladder decoded from `final_year.isp` (saved
-    2026-10-03 09:06; SYSTEM_ROADMAP/PLC_COMMUNICATION.md section 0). Every scan runs, in order:
+    2026-10-03 09:06; docs/roadmap/PLC_COMMUNICATION.md section 0). Every scan runs, in order:
 
         1  X1          -> SET Y1                 conveyor start
         2  X2          -> RST Y1                 conveyor stop

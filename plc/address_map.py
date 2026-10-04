@@ -5,7 +5,7 @@ Three different things are tracked separately, and must not be confused:
   1. ADDRESSING -- device name -> Modbus address/function. Verified against the running DVP-SS2
      simulator by reading it (details in `verification`).
   2. MEANING    -- what the device DOES in the machine. The ladder (`plc file/final_year/final_year.isp`)
-     is a compressed text project (see SYSTEM_ROADMAP/PLC_COMMUNICATION.md section 0 for the decoded
+     is a compressed text project (see docs/roadmap/PLC_COMMUNICATION.md section 0 for the decoded
      networks). Meanings were stated by the user and agree with the file's device comments. Python-side
      proof is the handshake test in `plc/handshake_test.py`. Anything not in that contract stays UNKNOWN.
   3. WRITE SAFETY -- whether Python may write it. X inputs and Y outputs are never writable. The ONLY
@@ -25,7 +25,7 @@ UNKNOWN = "UNKNOWN"
 
 # kind -> (Modbus base address, read-bit function or None, octal numbering?, bit/word capability)
 # Bases follow the Delta DVP convention; each one marked VERIFIED was confirmed by reading the
-# running simulator (see Device.verification / SYSTEM_ROADMAP/PLC_COMMUNICATION.md).
+# running simulator (see Device.verification / docs/roadmap/PLC_COMMUNICATION.md).
 KINDS = {
     "X": dict(base=0x0400, bit_fc=FC_READ_INPUTS, octal=True,  words=False, direction="input"),
     "Y": dict(base=0x0500, bit_fc=FC_READ_COILS,  octal=True,  words=False, direction="output"),

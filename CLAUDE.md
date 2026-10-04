@@ -158,7 +158,7 @@ Renaming a class must rename its `-ve/` folder too — `rename_defect`
 label on the next rescan. Deleting a class drops the column and moves its
 images to `_inbox/` (`reviewed=0`) rather than "good" — a folder can never
 resurrect a deleted column as a pass. See
-`docs/superpowers/specs/2026-08-09-multi-project-design.md` for the full
+`docs/design/2026-08-09-multi-project-design.md` for the full
 consequences table.
 
 Only `labels.csv`, `config.json` and `project.json` are git-tracked per
@@ -401,7 +401,7 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   then a raw-deflate stream, `zlib.decompressobj(-15)`) is owned by the user, not this repo — never change it. Its decoded nets, simulator
   behaviour and known limits (one-bottle M0/M1/M2 handshake; triggers masked while M1 is held;
   the 09:06 save fixed the old one-scan Y0 flash but still has T0 K150 / T1 K50 against the stated
-  K15 / K5 contract) are in `SYSTEM_ROADMAP/PLC_COMMUNICATION.md` §0.
+  K15 / K5 contract) are in `docs/roadmap/PLC_COMMUNICATION.md` §0.
   Read that before touching anything PLC-related, and keep its evidence labels (VERIFIED /
   USER-STATED / INFERRED; FAKE / SIMULATOR / PHYSICAL) honest.
 
@@ -438,7 +438,7 @@ runs the inspection line (`machine_cycle`) on the same `PLCService` and `CameraS
 line stops the Live tab's cameras, project switches stop the line first, and the selftest
 drives it against `FakeLadder` (restoring `settings.json`, which Start line writes).
 Two EMEET Nova 4K on one USB 2.0 hub give only one 1080p stream (measured); see
-`SYSTEM_ROADMAP/HARDWARE_INTEGRATION.md`. The app calls `gc.disable()` and runs GC only from `App.pump()` on
+`docs/hardware/HARDWARE_INTEGRATION.md`. The app calls `gc.disable()` and runs GC only from `App.pump()` on
 the Tk thread: automatic GC on a background thread finalised Tk objects there and froze the
 PLC worker. Don't re-enable it, and don't block the Tk loop for long.
 
@@ -502,7 +502,7 @@ another old-layout dataset needs importing.
 
 ## Known bugs already fixed — don't reintroduce these
 
-Documented in full in `PLAN.md`; summarized here so new code doesn't
+Documented in full in `docs/design/PLAN.md`; summarized here so new code doesn't
 regress them:
 
 1. **Random per-block split** could put both of a rare class's blocks into
@@ -527,22 +527,24 @@ regress them:
 
 ## Key docs already in the repo
 
-- `PLAN.md` — original design doc: data shape, the five bugs above in full
+All documentation is indexed in `docs/README.md` (hardware, guides, roadmap, audit, design). Camera placement / line timing: `docs/hardware/CAMERA_PLACEMENT_AND_LINE_PLAN.md`; tab purposes: `docs/guides/TAB_GUIDE.md`.
+
+- `docs/design/PLAN.md` — original design doc: data shape, the five bugs above in full
   detail, rationale for every non-obvious choice (input size, ROI
   measurement, scene-based split, deliberately skipped features like
   bounding boxes, auth, or Docker training — see its closing note: "add any
   of these when the constraint that rules them out stops being true").
-- `SYSTEM_AUDIT_2026-10-03.md` — whole-system audit (findings ranked by severity, doc drift,
+- `docs/audit/SYSTEM_AUDIT_2026-10-03.md` — whole-system audit (findings ranked by severity, doc drift,
   recommended order of work). Written before `decision.py` / `machine_cycle.py` existed, so
   its "camera verdict is not connected to the PLC" finding is partly addressed in software.
-- `SYSTEM_ROADMAP/PLC_COMMUNICATION.md` — the PLC contract, decoded ladder, simulator
-  measurements and fault matrix. `SYSTEM_ROADMAP/VISION_DATASET.md` — dataset readiness
+- `docs/roadmap/PLC_COMMUNICATION.md` — the PLC contract, decoded ladder, simulator
+  measurements and fault matrix. `docs/roadmap/VISION_DATASET.md` — dataset readiness
   for classification / detection / segmentation (`python vision_data.py build|export-cls|validate`).
-- `SYSTEM_ROADMAP/` — the current, maintained description of the project:
+- `docs/roadmap/` — the current, maintained description of the project:
   what exists (`CURRENT_SYSTEM.md`), what is in scope now (`CURRENT_SCOPE.md`),
   what is deliberately deferred (`FUTURE_ENHANCEMENTS.md`), the target
   architecture, the phased plan, per-feature status, hardware and traceability.
   Start there, and keep `FEATURE_STATUS.md` honest.
-- `docs/superpowers/specs/2026-08-09-multi-project-design.md` — design
+- `docs/design/2026-08-09-multi-project-design.md` — design
   rationale for the multi-project layout described above, including the
   full folder-rename/delete consequences table.

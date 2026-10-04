@@ -47,7 +47,7 @@ A fixed, non-square (tall) input resolution is used because the physical
 ROI on the bottle is tall and narrow; the same crop/resize code path is
 shared by training and inference specifically to avoid a train/serve
 mismatch (a previously identified and fixed defect in the codebase — see
-`PLAN.md` in the main project for the historical detail). This is stated
+`docs/design/PLAN.md` in the main project for the historical detail). This is stated
 here because it is relevant to why the reported test metrics are
 considered representative of what the live inference path would see on
 the same images.

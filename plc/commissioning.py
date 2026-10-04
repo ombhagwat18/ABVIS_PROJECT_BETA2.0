@@ -4,7 +4,7 @@ handshake while the ladder is being tested.
     python -m plc.commissioning                  # against the ISPSoft simulator (127.0.0.1:10002)
     python -m plc.commissioning --selftest       # builds the window against a FAKE PLC, no hardware
 
-Design rules (see SYSTEM_ROADMAP/PLC_COMMUNICATION.md):
+Design rules (see docs/roadmap/PLC_COMMUNICATION.md):
   * The window owns nothing: one PLCService (one worker thread, one PLC client) does all PLC I/O.
     The window only reads its cached snapshot, so a PLC timeout can never freeze the UI.
   * Two guarded commands only: PASS (M0) and REJECT (M1). They are enabled only when the link is

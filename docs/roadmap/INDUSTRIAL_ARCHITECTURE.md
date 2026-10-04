@@ -51,7 +51,7 @@ Consequences of this split:
   decision not yet made.
 - The software must never claim PASS when it does not know. That is the purpose of the FAULT state and
   freshness checks already in `infer.py`.
-- Timing across the boundary must be measured, not assumed -- see [HARDWARE_INTEGRATION.md](HARDWARE_INTEGRATION.md).
+- Timing across the boundary must be measured, not assumed -- see [HARDWARE_INTEGRATION.md](../hardware/HARDWARE_INTEGRATION.md).
 
 ## Data flow for one bottle (target)
 

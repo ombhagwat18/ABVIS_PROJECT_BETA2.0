@@ -1,6 +1,6 @@
 """Stage 2 segmentation (label outline): seed -> annotate -> export -> validate -> train.
 
-Minimum pipeline from SYSTEM_ROADMAP/VISION_DATASET.md section 6. Polygons live in
+Minimum pipeline from docs/roadmap/VISION_DATASET.md section 6. Polygons live in
 their own file, stage2_dataset/seg_annotations.json; annotations.json (hash pinned in
 MODEL_PROVENANCE.json) is only read. The existing scene split (split.json) is reused
 unchanged.
