@@ -15,7 +15,7 @@ success. Nothing in this repository has been validated on the physical machine.
 | Feature | Current status | Now/Next/Future | Notes |
 |---|---|---|---|
 | Project management | COMPLETE | NOW | Multi-project folders, switch/create in the GUI. Not a job/recipe system |
-| Dataset management | PARTIAL | NOW | Stage 1 images/labels managed in the GUI; Stage 2 dataset built by scripts in `stage2_dataset/` |
+| Dataset management | PARTIAL | NOW | Stage 1 images/labels managed in the GUI; Stage 2 dataset built by scripts in `stage2_dataset/`. Label tab: keyboard toggle, one-image multi-label inspector, balance strip, trash + `label_log.csv` + undo, import of a pre-sorted folder (new product or current), AI pre-labels (suggestions only, never training data until accepted). Software self-tested only; the AI pre-label path was tested with fake suggestions, not run against a real checkpoint in the self-test. No users/roles: the log records the OS login |
 | Classification | SOFTWARE ONLY | NOW | Stage 1 multi-label classifier is the live path. No test split; saturated validation scores; `missing_cap` has 0 positives |
 | Detection | PARTIAL | NOW | YOLOv8n: components (bottle/cap/label) only, not defects. Available as an opt-in runtime path; unvalidated on live bottle frames |
 | Segmentation | PARTIAL (interface only) | NOW | `segment.py` runtime interface (`YoloSegmenter`, label area / fill measurements) and decision rules (`label_area_low`, `label_damaged`) exist and are FAKE-tested. **No segmentation model is trained**: selecting the Segmentation task refuses to start the line with that reason; an inspection that needs it is FAULT |
