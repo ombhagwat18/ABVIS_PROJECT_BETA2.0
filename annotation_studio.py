@@ -22,6 +22,7 @@ import cv2
 from PIL import Image, ImageTk
 
 import annotate as A
+import autoannotate as AA
 import dataset as D
 import theme
 
@@ -145,6 +146,19 @@ class AnnotationTab:
                       command=self.save).pack(fill="x", padx=12, pady=3)
         ctk.CTkButton(right, text="Reload", fg_color="transparent", border_width=1,
                       command=self.reload_annotations).pack(fill="x", padx=12, pady=3)
+
+        ctk.CTkLabel(right, text="AUTO-ANNOTATE", text_color=DIM, font=("Segoe UI", 13, "bold")).pack(
+            anchor="w", padx=12, pady=(16, 4))
+        self.auto_btn = ctk.CTkButton(right, text="Propose boxes (model)", fg_color="transparent",
+                                      border_width=1, command=self.auto_annotate)
+        self.auto_btn.pack(fill="x", padx=12, pady=3)
+        self.accept_btn = ctk.CTkButton(right, text="Accept proposals", fg_color="transparent",
+                                        border_width=1, text_color=GOOD, command=self.accept_proposals)
+        self.accept_btn.pack(fill="x", padx=12, pady=3)
+        ctk.CTkButton(right, text="Reject proposals", fg_color="transparent", border_width=1,
+                      text_color=BAD, command=self.reject_proposals).pack(fill="x", padx=12, pady=3)
+        ctk.CTkButton(right, text="Next: least sure", fg_color="transparent", border_width=1,
+                      command=self.goto_least_sure).pack(fill="x", padx=12, pady=3)
 
         ctk.CTkLabel(right, text="EXPORT", text_color=DIM, font=("Segoe UI", 13, "bold")).pack(
             anchor="w", padx=12, pady=(16, 4))
@@ -430,6 +444,13 @@ class AnnotationTab:
                 self.canvas.create_rectangle(x1 - HANDLE, y1 - HANDLE, x1 + HANDLE, y1 + HANDLE,
                                              fill=color, outline=color)
 
+        for p in entry.get("proposals", []):                 # model proposals: dashed amber, not yet labels
+            x0, y0 = self.n2c(p["x"] - p["w"] / 2, p["y"] - p["h"] / 2)
+            x1, y1 = self.n2c(p["x"] + p["w"] / 2, p["y"] + p["h"] / 2)
+            self.canvas.create_rectangle(x0, y0, x1, y1, outline=WARN, width=2, dash=(5, 3))
+            self.canvas.create_text(x0 + 3, max(0, y0 - 8), text=f"? {p['cls']} {p.get('conf', 0):.2f}",
+                                    fill=WARN, anchor="w", font=("Segoe UI", 12, "bold"))
+
         for i, poly in enumerate(entry.get("polygons", [])):
             sel = self.selected == ("poly", i)
             pts = poly["points"]
@@ -620,6 +641,68 @@ class AnnotationTab:
         self.reviewed_lbl.configure(text="reviewed", text_color=GOOD)
         self._highlight_row(self.rel)
         self._update_progress_label()
+
+    # ------------------------------------------------------- auto-annotation
+    def auto_annotate(self):
+        """Run the detector over every pending image in the background; results arrive as PROPOSALS that
+        a person accepts or rejects. They are never written to `boxes` here."""
+        if self.data is None or self.task != "detection":
+            return messagebox.showinfo("Auto-annotate", "Open a detection project first.")
+        todo = [r for r in self.images if A.image_status(self.data["images"].get(r)) == "pending"]
+        if not todo:
+            return messagebox.showinfo("Auto-annotate", "No pending images.")
+        if not messagebox.askyesno("Propose boxes", f"Run the detector on {len(todo)} pending images?\n"
+                                   "Results are proposals: nothing becomes a label until you accept it."):
+            return
+        root = self.image_root if self.image_root is not None else D.IMAGE_ROOT
+        snapshot = {"classes": list(self.data["classes"]), "task": self.data["task"],
+                    "images": {r: dict(self.data["images"].get(r) or {"reviewed": False, "boxes": [], "polygons": []})
+                               for r in todo}}
+        settings = D.load_settings()
+        self.auto_btn.configure(state="disabled", text="Detecting...")
+
+        def work():
+            import detect
+            det = detect.YoloDetector(weights=settings.get("detector_weights") or None,
+                                      conf=float(settings.get("detector_conf", detect.DEV_CONF)))
+            stats = AA.run(snapshot, todo, root, AA.yolo_detect_fn(det), D.imread)
+            return snapshot, stats
+
+        def done(res):
+            self.auto_btn.configure(state="normal", text="Propose boxes (model)")
+            if not isinstance(res, tuple):
+                return
+            snap, stats = res
+            for rel, e in snap["images"].items():
+                if "proposals" in e and A.image_status(self.data["images"].get(rel)) == "pending":
+                    cur = self.data["images"].get(rel) or {"reviewed": False, "boxes": [], "polygons": []}
+                    self.data["images"][rel] = {**cur, "proposals": e["proposals"]}
+            self.dirty = True
+            self._redraw()
+            self.status.configure(text=f"proposed {stats['proposed']} boxes on {stats['images']} images "
+                                       f"({stats['empty']} empty). Review each: accept or reject.")
+
+        self.app.run_bg(work, done)
+
+    def accept_proposals(self):
+        if self.rel and AA.accept(self.data, self.rel):
+            self.dirty = True
+            self._update_progress_label()
+            self._redraw()
+
+    def reject_proposals(self):
+        if self.rel and AA.reject(self.data, self.rel):
+            self.dirty = True
+            self._redraw()
+
+    def goto_least_sure(self):
+        if self.data is None:
+            return
+        order = [r for r in AA.order_for_review(self.data, self.images) if r != self.rel]
+        if order and not (self.data["images"].get(order[0]) or {}).get("reviewed"):
+            self.goto_image(order[0])
+        else:
+            messagebox.showinfo("Least sure", "Every image is reviewed.")
 
     # ---------------------------------------------------------- save/load
     def save(self):
