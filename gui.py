@@ -4421,6 +4421,12 @@ def _selftest_label(app):
     assert D.PROJECT == real[2] and D.ACTIVE_TXT.read_text(encoding="utf-8").strip() == real[2]
 
 
+def A_ok(data) -> bool:
+    import annotate
+    annotate.validate_annotations(data)
+    return True
+
+
 def selftest():
     """Build every tab, pump the event loop, exercise the grid, then quit.
 
@@ -4706,6 +4712,20 @@ def selftest():
     lad.stop()
     fake.close()
 
+    # Annotate tab: model proposals stay out of `boxes` until a person accepts them
+    import tempfile
+    import autoannotate as AA
+    at = app.tab_annotate
+    with tempfile.TemporaryDirectory() as td:
+        cv2.imwrite(str(Path(td) / "a.jpg"), np.zeros((120, 80, 3), np.uint8))
+        at.load_external(Path(td), Path(td) / "ann.json", "detection", ["bottle", "cap"], ["a.jpg"])
+        AA.propose(at.data, "a.jpg", [("bottle", 0.9, 5, 5, 70, 110), ("cap", 0.8, 20, 2, 50, 20)], (80, 120))
+        at.load_image("a.jpg")
+        assert not at.data["images"]["a.jpg"]["boxes"] and len(at.data["images"]["a.jpg"]["proposals"]) == 2
+        at.accept_proposals()
+        e = at.data["images"]["a.jpg"]
+        assert len(e["boxes"]) == 2 and not e["proposals"] and not e["reviewed"], e
+        assert A_ok(at.data)
     app.cams.stop()
     app.destroy()
     print(f"ok  project {D.PROJECT!r}: {len(app.labels)} images, "
