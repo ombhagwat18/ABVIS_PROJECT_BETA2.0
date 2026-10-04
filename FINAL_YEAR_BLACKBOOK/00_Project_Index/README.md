@@ -79,3 +79,4 @@ Every metric quoted anywhere in this workspace originates from one of:
 No number in this workspace was estimated, assumed, or extrapolated. Where a
 figure was not available at documentation time, it is marked **"To be
 added"** rather than guessed.
+- `18_Model_Training_Summary/` all trained models: epochs, settings, test metrics (generated from `models/MODEL_REGISTRY.json`)
