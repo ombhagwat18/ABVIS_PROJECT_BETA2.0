@@ -1242,6 +1242,11 @@ class ProductionTab:
                                        hover_color=ACC_H, command=self.start_line)
         self.btn_start.pack(side="left", padx=(10, 4), pady=8)
         ctk.CTkButton(bar, text="Stop line", width=86, command=self.stop_line).pack(side="left")
+        ctk.CTkButton(bar, text="STOP", width=70, fg_color=BAD, hover_color="#a02020", text_color="#ffffff",
+                      font=("Segoe UI", 14, "bold"), command=self.halt_line).pack(side="left", padx=(8, 2))
+        self.btn_reset = ctk.CTkButton(bar, text="Reset halt", width=84, fg_color="transparent", border_width=1,
+                                       text_color=INK, command=self.reset_halt)
+        self.btn_reset.pack(side="left")
         ctk.CTkLabel(bar, text="AI task").pack(side="left", padx=(14, 4))
         self.task = ctk.CTkOptionMenu(bar, values=list(DEC.TASK_LABELS), width=200)
         self.task.set(next((k for k, v in DEC.TASK_LABELS.items() if v == cfg["line_task"]), "Detection"))
@@ -1330,6 +1335,11 @@ class ProductionTab:
         self.fault_action = ctk.CTkOptionMenu(tim, values=["REJECT", "PASS"], width=86)
         self.fault_action.set(str(cfg["fault_action"]).upper())
         self.fault_action.pack(side="left")
+        ctk.CTkLabel(tim, text="E-stop input", font=("Segoe UI", 13)).pack(side="left", padx=(8, 2))
+        self.estop_dev = ctk.CTkEntry(tim, width=46, placeholder_text="X3")
+        if cfg["estop_device"]:
+            self.estop_dev.insert(0, str(cfg["estop_device"]))
+        self.estop_dev.pack(side="left")
         ctk.CTkButton(tim, text="Save", width=60, command=self.save_timing).pack(side="left", padx=8)
         self.tim_msg = ctk.CTkLabel(tim, text="", font=("Segoe UI", 13), text_color=DIM)
         self.tim_msg.pack(side="left")
@@ -1397,6 +1407,13 @@ class ProductionTab:
         if out["plc_t0_s"] <= 0 or out["plc_t1_s"] <= 0:
             raise ValueError("T0 and T1 must be > 0 (they are the ladder's timer presets)")
         out["fault_action"] = self.fault_action.get()
+        dev = self.estop_dev.get().strip().upper()
+        if dev:
+            try:
+                PLC_AM.parse(dev)
+            except ValueError as e:
+                raise ValueError(f"E-stop input: {e}") from None
+        out["estop_device"] = dev
         return out
 
     def save_timing(self) -> bool:
@@ -1504,6 +1521,16 @@ class ProductionTab:
         self.app.cams.stop()
         self.btn_start.configure(state="normal")
 
+    def halt_line(self):
+        """Operator STOP: latch the software halt (no PLC command is sent until Reset). The hardware
+        E-stop is what actually removes power; this stops the program answering the PLC."""
+        if self.line is not None and self.line.running:
+            self.line.halt("operator STOP button")
+
+    def reset_halt(self):
+        if self.line is not None and self.line.halted and not self.line.reset():
+            messagebox.showwarning("Cannot reset", "The hardware E-stop input still reads pressed.")
+
     def close(self):
         self.stop_line()
 
@@ -1608,9 +1635,13 @@ class ProductionTab:
         self.models_lbl.configure(
             text=f"task {task}   classifier {models['classification'] or '-'}   detector {models['detection'] or '-'}   "
                  f"segmenter {models['segmentation'] or '-'}   frames/camera {line.inspector.frames}   "
-                 f"log {D.PROJECT_DIR.name}/production/")
+                 f"log {D.PROJECT_DIR.name}/production/", text_color=DIM)
         if s["error"]:
             self.line_lbl.configure(text="LINE ERROR", text_color=BAD)
+        elif s.get("halted") and s["running"]:
+            self.line_lbl.configure(text="LINE HALTED", text_color=BAD)
+            self.models_lbl.configure(text=f"HALTED: {s['halted']}   (no PLC command is sent; press Reset halt)",
+                                      text_color=BAD)
         else:
             self.line_lbl.configure(text="LINE RUNNING" if s["running"] else "LINE STOPPED",
                                     text_color=GOOD if s["running"] else DIM)
@@ -4651,6 +4682,16 @@ def selftest():
         assert pt.res_lbl.cget("text") == infer.PASS and "000003" in pt.ins_lbl.cget("text")
         assert "Y0 pulse" in table, table
         assert app.plc.watch_x0 and app.plc.untriggered == 0
+        pt.halt_line()                                             # operator STOP: latched until reset
+        assert until(lambda: pt.line_lbl.cget("text") == "LINE HALTED"), pt.line_lbl.cget("text")
+        n_w = len(fake.writes)
+        scene["kind"] = "good"
+        n0 = pt.line.counts["total"]
+        lad.trigger(hold_s=0.05)
+        assert until(lambda: pt.line.counts["total"] > n0, 10.0)
+        assert len(fake.writes) == n_w, "the halted line wrote to the PLC"
+        pt.reset_halt()
+        assert until(lambda: pt.line_lbl.cget("text") == "LINE RUNNING")
         pt.stop_line()
         assert until(lambda: pt.line_lbl.cget("text") == "LINE STOPPED") and not app.cams.running()
         assert not app.plc.watch_x0

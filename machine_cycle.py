@@ -77,6 +77,9 @@ LINE_DEFAULTS = {
     "plc_t1_s": 0.5,                     # the ladder's T1 (reject pulse) -- stated contract K5
     "reject_tolerance_s": 0.3,           # how late M1 may be sent and still hit the bottle
     "fault_action": "REJECT",            # what the PLC does with a FAULT bottle: REJECT | PASS
+    "estop_device": "",                  # optional PLC input wired to the hardware E-stop status, e.g. "X3" ("" = none)
+    "estop_active_high": False,          # False: the contact is NC, so the bit reads 0 when the E-stop is pressed
+    "fault_latch_after": 3,              # this many consecutive FAULT bottles halt the line until an operator reset
     "decision_rules": {},
 }
 
@@ -333,6 +336,9 @@ class MachineCycle:
         self._thread: threading.Thread | None = None
         self.error: str | None = None
         self._listening = False
+        self.halted: str | None = None           # latched reason; set => no PLC command is sent until reset()
+        self._fault_run = 0
+        self._estop_next = 0.0
 
     # ------------------------------------------------------------------ lifecycle
     def start(self):
@@ -360,6 +366,49 @@ class MachineCycle:
     def running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
 
+    # ------------------------------------------------------------------ safety latch
+    # This is the SOFTWARE layer only. The hardware E-stop must cut the actuator power by itself;
+    # software halt just stops this program from answering the PLC and tells the operator why.
+    def halt(self, reason: str):
+        """Latch a halt. Idempotent; the first reason wins. Scheduled REJECTs are cancelled, not fired."""
+        with self._lock:
+            if self.halted:
+                return
+            self.halted = reason
+            pending = [b for b in self._fifo if b.status == SCHEDULED]
+        self._alarm(f"LINE HALTED: {reason}")
+        for b in pending:
+            b.plc_status = "HALTED before the REJECT was sent: remove by hand"
+            self._finish(b, FAULT)
+
+    def reset(self) -> bool:
+        """Operator reset. Refused while the hardware E-stop input still reads pressed."""
+        if self._estop_pressed():
+            self._alarm("reset refused: hardware E-stop input is still active")
+            return False
+        with self._lock:
+            self.halted = None
+            self._fault_run = 0
+        self._alarm("halt cleared by operator")
+        return True
+
+    def _estop_pressed(self) -> bool:
+        dev = str(self.cfg.get("estop_device") or "").strip()
+        if not dev:
+            return False
+        try:
+            val = bool(self.plc.sample(bits=[dev])[dev.upper()])
+        except Exception:                                            # noqa: BLE001 - cannot read it => treat as pressed
+            return True
+        return val if self.cfg.get("estop_active_high") else not val
+
+    def _watch_estop(self):
+        if not str(self.cfg.get("estop_device") or "").strip() or self.clock() < self._estop_next:
+            return
+        self._estop_next = self.clock() + 0.25
+        if self._estop_pressed():
+            self.halt(f"hardware E-stop input {self.cfg['estop_device']} active (or unreadable)")
+
     # ------------------------------------------------------------------ views (any thread)
     def snapshot(self) -> dict:
         with self._lock:
@@ -367,7 +416,7 @@ class MachineCycle:
             hist = list(self._history)[-60:]
             return {"counts": dict(self.counts), "queue": len(fifo), "fifo": fifo, "history": hist,
                     "alarms": list(self.alarms)[-20:], "last": self.last, "running": self.running,
-                    "error": self.error, "travel_s": self.travel_s, "travel_measured": self.travel_measured}
+                    "error": self.error, "halted": self.halted, "travel_s": self.travel_s, "travel_measured": self.travel_measured}
 
     # ------------------------------------------------------------------ PLC events (service thread)
     def _on_plc_event(self, ev):
@@ -379,6 +428,7 @@ class MachineCycle:
         try:
             while not self._stop.is_set():
                 wait = max(0.0, min(0.05, self._next_deadline() - self.clock()))
+                self._watch_estop()
                 trig = self.plc.wait_for_trigger(wait)
                 if trig is not None:
                     self._on_trigger(trig)
@@ -389,6 +439,7 @@ class MachineCycle:
             traceback.print_exc()
             self.error = f"machine cycle crashed: {type(e).__name__}: {e}"
             self._alarm(self.error)
+            self.halted = self.halted or self.error
 
     def _next_deadline(self) -> float:
         now = self.clock()
@@ -412,6 +463,12 @@ class MachineCycle:
 
     def _on_trigger(self, trig):
         b = self._new_bottle(trig.seen_mono, trig.seen_wall, trigger_id=trig.id, after_reconnect=trig.after_reconnect)
+        if self.halted:                                              # never answer while halted
+            b.decision, b.command, b.reason = FAULT, "", f"line halted: {self.halted}"
+            b.plc_status = "NOT ANSWERED (halted): remove bottle by hand"
+            self._alarm(f"bottle {b.inspection_id}: {b.plc_status}")
+            self._finish(b, FAULT)
+            return
         if trig.after_reconnect:
             b.note = "trigger seen right after (re)connect: M2 may be stale"
         t_from = trig.seen_mono + float(self.cfg["capture_delay_s"])
@@ -540,6 +597,10 @@ class MachineCycle:
             self.counts["total"] += 1
             self.counts[final] += 1
         self._log(b)
+        self._fault_run = self._fault_run + 1 if final == FAULT else 0
+        limit = int(self.cfg.get("fault_latch_after") or 0)
+        if limit and self._fault_run >= limit and not self.halted:
+            self.halt(f"{self._fault_run} consecutive FAULT bottles")
 
     def _alarm(self, text: str):
         with self._lock:
@@ -637,7 +698,8 @@ def demo():
         cams.append(c)
     det = detect.YoloDetector(model=detect.FakeYolo(yolo), warmup=False)
     logdir = Path(tempfile.mkdtemp(prefix="mc_"))
-    cfg = line_settings({"plc_t0_s": t0_s, "plc_t1_s": t1_s, "inspect_frames": 2, "inspect_window_s": 0.5})
+    cfg = line_settings({"plc_t0_s": t0_s, "plc_t1_s": t1_s, "inspect_frames": 2, "inspect_window_s": 0.5,
+                         "fault_latch_after": 0})
     mc = MachineCycle(svc, Inspector(cams, "detection", detector=det, frames=2, window_s=0.5), cfg, logdir)
     mc.start()
 
@@ -728,9 +790,45 @@ def demo():
         assert b.y0_on_mono is None and mc2.counts["missed_reject"] == 1
         mc2.inspector.inspect = slow
         mc2.stop()
+        # ---- safety latch: halted line never answers the PLC; reset clears it
+        mc3 = MachineCycle(svc, mc.inspector, dict(cfg, fault_latch_after=2), logdir)
+        mc3._ids = itertools.count(300)
+        mc3.start()
+        mc = mc3
+        n_w = len(fake.writes)
+        scene["det_boom"] = True
+        assert bottle("good").final == FAULT and not mc3.halted
+        assert bottle("good").final == FAULT
+        wait(lambda: mc3.halted, "latch after consecutive FAULTs", 2.0)
+        assert "consecutive FAULT" in mc3.halted, mc3.halted
+        scene["det_boom"] = False
+        w_before = len(fake.writes)
+        b = bottle("good")                                          # trigger while halted
+        assert b.final == FAULT and "NOT ANSWERED" in b.plc_status, b.plc_status
+        assert len(fake.writes) == w_before, "wrote to the PLC while halted"
+        assert mc3.snapshot()["halted"]
+        assert mc3.reset() and not mc3.halted
+        mc3.halt("operator STOP")
+        assert mc3.halted == "operator STOP" and mc3.reset() and not mc3.halted
+        mc3.stop()
+        # hardware E-stop input: NC contact reads 0 when pressed; an unreadable input counts as pressed
+        class _P:
+            v, boom = 1, False
+            def sample(self, bits=(), words=()):
+                if self.boom:
+                    raise OSError("link down")
+                return {bits[0]: self.v}
+        p = _P()
+        mc4 = MachineCycle(p, mc.inspector, dict(cfg, estop_device="X3", fault_latch_after=0), logdir)
+        mc4._watch_estop(); assert not mc4.halted
+        p.v = 0; mc4._estop_next = 0; mc4._watch_estop()
+        assert mc4.halted and "E-stop" in mc4.halted and not mc4.reset()      # cannot reset while pressed
+        p.v = 1; assert mc4.reset()
+        p.boom = True; mc4._estop_next = 0; mc4._watch_estop()
+        assert mc4.halted, "unreadable E-stop input must halt"
         assert any(fake.writes) and not any(a in (AM.address_of("Y0"), AM.address_of("Y1")) for a, _ in fake.writes)
         rows = list(csv.DictReader((logdir / f"{time.strftime('%Y%m%d')}.csv").open(encoding="utf-8")))
-        assert len(rows) == mc_ref.counts["total"] + mc2.counts["total"], len(rows)
+        assert len(rows) == mc_ref.counts["total"] + mc2.counts["total"] + mc3.counts["total"], len(rows)
         assert {r["final"] for r in rows} == {PASS, REJECT, FAULT}
         print(f"ok  machine cycle (FAKE PLC + decoded ladder emulation, fake cameras/detector): "
               f"PASS,REJECT,PASS,REJECT,REJECT,PASS with unique ids + one final each, M0/M1/C0/C1/Y0 checked, "
