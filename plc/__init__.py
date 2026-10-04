@@ -1,4 +1,4 @@
-"""PLC communication layer (Delta DVP via Modbus ASCII). See SYSTEM_ROADMAP/PLC_COMMUNICATION.md.
+"""PLC communication layer (Delta DVP via Modbus ASCII). See docs/roadmap/PLC_COMMUNICATION.md.
 
     from plc import PLCClient
     svc = PLCService(PLCClient())            # the ISPSoft DVP-SS2 simulator on 127.0.0.1:10002

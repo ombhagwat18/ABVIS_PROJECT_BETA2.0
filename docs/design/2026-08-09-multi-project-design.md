@@ -63,7 +63,7 @@ CSV**. An existing row is never rewritten by a rescan.
 This is not a detail. A folder can express exactly one defect per image, but the
 model is multi-label. This project already paid for that: 19 `Water Level` frames
 were also visibly `tilt_cap`, the folder could not say so, and it cost real
-precision (PLAN.md §First results). Second defects get ticked in the Label tab,
+precision (docs/design/PLAN.md §First results). Second defects get ticked in the Label tab,
 and a rescan must not wipe them.
 
 Consequences for class edits, so a folder cannot resurrect a deleted column:

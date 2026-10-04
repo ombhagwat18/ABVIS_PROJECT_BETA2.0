@@ -13,7 +13,7 @@ application: **250 ml Bisleri bottle inspection on a conveyor**.
 | **Application** | Python desktop app (Tk / CustomTkinter, OpenCV, PyTorch) |
 | **Detector** | YOLOv8n: **training complete** (test-evaluated). **Runtime integration: current development** - opt-in in the Live tab, finds component boxes only |
 | **Hardware validation** | None |
-| **Docs** | [`SYSTEM_ROADMAP/`](SYSTEM_ROADMAP/README.md) |
+| **Docs** | [`docs/roadmap/`](docs/roadmap/README.md) |
 
 ## Contents
 
@@ -33,7 +33,7 @@ The governing split: **AI decides *what* the object/defect is; the PLC decides *
 
 **Scope discipline.** The aim is the *minimum reliable machine first*. A larger platform (recipes, database,
 dashboard, security, OCR, active learning, ...) is planned but **deliberately deferred** - see
-[FUTURE_ENHANCEMENTS](SYSTEM_ROADMAP/FUTURE_ENHANCEMENTS.md).
+[FUTURE_ENHANCEMENTS](docs/roadmap/FUTURE_ENHANCEMENTS.md).
 
 ## Current state
 
@@ -78,7 +78,7 @@ dashboard, security, OCR, active learning, ...) is planned but **deliberately de
 **First complete machine cycle**: a bottle is sensed, inspected, given a PASS / REJECT / FAULT, the PLC receives
 the correct result in time, and the correct bottle is physically rejected. YOLO runtime integration is the
 **current development** step; the phase after it is **inspection window / per-bottle association** (not PLC).
-See [IMPLEMENTATION_PLAN](SYSTEM_ROADMAP/IMPLEMENTATION_PLAN.md).
+See [IMPLEMENTATION_PLAN](docs/roadmap/IMPLEMENTATION_PLAN.md).
 
 ## Architecture
 
@@ -99,7 +99,7 @@ flowchart LR
 ```
 
 The detector is **observational**: it never produces PASS or REJECT. If it is enabled and fails or goes stale, the
-result becomes FAULT. Details: [CURRENT_SYSTEM](SYSTEM_ROADMAP/CURRENT_SYSTEM.md).
+result becomes FAULT. Details: [CURRENT_SYSTEM](docs/roadmap/CURRENT_SYSTEM.md).
 
 ### Target architecture (not implemented)
 
@@ -120,7 +120,7 @@ flowchart TB
 ```
 
 Details and the software/PLC responsibility split:
-[INDUSTRIAL_ARCHITECTURE](SYSTEM_ROADMAP/INDUSTRIAL_ARCHITECTURE.md).
+[INDUSTRIAL_ARCHITECTURE](docs/roadmap/INDUSTRIAL_ARCHITECTURE.md).
 
 ## Stage 1 (classification)
 
@@ -196,7 +196,7 @@ captures - not hardware tests.**
 frame and result sequence/timestamps, reasons, hits, model id, inference time, project id, job id, evidence
 path) and a bounded, thread-safe in-memory `TraceStore`. **In-memory only; no persistence, database or evidence
 images; `job_id` and `evidence_path` are placeholders; `decision` currently equals `state`.** Which fields are
-populated, and the plan to evolve it: [TRACEABILITY_PLAN](SYSTEM_ROADMAP/TRACEABILITY_PLAN.md).
+populated, and the plan to evolve it: [TRACEABILITY_PLAN](docs/roadmap/TRACEABILITY_PLAN.md).
 
 ## Hardware
 
@@ -208,7 +208,7 @@ cylinder with a 5/2 solenoid valve, controlled LED lighting, an inspection enclo
   **PLC addresses / I/O mapping are not verified.**
 - The reject has to happen inside the time a bottle takes to travel from the sensor/camera to the reject
   position (`distance / conveyor speed`); the whole capture-to-actuator chain must fit inside that. No physical
-  values or latencies are recorded yet. See [HARDWARE_INTEGRATION](SYSTEM_ROADMAP/HARDWARE_INTEGRATION.md).
+  values or latencies are recorded yet. See [HARDWARE_INTEGRATION](docs/hardware/HARDWARE_INTEGRATION.md).
 
 ## Roadmap
 
@@ -226,9 +226,9 @@ cylinder with a 5/2 solenoid valve, controlled LED lighting, an inspection enclo
 | 8 | Physical validation |
 | 9 | Industrial platform enhancements (recipes, database, dashboard, security, ...) |
 
-Details: [IMPLEMENTATION_PLAN](SYSTEM_ROADMAP/IMPLEMENTATION_PLAN.md). Deferred features (SQLite, dashboard,
+Details: [IMPLEMENTATION_PLAN](docs/roadmap/IMPLEMENTATION_PLAN.md). Deferred features (SQLite, dashboard,
 login, OCR/barcode, auto annotation, active learning, anomaly detection, reports, ...):
-[FUTURE_ENHANCEMENTS](SYSTEM_ROADMAP/FUTURE_ENHANCEMENTS.md). They are postponed, not abandoned.
+[FUTURE_ENHANCEMENTS](docs/roadmap/FUTURE_ENHANCEMENTS.md). They are postponed, not abandoned.
 
 ## Repository structure
 
@@ -249,9 +249,9 @@ stage2_dataset/         Stage 2 scripts, annotations.json, split.json, manifests
 models/stage2_yolo/     MODEL_PROVENANCE.json, training_metadata.json, results, curves (weights NOT in Git)
 projects/<slug>/        labels.csv, config.json, project.json (images and checkpoints NOT in Git)
 plc file/               PLC simulator script + ISPSoft project (ladder unreadable here)
-SYSTEM_ROADMAP/         project documentation
+docs/roadmap/         project documentation
 FINAL_YEAR_BLACKBOOK/   project write-up
-docs/, PLAN.md          original design docs (historical)
+docs/, docs/design/PLAN.md          original design docs (historical)
 app.py, index.html      earlier web version - unused (nothing imports or launches them)
 ```
 
@@ -314,17 +314,17 @@ Stage 2 export validation: `stage2_dataset/validate_yolo_export.py` (19 checks; 
 
 | | |
 |---|---|
-| [SYSTEM_ROADMAP/README.md](SYSTEM_ROADMAP/README.md) | Index |
-| [CURRENT_SYSTEM](SYSTEM_ROADMAP/CURRENT_SYSTEM.md) | What exists |
-| [CURRENT_SCOPE](SYSTEM_ROADMAP/CURRENT_SCOPE.md) | What is in scope now |
-| [FUTURE_ENHANCEMENTS](SYSTEM_ROADMAP/FUTURE_ENHANCEMENTS.md) | What is deferred |
-| [INDUSTRIAL_ARCHITECTURE](SYSTEM_ROADMAP/INDUSTRIAL_ARCHITECTURE.md) | Target architecture |
-| [IMPLEMENTATION_PLAN](SYSTEM_ROADMAP/IMPLEMENTATION_PLAN.md) | Phased plan |
-| [FEATURE_STATUS](SYSTEM_ROADMAP/FEATURE_STATUS.md) | Per-feature status |
-| [HARDWARE_INTEGRATION](SYSTEM_ROADMAP/HARDWARE_INTEGRATION.md) | Hardware, timing, unknowns |
-| [TRACEABILITY_PLAN](SYSTEM_ROADMAP/TRACEABILITY_PLAN.md) | Records today and later |
+| [docs/roadmap/README.md](docs/roadmap/README.md) | Index |
+| [CURRENT_SYSTEM](docs/roadmap/CURRENT_SYSTEM.md) | What exists |
+| [CURRENT_SCOPE](docs/roadmap/CURRENT_SCOPE.md) | What is in scope now |
+| [FUTURE_ENHANCEMENTS](docs/roadmap/FUTURE_ENHANCEMENTS.md) | What is deferred |
+| [INDUSTRIAL_ARCHITECTURE](docs/roadmap/INDUSTRIAL_ARCHITECTURE.md) | Target architecture |
+| [IMPLEMENTATION_PLAN](docs/roadmap/IMPLEMENTATION_PLAN.md) | Phased plan |
+| [FEATURE_STATUS](docs/roadmap/FEATURE_STATUS.md) | Per-feature status |
+| [HARDWARE_INTEGRATION](docs/hardware/HARDWARE_INTEGRATION.md) | Hardware, timing, unknowns |
+| [TRACEABILITY_PLAN](docs/roadmap/TRACEABILITY_PLAN.md) | Records today and later |
 
-Original design doc (historical): [PLAN.md](PLAN.md). Latest audit: [SYSTEM_AUDIT_2026-10-03.md](SYSTEM_AUDIT_2026-10-03.md).
+Original design doc (historical): [docs/design/PLAN.md](docs/design/PLAN.md). Latest audit: [docs/audit/SYSTEM_AUDIT_2026-10-03.md](docs/audit/SYSTEM_AUDIT_2026-10-03.md).
 Contributor/agent notes: [CLAUDE.md](CLAUDE.md).
 
 ## Known limitations
@@ -340,4 +340,4 @@ Contributor/agent notes: [CLAUDE.md](CLAUDE.md).
 
 Persistence, dashboard, recipes/jobs, model and dataset registry, security, reports and alarms, traditional
 vision, OCR/barcode, annotation automation, active learning, anomaly detection - all
-[deferred](SYSTEM_ROADMAP/FUTURE_ENHANCEMENTS.md) until the physical machine is proven.
+[deferred](docs/roadmap/FUTURE_ENHANCEMENTS.md) until the physical machine is proven.

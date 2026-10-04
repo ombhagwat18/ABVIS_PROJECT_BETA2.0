@@ -1,7 +1,7 @@
 """Modbus ASCII framing, as spoken by the Delta DVP simulator on 127.0.0.1:10002.
 
 Pure functions, no I/O, so the framing can be tested without a PLC. Verified against the
-running DVP-SS2 simulator (see SYSTEM_ROADMAP/PLC_COMMUNICATION.md):
+running DVP-SS2 simulator (see docs/roadmap/PLC_COMMUNICATION.md):
 
     request :  ':' + hex(station, function, data...) + hex(LRC) + CR LF
     response:  same shape; function | 0x80 means an exception, followed by one code byte

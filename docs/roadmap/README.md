@@ -15,7 +15,7 @@ what comes next, and what the final industrial system could become.
 | [FUTURE_ENHANCEMENTS.md](FUTURE_ENHANCEMENTS.md) | **What we are deliberately not building yet.** Deferred, not abandoned |
 | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | **What we build next.** Dependency-ordered phases 0-9 |
 | [FEATURE_STATUS.md](FEATURE_STATUS.md) | One table: every feature, its factual status, and its horizon |
-| [HARDWARE_INTEGRATION.md](HARDWARE_INTEGRATION.md) | The physical system, the timing equation, and what is unknown |
+| [HARDWARE_INTEGRATION.md](../hardware/HARDWARE_INTEGRATION.md) | The physical system, the timing equation, and what is unknown |
 | [TRACEABILITY_PLAN.md](TRACEABILITY_PLAN.md) | Inspection records today, and how they evolve |
 | [PLC_COMMUNICATION.md](PLC_COMMUNICATION.md) | The Python <-> PLC bridge, verified simulator settings, device map, benchmark |
 | [INDUSTRIAL_ARCHITECTURE.md](INDUSTRIAL_ARCHITECTURE.md) | **What the final industrial system could become** |

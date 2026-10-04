@@ -38,7 +38,7 @@ describes; the repository itself contains no measurements, drawings or test logs
 A result handshake will be needed so that a late, missing or unacknowledged result leads to a safe outcome
 chosen in the PLC. The elements to design and verify once the PLC is accessible: a result signal from software,
 an acknowledgement, a heartbeat/watchdog in each direction, a result timeout, a fault/reset path, and a
-counter strategy. None exists in code yet. See [INDUSTRIAL_ARCHITECTURE.md](INDUSTRIAL_ARCHITECTURE.md) for the
+counter strategy. None exists in code yet. See [INDUSTRIAL_ARCHITECTURE.md](../roadmap/INDUSTRIAL_ARCHITECTURE.md) for the
 responsibility split (software decides *what*; the PLC decides *how the machine responds*).
 
 ## Timing: the equation that decides whether this works
@@ -76,7 +76,7 @@ capture
 | Valve + cylinder response | **Unmeasured** (a datasheet value is not a measurement of this installation) |
 
 **Actual hardware measurements are required** before any claim that the chain fits. The timing model is Phase 5
-of [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md), and nothing in the software should hard-code a value for
+of [IMPLEMENTATION_PLAN.md](../roadmap/IMPLEMENTATION_PLAN.md), and nothing in the software should hard-code a value for
 these quantities until they are measured.
 
 ## Camera notes

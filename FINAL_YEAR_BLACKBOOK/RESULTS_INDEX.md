@@ -54,7 +54,7 @@ stored images · **REAL-CAMERA** = real EMEET frames, no machine · **SIMULATOR*
 | Decision rules, recipe-driven detection, frame vote, camera fusion | `decision.py` self-test | 2026-10-03 | FAKE | `python decision.py` |
 | Machine cycle: FIFO, deadlines, NOT INSPECTED, FAULT handling, timing check | `machine_cycle.py` self-test | 2026-10-03 | FAKE | `python machine_cycle.py` |
 | PLC protocol, write policy, service contract | `plc/test_*.py` | 2026-10-03 | FAKE | `python -m plc.test_simulation`, `python -m plc.test_service` |
-| Decoded ladder, simulator measurements, fault matrix | `SYSTEM_ROADMAP/PLC_COMMUNICATION.md` | 2026-10-03 | SIMULATOR / decoded file | `python -m plc.handshake_test --real` (simulator) |
+| Decoded ladder, simulator measurements, fault matrix | `docs/roadmap/PLC_COMMUNICATION.md` | 2026-10-03 | SIMULATOR / decoded file | `python -m plc.handshake_test --real` (simulator) |
 | GUI 11-tab build incl. Production line against fake PLC | `gui.py --selftest` | 2026-10-03 | FAKE | `python gui.py --selftest` |
 
 ## System analysis and physical machine

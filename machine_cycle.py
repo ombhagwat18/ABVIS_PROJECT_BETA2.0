@@ -30,7 +30,7 @@ Every bottle ends with exactly ONE final result (PASS / REJECT / FAULT):
     bottle or nothing): the handshake is answered with M0, the bottle is a FAULT and an alarm
     says it must be removed by hand.
 
-Ladder limits this code works around rather than hides (SYSTEM_ROADMAP/PLC_COMMUNICATION.md section 0):
+Ladder limits this code works around rather than hides (docs/roadmap/PLC_COMMUNICATION.md section 0):
   * While M1 is ON (T0 + T1 after every REJECT) net 5 resets M2 on every scan, so a bottle reaching
     X0 in that window raises no trigger; the same happens if X0 rises while M2 is still ON. PLCService
     (watch_x0=True) reports every such X0 edge as BOTTLE_UNTRIGGERED and the bottle is recorded here as

@@ -5,7 +5,7 @@
 
 Only the Transport differs between the two; PLCClient, the address map, plc.service.PLCService and
 everything above them stay the same. (A serial Transport is NOT implemented: the physical port,
-baud rate, parity and ASCII/RTU are UNKNOWN -- see SYSTEM_ROADMAP/PLC_COMMUNICATION.md.)
+baud rate, parity and ASCII/RTU are UNKNOWN -- see docs/roadmap/PLC_COMMUNICATION.md.)
 PLCClient is low level: application code should use plc.service.PLCService, the single owner.
 
 Behaviour that matters for safety:
