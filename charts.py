@@ -4,21 +4,24 @@ No matplotlib. Three chart types over a few hundred points each does not
 justify a 40 MB dependency, a second event loop and a figure-to-image round
 trip on every redraw -- and matplotlib's Tk backend fights the theme.
 
-Everything here draws in the white/blue palette and takes explicit colours, so
+Everything here draws in the theme.py palette and takes explicit colours, so
 the widgets and the plots cannot drift apart.
 """
 from __future__ import annotations
 
 import math
 
-INK = "#0f172a"
-DIM = "#5b6672"
-LINE = "#d8e2f0"
-BLUE = "#1d4ed8"
-BLUES = ["#1d4ed8", "#0891b2", "#7c3aed", "#0284c7", "#4f46e5", "#0d9488", "#2563eb"]
-RED = "#b91c1c"
-GREEN = "#15803d"
-AMBER = "#b45309"
+import theme
+
+INK = theme.INK
+DIM = theme.DIM
+LINE = theme.LINE
+BG = theme.PANEL                # charts sit on panels
+BLUE = theme.ACC
+BLUES = theme.SERIES
+RED = theme.REJECT
+GREEN = theme.PASS
+AMBER = theme.FAULT
 
 PAD_L, PAD_R, PAD_T, PAD_B = 52, 14, 14, 30
 
@@ -163,13 +166,13 @@ def confusion(canvas, tp: int, fp: int, fn: int, tn: int, font=("Segoe UI", 10))
     h = int(canvas.winfo_height()) or int(canvas["height"])
     left, top = 92, 34
     cw, ch = max(40, (w - left - 12) / 2), max(30, (h - top - 26) / 2)
-    cells = [("TN", tn, "#e8eef8", INK), ("FP", fp, "#fde2e2", RED),
-             ("FN", fn, "#fde2e2", RED), ("TP", tp, "#dbeafe", BLUE)]
+    cells = [("TN", tn, theme.PANEL_2, INK), ("FP", fp, theme.REJECT_SOFT, RED),
+             ("FN", fn, theme.REJECT_SOFT, RED), ("TP", tp, theme.PASS_SOFT, GREEN)]
     canvas.create_text(left + cw, 12, text="predicted", fill=DIM, font=font)
     for i, (name, v, bg, fg) in enumerate(cells):
         r, c = divmod(i, 2)
         x, y = left + c * cw, top + r * ch
-        canvas.create_rectangle(x, y, x + cw, y + ch, fill=bg, outline="#ffffff", width=2)
+        canvas.create_rectangle(x, y, x + cw, y + ch, fill=bg, outline=BG, width=2)
         canvas.create_text(x + cw / 2, y + ch / 2 - 7, text=str(v), fill=fg,
                            font=(font[0], font[1] + 6, "bold"))
         canvas.create_text(x + cw / 2, y + ch / 2 + 13, text=name, fill=DIM, font=font)

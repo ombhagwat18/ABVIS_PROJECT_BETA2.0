@@ -36,6 +36,7 @@ PROJECT = ""
 TASK = DEFAULT_TASK
 PROJECT_DIR = IMAGE_ROOT = POS = NEG = INBOX = DATA = Path()
 LABELS_CSV = CONFIG_JSON = SCENES_JSON = THUMBS = CACHE = MODELS = Path()
+TRASH = LABEL_LOG = SUGGESTIONS_JSON = Path()
 
 # A bottle is tall and narrow. Squeezing that ROI into a square leaves the
 # bottle ~142 px wide in a 320 px frame with more than half the pixels black --
@@ -68,6 +69,7 @@ def use_project(name: str) -> str:
     """
     global PROJECT, TASK, PROJECT_DIR, IMAGE_ROOT, POS, NEG, INBOX, DATA
     global LABELS_CSV, CONFIG_JSON, SCENES_JSON, THUMBS, CACHE, MODELS, _cfg_cache
+    global TRASH, LABEL_LOG, SUGGESTIONS_JSON
     PROJECT = name
     TASK = project_task(name)
     PROJECT_DIR = PROJECTS / name
@@ -79,6 +81,11 @@ def use_project(name: str) -> str:
     SCENES_JSON = DATA / "scenes.json"
     THUMBS, CACHE = DATA / "thumbs", DATA / "cache"
     MODELS = PROJECT_DIR / "models"
+    # Outside images/ on purpose: scan_images() walks images/, and a trashed file
+    # found there would come straight back as a new inbox image.
+    TRASH = PROJECT_DIR / "trash"
+    LABEL_LOG = DATA / "label_log.csv"             # append-only audit of every label edit
+    SUGGESTIONS_JSON = CACHE / "suggestions.json"  # model pre-labels; never training data
     _cfg_cache = None                  # the cache is keyed on mtime, not on path
     PROJECTS.mkdir(parents=True, exist_ok=True)
     ACTIVE_TXT.write_text(name, encoding="utf-8")
@@ -343,20 +350,147 @@ def slug(s: str) -> str:
 
 def apply_labels(paths, defect=None, value=1, clear_all=False) -> dict:
     """Set or clear a defect on many images. Always one CSV rewrite, whatever
-    the edit -- 'mark good' must not cost one full rewrite per defect column."""
+    the edit -- 'mark good' must not cost one full rewrite per defect column.
+    Every changed row is appended to label_log.csv."""
     defects, labels = load_labels()
     if defect is not None and defect not in defects:
         raise KeyError(f"unknown defect {defect!r}")
+    changes = []
     for p in paths:
         if p not in labels:
             continue
+        before = label_state(labels[p], defects)
         if clear_all:
             for d in defects:
                 labels[p][d] = 0
         elif defect is not None:
             labels[p][defect] = int(value)
         labels[p]["reviewed"] = 1
+        after = label_state(labels[p], defects)
+        if after != before:
+            changes.append((p, before, after))
     save_labels(defects, labels)
+    log_changes("good" if clear_all else (f"set {defect}" if value else f"clear {defect}"), changes)
+    return counts(defects, labels)
+
+
+def set_labels(mapping: dict, action: str = "set") -> dict:
+    """{relpath: iterable of defect names} -> exactly those defects, reviewed=1.
+
+    The one-image editor and "accept AI suggestion" need "make it exactly
+    this"; a run of per-defect set/clear calls would log several edits and
+    could be left half-applied."""
+    defects, labels = load_labels()
+    changes = []
+    for p, on in mapping.items():
+        if p not in labels:
+            continue
+        on = set(on)
+        unknown = on - set(defects)
+        if unknown:
+            raise KeyError(f"unknown defect(s) {sorted(unknown)}")
+        before = label_state(labels[p], defects)
+        for d in defects:
+            labels[p][d] = int(d in on)
+        labels[p]["reviewed"] = 1
+        after = label_state(labels[p], defects)
+        if after != before:
+            changes.append((p, before, after))
+    save_labels(defects, labels)
+    log_changes(action, changes)
+    return counts(defects, labels)
+
+
+# --------------------------------------------------------------- audit log
+# Append-only, one row per changed image. labels.csv keeps its schema: any
+# extra column there would be read back as a defect column by load_labels().
+
+LOG_FIELDS = ("time", "user", "batch", "action", "path", "before", "after")
+
+
+def label_state(row, defects) -> str:
+    """A row as one token: 'GOOD', 'tilt_cap+water_level', '?'-prefixed when unreviewed."""
+    on = [d for d in defects if row.get(d, 0)]
+    s = "+".join(on) if on else "GOOD"
+    return s if row.get("reviewed", 1) else "?" + s
+
+
+def parse_state(s: str) -> tuple:
+    """label_state() back to (defects on, reviewed)."""
+    reviewed = 0 if s.startswith("?") else 1
+    s = s.lstrip("?")
+    return ([] if s in ("GOOD", "") else s.split("+")), reviewed
+
+
+def _user() -> str:
+    try:
+        import getpass
+        return getpass.getuser()
+    except Exception:                                    # noqa: BLE001
+        return "unknown"
+
+
+def _batch_id() -> str:
+    return time.strftime("%Y%m%d-%H%M%S-") + f"{int(time.time() * 1000) % 1000:03d}"
+
+
+def log_changes(action: str, changes, batch: str | None = None) -> str | None:
+    """Append (path, before, after) rows under one batch id. -> the batch id, or None if nothing changed."""
+    if not changes:
+        return None
+    batch = batch or _batch_id()
+    new = not LABEL_LOG.exists()
+    LABEL_LOG.parent.mkdir(parents=True, exist_ok=True)
+    stamp, user = time.strftime("%Y-%m-%d %H:%M:%S"), _user()
+    with LABEL_LOG.open("a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(LOG_FIELDS)
+        for p, before, after in changes:
+            w.writerow([stamp, user, batch, action, p, before, after])
+    return batch
+
+
+def read_log() -> list:
+    if not LABEL_LOG.exists():
+        return []
+    with LABEL_LOG.open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def last_undoable() -> tuple | None:
+    """(batch, action, n images) of the newest edit not yet undone, or None. Imports are not undoable here
+    (they only add files; delete them to take them back)."""
+    rows = read_log()
+    undone = {r["action"][5:] for r in rows if r["action"].startswith("undo ")}
+    for r in reversed(rows):
+        a = r["action"]
+        if a.startswith("undo ") or a == "import" or r["batch"] in undone:
+            continue
+        return r["batch"], a, sum(1 for x in rows if x["batch"] == r["batch"])
+    return None
+
+
+def undo(batch: str) -> dict:
+    """Put every image in `batch` back the way it was. A deleted image comes back out of the trash."""
+    rows = [r for r in read_log() if r["batch"] == batch]
+    if not rows:
+        raise KeyError(f"no such edit {batch!r}")
+    moved = restore_trash(batch) if rows[0]["action"] == "delete" else {}
+    defects, labels = load_labels()            # restored files are picked up here
+    changes = []
+    for r in rows:
+        p = moved.get(r["path"], r["path"])
+        if p not in labels:
+            continue
+        on, reviewed = parse_state(r["before"])
+        before = label_state(labels[p], defects)
+        for d in defects:
+            labels[p][d] = int(d in on)
+        labels[p]["reviewed"] = reviewed
+        changes.append((p, before, label_state(labels[p], defects)))
+    save_labels(defects, labels)
+    log_changes("undo " + batch, changes)
     return counts(defects, labels)
 
 
@@ -468,28 +602,170 @@ def add_folder(src_dir, dest: str) -> int:
 
 
 def delete_images(paths) -> dict:
-    """Remove images from disk and from labels.csv.
+    """Remove images from the dataset and from labels.csv.
 
-    Only touches files under IMAGE_ROOT -- a path that escapes it (via .. or an
-    absolute path) is refused rather than followed.
+    Nothing is erased: each file moves to trash/<batch>/<relpath> and the edit
+    is logged, so undo() puts it back with the labels it had. Only touches
+    files under IMAGE_ROOT -- a path that escapes it (via .. or an absolute
+    path) is refused, before anything is moved.
     """
     root = IMAGE_ROOT.resolve()
-    defects, labels = load_labels()
     for rel in paths:
-        p = (IMAGE_ROOT / rel).resolve()
         try:
-            p.relative_to(root)
+            (IMAGE_ROOT / rel).resolve().relative_to(root)
         except ValueError:
             raise ValueError(f"refusing to delete outside the dataset: {rel}")
-        p.unlink(missing_ok=True)
-        labels.pop(rel, None)
+    defects, labels = load_labels()
+    batch = _batch_id()
+    changes = []
+    for rel in paths:
+        p = (IMAGE_ROOT / rel).resolve()
+        if p.is_file():
+            dest = TRASH / batch / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(p), str(dest))
+        row = labels.pop(rel, None)
+        if row is not None:
+            changes.append((rel, label_state(row, defects), "DELETED"))
         for cache_dir in (THUMBS, CACHE):
             for stale in cache_dir.rglob(rel.replace("/", "__") + ".*"):
                 stale.unlink(missing_ok=True)
     save_labels(defects, labels)
+    log_changes("delete", changes, batch=batch)
     if SCENES_JSON.exists():
         SCENES_JSON.unlink()            # the grouping is keyed on the path set
     return counts(defects, labels)
+
+
+def restore_trash(batch: str) -> dict:
+    """Move a deleted batch back into images/. -> {original relpath: relpath it has now}
+    (different only if a new file took the old name meanwhile)."""
+    src = TRASH / batch
+    out = {}
+    if not src.is_dir():
+        return out
+    for f in sorted(x for x in src.rglob("*") if x.is_file()):
+        rel = f.relative_to(src).as_posix()
+        dest = _free(IMAGE_ROOT / rel)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(f), str(dest))
+        out[rel] = dest.relative_to(IMAGE_ROOT).as_posix()
+    shutil.rmtree(src, ignore_errors=True)
+    if SCENES_JSON.exists():
+        SCENES_JSON.unlink()
+    return out
+
+
+# ------------------------------------------------------------ folder import
+# A new product is a new dataset, not new code: point at a folder already
+# sorted into one sub-folder per class and every class becomes a column.
+# Copy, never move (add_images).
+
+GOOD_NAMES = {"good", "ok", "okay", "pass", "passed", "accept", "accepted", "normal", "+ve", "pos",
+              "positive", "no_defect", "nodefect", "non_defective"}
+INBOX_NAMES = {"unsorted", "raw", "new", "inbox", "_inbox", "unlabeled", "unlabelled", "unknown", "review",
+               "todo", "misc"}
+IMG_EXT = (".jpg", ".jpeg", ".png")
+
+
+def _n_images(folder: Path, deep: bool = True) -> int:
+    it = folder.rglob("*") if deep else folder.iterdir()
+    return sum(1 for p in it if p.is_file() and p.suffix.lower() in IMG_EXT)
+
+
+def plan_import(src_dir) -> list:
+    """One row per class folder: {folder (relative to src), n, guess}.
+
+    guess is "GOOD", "INBOX" or a defect column name. A folder laid out like a
+    project's own images/ (+ve, -ve/<Class>, _inbox) maps the way that layout
+    already means. Images loose in src itself are one row with folder ".".
+    """
+    src = Path(src_dir)
+    if not src.is_dir():
+        raise ValueError(f"not a folder: {src}")
+    rows = []
+    loose = _n_images(src, deep=False)
+    if loose:
+        rows.append({"folder": ".", "n": loose, "guess": "INBOX"})
+    for d in sorted((p for p in src.iterdir() if p.is_dir()), key=lambda p: _natkey(p.name)):
+        if d.name == NEG_DIR:                         # our own layout: one row per class inside -ve/
+            n = _n_images(d, deep=False)
+            if n:
+                rows.append({"folder": d.name, "n": n, "guess": "INBOX"})
+            for c in sorted((p for p in d.iterdir() if p.is_dir()), key=lambda p: _natkey(p.name)):
+                n = _n_images(c)
+                if n:
+                    rows.append({"folder": f"{d.name}/{c.name}", "n": n, "guess": slug(c.name) or "INBOX"})
+            continue
+        n = _n_images(d)
+        if not n:
+            continue
+        key = d.name.strip().lower()
+        guess = "GOOD" if key in GOOD_NAMES else "INBOX" if key in INBOX_NAMES else (slug(d.name) or "INBOX")
+        rows.append({"folder": d.name, "n": n, "guess": guess})
+    return rows
+
+
+def import_target_dir(target: str) -> str | None:
+    """'GOOD' / 'INBOX' / 'SKIP' / a defect name -> destination relative to images/ (None = skip)."""
+    if target == "SKIP":
+        return None
+    if target == "GOOD":
+        return POS_DIR
+    if target == "INBOX":
+        return INBOX_DIR
+    col = slug(target)
+    if not col or col in RESERVED:
+        raise ValueError(f"bad class name {target!r}")
+    existing = _class_dir(col)                     # reuse "Tilt Cap/" for tilt_cap rather than add a twin
+    return f"{NEG_DIR}/{existing.name if existing else col}"
+
+
+def run_import(src_dir, mapping: dict) -> dict:
+    """mapping: {folder from plan_import: target}. Copies, then syncs labels.csv. -> {target: n copied}."""
+    src = Path(src_dir)
+    dests = {f: import_target_dir(t) for f, t in mapping.items()}   # validate every name before copying
+    done: dict = {}
+    for folder, target in mapping.items():
+        dest = dests[folder]
+        if dest is None:
+            continue
+        base = src if folder == "." else src / folder
+        deep = folder not in (".", NEG_DIR)        # loose files only; class sub-folders are their own rows
+        files = sorted(p for p in (base.rglob("*") if deep else base.iterdir()) if p.is_file())
+        (IMAGE_ROOT / dest).mkdir(parents=True, exist_ok=True)   # an empty class still gets its column
+        done[target] = done.get(target, 0) + add_images(files, dest)
+    load_labels()                                  # new files and class folders -> rows and columns
+    log_changes("import", [(f"{src.name}/{f}", "", t) for f, t in mapping.items() if t != "SKIP"])
+    return done
+
+
+# ------------------------------------------------------- AI pre-label store
+# Model suggestions live in cache/, never in labels.csv: an image stays
+# reviewed=0 (and out of training) until a person accepts or corrects it.
+
+def load_suggestions() -> dict:
+    """{"model": stamp, "time": str, "items": {relpath: {defect: prob}}}."""
+    try:
+        d = json.loads(SUGGESTIONS_JSON.read_text(encoding="utf-8"))
+        d.setdefault("items", {})
+        return d
+    except Exception:                                    # noqa: BLE001
+        return {"model": None, "time": None, "items": {}}
+
+
+def save_suggestions(d: dict) -> None:
+    SUGGESTIONS_JSON.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SUGGESTIONS_JSON.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d, indent=1), encoding="utf-8")
+    tmp.replace(SUGGESTIONS_JSON)
+
+
+def drop_suggestions(paths) -> None:
+    d = load_suggestions()
+    hit = [d["items"].pop(p, None) is not None for p in list(paths)]
+    if any(hit):
+        save_suggestions(d)
 
 
 def save_capture(frame_bgr: np.ndarray, defects_on=(), reviewed=True) -> str:
@@ -943,6 +1219,76 @@ def project_demo():
                 assert add_images([f], POS_DIR) == 1      # same name, not a clobber
                 assert f.exists(), "upload moved the source instead of copying it"
             assert len(load_labels()[1]) == n_a + 2
+
+            # ---- audit log + undo: every edit is recorded and can be reversed
+            t1 = f"{NEG_DIR}/cap_tilt/t1.jpg"
+            n_log = len(read_log())
+            set_labels({t1: ["cap_tilt"]}, action="inspector")
+            assert load_labels()[1][t1]["water_level"] == 0
+            last = read_log()[-1]
+            assert len(read_log()) == n_log + 1 and last["before"] == "cap_tilt+water_level" \
+                and last["after"] == "cap_tilt" and last["action"] == "inspector", last
+            apply_labels([t1], "cap_tilt", 1)               # no change -> nothing logged
+            assert len(read_log()) == n_log + 1, "a no-op edit was logged"
+            batch, action, n = last_undoable()
+            assert action == "inspector" and n == 1
+            undo(batch)
+            assert load_labels()[1][t1]["water_level"] == 1, "undo did not restore the second defect"
+            assert last_undoable() is None or last_undoable()[0] != batch, "an undone edit is still undoable"
+            assert parse_state(label_state({"a": 1, "b": 1, "reviewed": 0}, ["a", "b"])) == (["a", "b"], 0)
+
+            # ---- delete goes to trash/, never re-imported, and undo brings back file AND labels
+            delete_images([t1])
+            assert not (IMAGE_ROOT / t1).exists() and t1 not in load_labels()[1]
+            assert any(TRASH.rglob("t1.jpg")), "deleted file is not in the trash"
+            assert not any("trash" in p for p in scan_images()), "the trash is inside images/"
+            batch, action, _ = last_undoable()
+            assert action == "delete"
+            undo(batch)
+            row = load_labels()[1][t1]
+            assert row["cap_tilt"] == 1 and row["water_level"] == 1 and row["reviewed"] == 1, row
+            try:
+                delete_images(["../labels.csv"])
+                raise AssertionError("delete escaped the dataset")
+            except ValueError:
+                pass
+
+            # ---- folder import: a different product, sorted one folder per class
+            with tempfile.TemporaryDirectory() as src:
+                for rel in ("OK/a.jpg", "OK/b.jpg", "Scratch/s1.jpg", "Scratch/deep/s2.jpg",
+                            "raw/r.jpg", "Cap tilt/c.jpg", "loose.jpg", "empty/readme.txt"):
+                    f = Path(src) / rel
+                    f.parent.mkdir(parents=True, exist_ok=True)
+                    if rel.endswith(".jpg"):
+                        cv2.imencode(".jpg", blank)[1].tofile(str(f))
+                    else:
+                        f.write_text("x")
+                plan = {r["folder"]: r for r in plan_import(src)}
+                assert set(plan) == {".", "OK", "Scratch", "raw", "Cap tilt"}, plan   # empty/ has no images
+                assert plan["OK"]["guess"] == "GOOD" and plan["raw"]["guess"] == "INBOX"
+                assert plan["Scratch"] == {"folder": "Scratch", "n": 2, "guess": "scratch"}
+                assert plan["Cap tilt"]["guess"] == "cap_tilt" and plan["."]["n"] == 1
+                use_project(create_project("Product C"))
+                mapping = {k: v["guess"] for k, v in plan.items()}
+                mapping["."] = "SKIP"
+                got = run_import(src, mapping)
+                assert got == {"GOOD": 2, "scratch": 2, "INBOX": 1, "cap_tilt": 1}, got
+                defects, labels = load_labels()
+                assert defects == ["cap_tilt", "scratch"], defects
+                cc = counts(defects, labels)
+                assert cc["_good"] == 2 and cc["scratch"] == 2 and cc["_unreviewed"] == 1, cc
+                assert (Path(src) / "OK/a.jpg").exists(), "import moved the source"
+                try:
+                    run_import(src, {"OK": "reviewed"})
+                    raise AssertionError("a reserved column name was accepted")
+                except ValueError:
+                    pass
+            # ---- suggestions never touch labels.csv
+            save_suggestions({"model": "m", "time": "t", "items": {"x.jpg": {"scratch": 0.9}}})
+            assert load_suggestions()["items"]["x.jpg"]["scratch"] == 0.9
+            drop_suggestions(["x.jpg"])
+            assert load_suggestions()["items"] == {}
+            use_project(a)
     finally:
         PROJECTS, ACTIVE_TXT = was[0], was[1]
         if was[2]:

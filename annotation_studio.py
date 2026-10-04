@@ -23,13 +23,11 @@ from PIL import Image, ImageTk
 
 import annotate as A
 import dataset as D
+import theme
 
-# Same palette values as gui.py (duplicated here, not imported, to avoid a
-# gui.py <-> annotation_studio.py import cycle: gui.py imports this module to
-# build the "Annotate" tab).
-ACC, ACC_H, ACC_T = "#1d4ed8", "#1e40af", "#ffffff"
-BAD, GOOD, WARN, DIM = "#b91c1c", "#15803d", "#b45309", "#5b6672"
-PANEL, BG, INK = "#f1f5fb", "#ffffff", "#0f172a"
+# The shared palette (theme.py). Imported from theme, not gui, to avoid a
+# gui.py <-> annotation_studio.py import cycle.
+from theme import ACC, ACC_H, ACC_SOFT, ACC_T, BAD, BG, DIM, GOOD, INK, PANEL, WARN  # noqa: E402,F401
 
 CANVAS_W, CANVAS_H = 760, 560
 HANDLE = 7           # canvas px, resize-handle square (half-width)
@@ -72,8 +70,8 @@ class AnnotationTab:
 
     # ------------------------------------------------------------- building
     def _build(self, parent):
-        self.notice = ctk.CTkLabel(parent, text="", text_color=DIM, font=("Segoe UI", 13),
-                                    wraplength=760, justify="left")
+        self.notice = ctk.CTkLabel(parent, text="", text_color=DIM, font=("Segoe UI", 15),
+                                    wraplength=700, justify="left")
 
         self.init_frame = ctk.CTkFrame(parent, fg_color="transparent")
 
@@ -82,7 +80,7 @@ class AnnotationTab:
         left = ctk.CTkFrame(self.body, fg_color=PANEL, width=220)
         left.pack(side="left", fill="y", padx=(0, 8))
         left.pack_propagate(False)
-        ctk.CTkLabel(left, text="IMAGES", text_color=DIM, font=("Segoe UI", 11, "bold")).pack(
+        ctk.CTkLabel(left, text="IMAGES", text_color=DIM, font=("Segoe UI", 13, "bold")).pack(
             anchor="w", padx=10, pady=(10, 4))
         self.imglist = ctk.CTkScrollableFrame(left, fg_color="transparent")
         self.imglist.pack(fill="both", expand=True, padx=4)
@@ -92,7 +90,7 @@ class AnnotationTab:
         ctk.CTkButton(nav, text="Next >", width=90, command=self.next_image).pack(side="right")
         ctk.CTkButton(left, text="Next Unannotated", command=self.goto_next_unannotated).pack(
             fill="x", padx=10, pady=(0, 4))
-        self.progress_lbl = ctk.CTkLabel(left, text="", text_color=DIM, font=("Segoe UI", 11),
+        self.progress_lbl = ctk.CTkLabel(left, text="", text_color=DIM, font=("Segoe UI", 13),
                                          justify="left", anchor="w")
         self.progress_lbl.pack(fill="x", padx=10, pady=(0, 8))
 
@@ -100,7 +98,7 @@ class AnnotationTab:
         center.pack(side="left", fill="both", expand=True)
         topbar = ctk.CTkFrame(center, fg_color=PANEL)
         topbar.pack(fill="x", pady=(0, 6))
-        self.fname_lbl = ctk.CTkLabel(topbar, text="-", font=("Segoe UI", 12, "bold"))
+        self.fname_lbl = ctk.CTkLabel(topbar, text="-", font=("Segoe UI", 14, "bold"))
         self.fname_lbl.pack(side="left", padx=10, pady=8)
         self.meta_lbl = ctk.CTkLabel(topbar, text="", text_color=DIM)
         self.meta_lbl.pack(side="left", padx=10)
@@ -109,7 +107,7 @@ class AnnotationTab:
         ctk.CTkButton(topbar, text="Mark reviewed", width=120,
                       command=self.mark_reviewed).pack(side="right", padx=6)
 
-        self.canvas = ctk.CTkCanvas(center, width=CANVAS_W, height=CANVAS_H, bg=INK,
+        self.canvas = ctk.CTkCanvas(center, width=CANVAS_W, height=CANVAS_H, bg=theme.VIDEO_BG,
                                     highlightthickness=0)
         self.canvas.pack(pady=(0, 6))
         self.canvas.bind("<Button-1>", self.on_press)
@@ -130,25 +128,25 @@ class AnnotationTab:
                                              fg_color="transparent", border_width=1,
                                              command=self.cancel_polygon)
         self.cancel_poly_btn.pack(side="left")
-        self.hint = ctk.CTkLabel(actionbar, text="", text_color=DIM, font=("Segoe UI", 11))
+        self.hint = ctk.CTkLabel(actionbar, text="", text_color=DIM, font=("Segoe UI", 13))
         self.hint.pack(side="right")
 
         right = ctk.CTkFrame(self.body, fg_color=PANEL, width=230)
         right.pack(side="right", fill="y", padx=(8, 0))
         right.pack_propagate(False)
         ctk.CTkLabel(right, text="ACTIVE CLASS", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
         self.class_menu = ctk.CTkOptionMenu(right, values=["-"], width=200)
         self.class_menu.pack(padx=12, pady=(0, 12))
 
-        ctk.CTkLabel(right, text="FILE", text_color=DIM, font=("Segoe UI", 11, "bold")).pack(
+        ctk.CTkLabel(right, text="FILE", text_color=DIM, font=("Segoe UI", 13, "bold")).pack(
             anchor="w", padx=12, pady=(0, 4))
         ctk.CTkButton(right, text="Save", fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
                       command=self.save).pack(fill="x", padx=12, pady=3)
         ctk.CTkButton(right, text="Reload", fg_color="transparent", border_width=1,
                       command=self.reload_annotations).pack(fill="x", padx=12, pady=3)
 
-        ctk.CTkLabel(right, text="EXPORT", text_color=DIM, font=("Segoe UI", 11, "bold")).pack(
+        ctk.CTkLabel(right, text="EXPORT", text_color=DIM, font=("Segoe UI", 13, "bold")).pack(
             anchor="w", padx=12, pady=(16, 4))
         self.export_det_btn = ctk.CTkButton(right, text="Export YOLO Detection",
                                             fg_color="transparent", border_width=1,
@@ -159,7 +157,7 @@ class AnnotationTab:
                                             command=self.export_segmentation)
         self.export_seg_btn.pack(fill="x", padx=12, pady=3)
 
-        self.status = ctk.CTkLabel(right, text="", text_color=DIM, font=("Segoe UI", 11),
+        self.status = ctk.CTkLabel(right, text="", text_color=DIM, font=("Segoe UI", 13),
                                    wraplength=200, justify="left")
         self.status.pack(anchor="w", padx=12, pady=(16, 8))
 
@@ -219,7 +217,7 @@ class AnnotationTab:
             w.destroy()
         ctk.CTkLabel(self.init_frame,
                      text=f"This project's task is {task!r} but no annotations.json exists yet.",
-                     font=("Segoe UI", 14, "bold")).pack(pady=(60, 6))
+                     font=("Segoe UI", 16, "bold")).pack(pady=(60, 6))
         ctk.CTkLabel(self.init_frame,
                      text="Enter class names, comma-separated, to initialize it. "
                           "This creates annotations.json only for THIS project.",
@@ -298,12 +296,12 @@ class AnnotationTab:
             entry = self.data["images"].get(rel, {})
             n = len(entry.get("boxes", [])) + len(entry.get("polygons", []))
             reviewed = bool(entry.get("reviewed"))
-            row = ctk.CTkFrame(self.imglist, fg_color=PANEL if rel != self.rel else "#dbe6fb")
+            row = ctk.CTkFrame(self.imglist, fg_color=PANEL if rel != self.rel else ACC_SOFT)
             row.pack(fill="x", pady=2, padx=2)
             dot = ctk.CTkLabel(row, text="●", text_color=GOOD if reviewed else WARN, width=16)
             dot.pack(side="left", padx=(6, 0))
             lab = ctk.CTkLabel(row, text=f"{Path(rel).name}  ({n})", anchor="w",
-                               font=("Segoe UI", 11))
+                               font=("Segoe UI", 13))
             lab.pack(side="left", fill="x", expand=True, padx=4, pady=4)
             for w in (row, dot, lab):
                 w.bind("<Button-1>", lambda e, p=rel: self.goto_image(p))
@@ -321,7 +319,7 @@ class AnnotationTab:
 
     def _highlight_row(self, rel):
         for p, row in self._rows.items():
-            row.configure(fg_color=PANEL if p != rel else "#dbe6fb")
+            row.configure(fg_color=PANEL if p != rel else ACC_SOFT)
 
     # -------------------------------------------------------------- loading
     def _confirm_discard(self) -> bool:
@@ -427,7 +425,7 @@ class AnnotationTab:
             color = ACC if sel else GOOD
             self.canvas.create_rectangle(x0, y0, x1, y1, outline=color, width=2 if sel else 1)
             self.canvas.create_text(x0 + 3, max(0, y0 - 8), text=box["cls"], fill=color,
-                                    anchor="w", font=("Segoe UI", 9, "bold"))
+                                    anchor="w", font=("Segoe UI", 12, "bold"))
             if sel:
                 self.canvas.create_rectangle(x1 - HANDLE, y1 - HANDLE, x1 + HANDLE, y1 + HANDLE,
                                              fill=color, outline=color)
@@ -441,7 +439,7 @@ class AnnotationTab:
             color = ACC if sel else GOOD
             self.canvas.create_polygon(*flat, outline=color, fill="", width=2 if sel else 1)
             self.canvas.create_text(flat[0] + 3, flat[1] - 8, text=poly["cls"], fill=color,
-                                    anchor="w", font=("Segoe UI", 9, "bold"))
+                                    anchor="w", font=("Segoe UI", 12, "bold"))
 
         if self.poly_points:
             flat = []

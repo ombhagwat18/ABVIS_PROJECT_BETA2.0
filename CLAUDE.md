@@ -165,6 +165,21 @@ Only `labels.csv`, `config.json` and `project.json` are git-tracked per
 project (see `.gitignore`'s whitelist-style rules); images, caches,
 thumbnails and model weights (~2.3 GB) are not.
 
+**Label edits are logged and reversible (`dataset.py`).** `apply_labels`, `set_labels`
+(exactly this set of defects) and `delete_images` append one row per changed image to
+`projects/<slug>/label_log.csv` (`time,user,batch,action,path,before,after`; the `labels.csv`
+schema is unchanged, since any extra column there would be read as a defect). `delete_images`
+moves files to `projects/<slug>/trash/<batch>/` (outside `images/`, so a rescan never re-imports
+them); `undo(batch)` / `last_undoable()` restore labels and trashed files. Model pre-labels live in
+`cache/suggestions.json` (`load/save/drop_suggestions`) and are **never** written to `labels.csv`:
+an image stays `reviewed=0`, i.e. out of training, until a person accepts or corrects it.
+
+**Importing another product's dataset:** `plan_import(folder)` + `run_import(folder, mapping)`
+copy a folder already sorted one sub-folder per class into a project (`good/ok/pass...` -> GOOD,
+`raw/unsorted...` -> inbox, anything else -> a defect column named by `slug()`). GUI:
+`ImportDialog` ("Import dataset...", into a new product or the current one). A new object also
+needs its own ROI (`calibrate.py` / Data health -> Re-measure) and a retrain.
+
 ### Crop / resize pipeline, and why it's tall not square
 
 Fixed camera, black background → the bottle ROI is measured once by
@@ -266,9 +281,11 @@ Camera driver controls live in `settings.json` `camera_controls` (`{"<index>": {
 off first) and records what the driver read back in `infer.applied_controls`; `rotate` is applied
 in the grab thread before the frame gets its seq, so every consumer sees the same rotated frame.
 
-`Camera` runs one background grab thread per source and always infers on the
-**newest** frame -- a frame that arrives mid-inference is dropped and counted
-(`self.dropped`), never queued. Inference is capped at ~15 Hz. Video-file
+`Camera` runs one background grab thread per source plus a separate scoring thread
+(`_infer_loop`) that always scores the **newest** frame -- a frame that arrives mid-inference
+is skipped and counted (`self.dropped`), never queued. Scoring used to run inline in the grab
+loop, which stalled capture for the length of every inference; each result still carries the
+seq/capture time of the frame it scored, so freshness and the FAULT rules are unchanged. Inference is capped at ~15 Hz. Video-file
 sources are paced to their native FPS and loop on EOF. Every captured frame
 gets a `time.monotonic()` stamp (`frame_ts`) and a per-session sequence number
 (`frame_seq`, from 1; `session` counts `start()`s, so `(session, seq)` never
@@ -388,9 +405,27 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   Read that before touching anything PLC-related, and keep its evidence labels (VERIFIED /
   USER-STATED / INFERRED; FAKE / SIMULATOR / PHYSICAL) honest.
 
-### GUI (`gui.py`, ~3k lines)
+### GUI (`gui.py`, ~4k lines)
 
-Single `App(ctk.CTk)` with a `CTkTabview`. On-screen order (`App.TABS`): Label, Defects,
+**Theme:** `theme.py` is the one palette (dark industrial HMI): grey surfaces, green/red/amber only
+for PASS/REJECT/FAULT, blue only for selection. `gui.py`, `annotation_studio.py`, `charts.py` and the
+OpenCV overlays in `infer.py` import from it; do not add hex colours elsewhere. `theme.apply_ctk()`
+also rewrites CustomTkinter's stock widget colours.
+
+Single `App(ctk.CTk)` with a `NavShell` (left rail grouped DATA / MODEL / RUNTIME / SYSTEM, same
+`add/tab/get/set` API as the `CTkTabview` it replaced) and a status bar of PLC / LINE / CAMERAS /
+MODEL lamps (`App.update_lamps`, cached state only, ~2 Hz from `pump`). A label edit calls
+`App.data_changed()` (re-read labels, mark Defects/Train/Data health stale, refreshed when shown)
+instead of the full `reload()`. `App.open_project(name)` is the one way to switch project.
+`reload()` refreshes only the visible tab and marks the others stale (`_stale`, refreshed in
+`on_page` when first shown): refreshing all eleven cost ~20 s at start-up (3,000+ CustomTkinter
+widgets). Per-frame / per-card widgets (Live and Production camera panes, Label cards) are plain
+`tk` widgets with `ImageTk.PhotoImage`, and the Live frames are drawn on a worker thread: a CTk
+widget costs ~4x as much to create/redraw. **Text size** (`settings.json` `font_scale`) is saved
+at once and applied only at the next start (`App.restart`): rescaling a running window redraws
+every widget (20+ s, looked frozen), and with a scrollable page on screen it also recursed
+`CTkScrollbar.set` <-> `update_idletasks` (guarded in `theme._guard_scrollbar`). Don't call
+`ctk.set_widget_scaling` on a built window. On-screen order (`App.TABS`): Label, Defects,
 Train, Analysis, Live, **Machine**, **Production**, Camera, Data health, **Annotate**, Settings. That differs
 from the in-file class order (MachineTab, ProductionTab, LabelTab, DefectsTab, TrainTab, LiveTab, DataTab,
 AnalysisTab, BenchTab, SettingsTab; `AnnotationTab` lives in `annotation_studio.py`) — don't

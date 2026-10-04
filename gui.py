@@ -13,17 +13,19 @@ import csv
 import gc
 import json
 import queue
+import shutil
 import sys
 import threading
 import time
 import traceback
 from pathlib import Path
+import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageTk
 
 import annotation_studio
 import bench
@@ -34,22 +36,18 @@ import detect
 import infer
 import machine_cycle as MC
 import segment
+import theme
 from plc import (CONNECTED as PLC_CONNECTED, DEGRADED as PLC_DEGRADED, FAULT as PLC_FAULT, SERIAL_FORMATS, PLCClient,
                  PLCService, SerialTransport, TcpTransport, serial_ports)
 from plc import address_map as PLC_AM
 
-ctk.set_appearance_mode("light")
-ctk.set_default_color_theme("blue")
+theme.apply_ctk(ctk)
 
-# White and blue. Red, amber and green survive only where they carry a meaning
-# a colour scheme has no business overriding: a reject an operator reads across
-# a room, a warning, a passing recall. Everything decorative is blue.
-ACC, ACC_H, ACC_T = "#1d4ed8", "#1e40af", "#ffffff"
-BAD, GOOD, WARN, DIM = "#b91c1c", "#15803d", "#b45309", "#5b6672"
-PANEL, LINE, BG, INK = "#f1f5fb", "#d8e2f0", "#ffffff", "#0f172a"
-VIDEO_BG = "#0f172a"          # video needs a dark backing whatever the theme
+# Every colour comes from theme.py (dark industrial HMI): grey for the interface,
+# green / red / amber only for PASS / REJECT / FAULT, blue only for selection.
+from theme import (ACC, ACC_H, ACC_SOFT, ACC_T, BAD, BG, DIM, FAULT, GOOD, INFO, INK, LINE, MONO, MUTED, OFF,  # noqa: E402
+                   PANEL, PANEL_2, RAIL, VIDEO_BG, WARN)
 PER_PAGE = 60
-MONO = ("Consolas", 12)
 
 
 def bgr_to_ctk(frame: np.ndarray, size=None) -> ctk.CTkImage:
@@ -99,21 +97,106 @@ def chart_panel(parent, title, w, h, note) -> ctk.CTkCanvas:
     box = ctk.CTkFrame(parent, fg_color=PANEL)
     box.pack(side="left", fill="both", expand=True, padx=(0, 8))
     ctk.CTkLabel(box, text=title, text_color=DIM,
-                 font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=(10, 2))
-    cv = ctk.CTkCanvas(box, width=w, height=h, bg=BG, highlightthickness=0)
+                 font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=12, pady=(10, 2))
+    cv = ctk.CTkCanvas(box, width=w, height=h, bg=PANEL, highlightthickness=0)
     cv.pack(fill="both", expand=True, padx=12, pady=(0, 4))
-    ctk.CTkLabel(box, text=note, text_color=DIM, font=("Segoe UI", 10),
+    ctk.CTkLabel(box, text=note, text_color=DIM, font=("Segoe UI", 12),
                  wraplength=w - 10, justify="left").pack(anchor="w", padx=12, pady=(0, 10))
     return cv
+
+
+class StatusLamp(ctk.CTkFrame):
+    """One status-bar indicator: a coloured lamp, a caption and the current value."""
+
+    def __init__(self, parent, caption: str):
+        super().__init__(parent, fg_color=PANEL, corner_radius=6)
+        self.dot = ctk.CTkLabel(self, text="●", font=("Segoe UI", 16), text_color=OFF, width=14)
+        self.dot.pack(side="left", padx=(8, 4), pady=3)
+        ctk.CTkLabel(self, text=caption, font=theme.CAPS, text_color=DIM).pack(side="left")
+        self.val = ctk.CTkLabel(self, text="--", font=theme.SMALL, text_color=INK)
+        self.val.pack(side="left", padx=(5, 8))
+        self._last = None
+
+    def show(self, colour: str, text: str):
+        text = text if len(text) <= 22 else text[:21] + "…"
+        if (colour, text) != self._last:           # no redraw when nothing changed: this runs twice a second
+            self._last = (colour, text)
+            self.dot.configure(text_color=colour)
+            self.val.configure(text=text)
+
+
+class NavShell(ctk.CTkFrame):
+    """Left navigation rail + page area. A drop-in for the CTkTabview it replaced: add(), tab(), get() and set()
+    behave the same, so every tab class and the selftest are unchanged. Pages are built once and swapped with
+    grid / grid_forget, never rebuilt."""
+
+    def __init__(self, master, groups, on_show=None):
+        super().__init__(master, fg_color=BG, corner_radius=0)
+        self.on_show = on_show
+        self.rail = ctk.CTkFrame(self, fg_color=RAIL, corner_radius=0, width=176)
+        self.rail.pack(side="left", fill="y")
+        self.rail.pack_propagate(False)
+        self.body = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        self.body.pack(side="left", fill="both", expand=True)
+        self.title = ctk.CTkLabel(self.body, text="", font=theme.H1, text_color=INK, anchor="w")
+        self.title.pack(fill="x", padx=18, pady=(10, 4))
+        self.area = ctk.CTkFrame(self.body, fg_color="transparent", corner_radius=0)
+        self.area.pack(fill="both", expand=True, padx=(14, 14), pady=(0, 10))
+        self.area.grid_rowconfigure(0, weight=1)
+        self.area.grid_columnconfigure(0, weight=1)
+        self.pages: dict[str, ctk.CTkFrame] = {}
+        self.buttons: dict[str, ctk.CTkButton] = {}
+        self._group_of = {n: g for g, names in groups for n in names}
+        self._group_frames: dict[str, ctk.CTkFrame] = {}
+        for g, _ in groups:
+            ctk.CTkLabel(self.rail, text=g, font=theme.CAPS, text_color=MUTED, anchor="w").pack(
+                fill="x", padx=16, pady=(14, 2))
+            f = ctk.CTkFrame(self.rail, fg_color="transparent")
+            f.pack(fill="x")
+            self._group_frames[g] = f
+        self.current: str | None = None
+
+    def add(self, name: str) -> ctk.CTkFrame:
+        page = ctk.CTkFrame(self.area, fg_color="transparent", corner_radius=0)
+        self.pages[name] = page
+        holder = self._group_frames.get(self._group_of.get(name)) or self.rail
+        b = ctk.CTkButton(holder, text="   " + name, anchor="w", height=34, corner_radius=4,
+                          fg_color="transparent", hover_color=PANEL_2, text_color=DIM,
+                          font=theme.BODY, border_spacing=0, command=lambda n=name: self.set(n))
+        b.pack(fill="x", padx=8, pady=1)
+        self.buttons[name] = b
+        if self.current is None:
+            self.set(name)
+        return page
+
+    def tab(self, name: str) -> ctk.CTkFrame:
+        return self.pages[name]
+
+    def get(self) -> str:
+        return self.current or ""
+
+    def set(self, name: str):
+        if name not in self.pages or name == self.current:
+            return
+        if self.current is not None:
+            self.pages[self.current].grid_forget()
+            self.buttons[self.current].configure(fg_color="transparent", text_color=DIM)
+        self.current = name
+        self.pages[name].grid(row=0, column=0, sticky="nsew")
+        self.buttons[name].configure(fg_color=ACC_SOFT, text_color=INK)
+        self.title.configure(text=name.upper())
+        if self.on_show:
+            self.on_show(name)
 
 
 class App(ctk.CTk):
     def __init__(self, plc_autoconnect=None):
         super().__init__()
-        self.title("Bottle Inspection")
+        self.title("Vision Inspection")
         self.geometry("1500x950")
         self.minsize(1150, 700)
 
+        self._stale: set = set()
         self.defects: list[str] = []
         self.labels: dict = {}
         self.counts: dict = {}
@@ -135,21 +218,35 @@ class App(ctk.CTk):
                                 if plc_autoconnect is None else plc_autoconnect)
         self.apply_font_scale(self.settings.get("font_scale", 1.0), save=False)
 
-        head = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=0)
+        # ---- status bar: what is this station inspecting, and is everything it depends on alive
+        head = ctk.CTkFrame(self, fg_color=RAIL, corner_radius=0, height=52)
         head.pack(fill="x")
-        ctk.CTkLabel(head, text="INSPECT", font=("Segoe UI", 15, "bold"),
-                     text_color=ACC).pack(side="left", padx=(16, 12), pady=10)
+        ctk.CTkLabel(head, text="■", font=("Segoe UI", 18), text_color=ACC).pack(side="left", padx=(16, 6))
+        ctk.CTkLabel(head, text="VISION INSPECTION", font=theme.H2, text_color=INK).pack(side="left", padx=(0, 14))
         self._pmap: dict[str, str] = {}
-        self.project = ctk.CTkOptionMenu(head, values=["-"], width=210,
+        self.project = ctk.CTkOptionMenu(head, values=["-"], width=170,
                                          command=self.switch_project)
-        self.project.pack(side="left", padx=(0, 6))
-        ctk.CTkButton(head, text="+ New project", width=110, fg_color="transparent",
-                      border_width=1, command=self.new_project).pack(side="left")
-        self.status = ctk.CTkLabel(head, text="", text_color=DIM, font=("Segoe UI", 12))
-        self.status.pack(side="right", padx=16)
+        self.project.pack(side="left", padx=(0, 6), pady=10)
+        ctk.CTkButton(head, text="+ New", width=64, fg_color="transparent",
+                      border_width=1, command=self.new_project).pack(side="left", padx=(0, 4))
+        ctk.CTkButton(head, text="Import…", width=84, fg_color="transparent",
+                      border_width=1, command=self.import_dataset).pack(side="left")
+        self.clock = ctk.CTkLabel(head, text="", font=theme.SMALL, text_color=DIM)
+        self.clock.pack(side="right", padx=(10, 16))
+        self.lamps = {}
+        for key in ("MODEL", "CAMERAS", "LINE", "PLC"):          # packed from the right: reads PLC LINE CAMERAS MODEL
+            self.lamps[key] = StatusLamp(head, key)
+            self.lamps[key].pack(side="right", padx=6)
+        self._lamp_at = 0.0
 
-        self.tabs = ctk.CTkTabview(self, fg_color="transparent")
-        self.tabs.pack(fill="both", expand=True, padx=10, pady=(6, 10))
+        # ---- footer: dataset summary for the active product
+        foot = ctk.CTkFrame(self, fg_color=RAIL, corner_radius=0, height=26)
+        foot.pack(side="bottom", fill="x")
+        self.status = ctk.CTkLabel(foot, text="", text_color=DIM, font=theme.SMALL)
+        self.status.pack(side="left", padx=16, pady=2)
+
+        self.tabs = NavShell(self, self.GROUPS, on_show=self.on_page)
+        self.tabs.pack(fill="both", expand=True)
         for name in self.TABS:
             self.tabs.add(name)
 
@@ -171,6 +268,11 @@ class App(ctk.CTk):
 
     TABS = ("Label", "Defects", "Train", "Analysis", "Live", "Machine", "Production", "Camera",
             "Data health", "Annotate", "Settings")
+    # The navigation rail: the same pages, grouped by what the operator is doing.
+    GROUPS = (("DATA", ("Label", "Defects", "Annotate", "Data health")),
+              ("MODEL", ("Train", "Analysis")),
+              ("RUNTIME", ("Live", "Production", "Machine", "Camera")),
+              ("SYSTEM", ("Settings",)))
 
     def all_tabs(self):
         return (self.tab_label, self.tab_defects, self.tab_train, self.tab_analysis,
@@ -183,6 +285,7 @@ class App(ctk.CTk):
         so scaling both keeps padding proportional instead of leaving big text
         clipped inside buttons sized for small text."""
         scale = max(0.7, min(1.8, float(scale)))
+        self.applied_scale = scale
         ctk.set_widget_scaling(scale)
         ctk.set_window_scaling(scale)
         if save:
@@ -202,6 +305,12 @@ class App(ctk.CTk):
         except queue.Empty:
             pass
         now = time.monotonic()
+        if now - self._lamp_at >= 0.5:
+            self._lamp_at = now
+            try:
+                self.update_lamps()
+            except Exception:
+                traceback.print_exc()
         if now - self._gc_at >= 1.0:                     # the only place cyclic GC runs
             self._gc_at = now
             if now - self._gc_full_at >= 30.0:
@@ -210,6 +319,21 @@ class App(ctk.CTk):
             else:
                 gc.collect(1)
         self.after(60, self.pump)
+
+    def update_lamps(self):
+        """Status-bar lamps. Cached state only (PLCService.link_state, Camera.alive): never any device I/O."""
+        st = self.plc.link_state()
+        self.lamps["PLC"].show({PLC_CONNECTED: GOOD, PLC_DEGRADED: WARN, PLC_FAULT: BAD}.get(st, OFF),
+                               {PLC_CONNECTED: "OK", PLC_DEGRADED: "SLOW", PLC_FAULT: "FAULT"}.get(st, "OFF"))
+        line = getattr(self, "tab_production", None)
+        on = bool(line and line.running)
+        self.lamps["LINE"].show(GOOD if on else OFF, "RUNNING" if on else "STOPPED")
+        n = len(self.cams.running())
+        self.lamps["CAMERAS"].show(GOOD if n else OFF, f"{n} ON" if n else "OFF")
+        model = self.cfg.get("active_model")
+        self.lamps["MODEL"].show(GOOD if model else WARN,
+                                 f"{model[2:8]} {model[9:13]}" if model and len(model) >= 13 else (model or "NONE"))
+        self.clock.configure(text=time.strftime("%d %b  %H:%M"))
 
     def post(self, fn):
         self.q.put(fn)
@@ -255,13 +379,13 @@ class App(ctk.CTk):
         win.transient(self)
         win.grab_set()
 
-        ctk.CTkLabel(win, text="Name for the new project", font=("Segoe UI", 13)).pack(
+        ctk.CTkLabel(win, text="Name for the new project", font=("Segoe UI", 15)).pack(
             padx=20, pady=(20, 6), anchor="w")
         name_entry = ctk.CTkEntry(win, width=320)
         name_entry.pack(padx=20)
         name_entry.focus()
 
-        ctk.CTkLabel(win, text="Task", font=("Segoe UI", 13)).pack(
+        ctk.CTkLabel(win, text="Task", font=("Segoe UI", 15)).pack(
             padx=20, pady=(16, 6), anchor="w")
         task_menu = ctk.CTkOptionMenu(win, width=320, values=list(self.TASK_LABELS))
         task_menu.set("Classification")
@@ -291,10 +415,7 @@ class App(ctk.CTk):
             name = D.create_project(title, task=task)
         except ValueError as e:
             return messagebox.showerror("Cannot create", str(e))
-        self.tab_production.stop_line()
-        self.cams.stop()
-        D.use_project(name)
-        self.reload()
+        self.open_project(name)
         if task == "classification":
             hint = (f"{title!r} is empty.\n\nGo to Defect types: 'Upload GOOD images' for bottles "
                     f"that pass, then add a defect type and use its Upload button for the ones "
@@ -304,6 +425,9 @@ class App(ctk.CTk):
                     f"folder, then use the Annotate tab to label them.")
         messagebox.showinfo("Project created", hint)
 
+    def import_dataset(self):
+        ImportDialog(self)
+
     def reload(self):
         names = D.list_projects()
         self._pmap = {D.project_title(n): n for n in names}
@@ -311,15 +435,53 @@ class App(ctk.CTk):
         self.project.set(D.project_title(D.PROJECT))
 
         self.defects, self.labels = D.load_labels()
-        self.counts = D.counts(self.defects, self.labels)
         self.cfg = D.load_config()
-        c = self.counts
+        self.refresh_summary()
+        # Only the page on screen is rebuilt. The other ten were costing ~20 s at start-up (3,000+ widgets, most of
+        # them on pages nobody is looking at); each is refreshed the first time it is shown instead.
+        self._stale = set(self.TABS)
+        self.on_page(self.tabs.get() or self.TABS[0])
+
+    def refresh_summary(self):
+        self.counts = c = D.counts(self.defects, self.labels)
         model = self.cfg.get("active_model") or "no model"
         self.status.configure(
-            text=f"{c['_total']} images   ·   {c['_good']} good   ·   "
-                 f"{c['_unreviewed']} unreviewed   ·   {model}")
-        for t in self.all_tabs():
-            t.refresh()
+            text=f"{D.project_title(D.PROJECT)}   ·   {c['_total']} images   ·   {c['_good']} good   ·   "
+                 f"{c['_defective']} defective   ·   {c['_unreviewed']} unreviewed   ·   model {model}")
+
+    # Tabs whose view is built from labels.csv. A label edit marks them stale instead of rebuilding them;
+    # each is refreshed the next time it is shown.
+    LABEL_VIEWS = ("Defects", "Train", "Data health")
+
+    def data_changed(self):
+        """labels.csv changed under the Label tab: re-read it, update the summary, mark dependent tabs stale."""
+        self.defects, self.labels = D.load_labels()
+        self.refresh_summary()
+        self._stale.update(self.LABEL_VIEWS)
+
+    def tab_of(self, name: str):
+        return dict(zip(self.TABS, self.all_tabs()))[name]
+
+    def on_page(self, name: str):
+        if name in self._stale:
+            self._stale.discard(name)
+            self.tab_of(name).refresh()
+
+    def open_project(self, name: str):
+        """Switch to a project. The line and the cameras stop first: they hold the old project's model and log."""
+        self.tab_production.stop_line()
+        self.cams.stop()
+        D.use_project(name)
+        self.reload()
+
+    def restart(self):
+        """Relaunch the app (used to apply a new text size). The line is stopped first, so it asks."""
+        if self.tab_production.running and not messagebox.askyesno(
+                "Restart", "The inspection line is running. Restart anyway? It will be stopped."):
+            return
+        self.on_close()
+        import os
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def on_close(self):
         self.tab_production.close()          # stops the machine cycle before the cameras and the PLC link
@@ -327,6 +489,148 @@ class App(ctk.CTk):
         self.tab_machine.close()
         self.plc.stop()                      # sends nothing; the PLC clears M0/M1 itself
         self.destroy()
+
+
+class ImportDialog:
+    """Import a dataset that is already sorted one sub-folder per class.
+
+    This is what makes the station product-agnostic: a new object is a new
+    product (project) plus its folders. Every class folder becomes a defect
+    column, a good/ok folder becomes GOOD, anything unsure goes to the inbox.
+    Files are copied, never moved (D.run_import -> D.add_images).
+    """
+    CHOICES = ("GOOD", "INBOX", "SKIP")
+
+    def __init__(self, app, src=None, modal=True):
+        self.app, self.modal, self.result = app, modal, None
+        src = src or filedialog.askdirectory(title="Folder with one sub-folder per class")
+        if not src:
+            self.win = None
+            return
+        self.src = Path(src)
+        try:
+            self.plan = D.plan_import(self.src)
+        except ValueError as e:
+            self.win = None
+            messagebox.showerror("Import", str(e))
+            return
+        if not self.plan:
+            self.win = None
+            messagebox.showinfo("Import", f"No .jpg / .png images found in\n{self.src}")
+            return
+
+        self.win = win = ctk.CTkToplevel(app)
+        win.title("Import dataset")
+        win.geometry("760x620")
+        win.transient(app)
+        ctk.CTkLabel(win, text="IMPORT DATASET", font=theme.CAPS, text_color=DIM).pack(anchor="w", padx=18,
+                                                                                      pady=(16, 0))
+        ctk.CTkLabel(win, text=str(self.src), font=theme.SMALL, text_color=INK, wraplength=700,
+                     justify="left").pack(anchor="w", padx=18)
+
+        tgt = ctk.CTkFrame(win, fg_color=PANEL)
+        tgt.pack(fill="x", padx=16, pady=(12, 8))
+        ctk.CTkLabel(tgt, text="Into", font=theme.H2).pack(side="left", padx=(12, 10), pady=10)
+        self.where = ctk.StringVar(value="new")
+        ctk.CTkRadioButton(tgt, text="a NEW product:", variable=self.where, value="new",
+                           command=self._summary).pack(side="left")
+        self.name = ctk.CTkEntry(tgt, width=200)
+        self.name.insert(0, self.src.name)
+        self.name.pack(side="left", padx=(4, 16))
+        ctk.CTkRadioButton(tgt, text=f"current: {D.project_title(D.PROJECT)}", variable=self.where, value="cur",
+                           command=self._summary).pack(side="left")
+
+        ctk.CTkLabel(win, text="Each folder becomes…   (type a new name to create a class)", font=theme.SMALL,
+                     text_color=DIM).pack(anchor="w", padx=18, pady=(4, 2))
+        rows = ctk.CTkScrollableFrame(win, fg_color=PANEL)
+        rows.pack(fill="both", expand=True, padx=16)
+        values = list(self.CHOICES) + sorted(set(app.defects) | {r["guess"] for r in self.plan} - set(self.CHOICES))
+        self.combo = {}
+        for r in self.plan:
+            line = ctk.CTkFrame(rows, fg_color="transparent")
+            line.pack(fill="x", pady=2)
+            ctk.CTkLabel(line, text=("(loose files)" if r["folder"] == "." else r["folder"]), width=260,
+                         anchor="w").pack(side="left", padx=(8, 4))
+            ctk.CTkLabel(line, text=f"{r['n']} img", width=70, anchor="e", text_color=DIM).pack(side="left")
+            cb = ctk.CTkComboBox(line, values=values, width=240, command=lambda _: self._summary())
+            cb.set(r["guess"])
+            cb.bind("<KeyRelease>", lambda e: self._summary())
+            cb.pack(side="left", padx=12)
+            self.combo[r["folder"]] = cb
+
+        self.sum = ctk.CTkLabel(win, text="", font=theme.SMALL, text_color=DIM, justify="left", wraplength=700)
+        self.sum.pack(anchor="w", padx=18, pady=(8, 4))
+        btns = ctk.CTkFrame(win, fg_color="transparent")
+        btns.pack(fill="x", padx=16, pady=(4, 16))
+        ctk.CTkButton(btns, text="Cancel", width=90, fg_color="transparent", border_width=1,
+                      command=self.close).pack(side="left")
+        self.go = ctk.CTkButton(btns, text="Import", width=110, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
+                                command=self.run)
+        self.go.pack(side="right")
+        self._summary()
+        if modal:
+            win.after(150, win.lift)
+            win.grab_set()
+
+    def mapping(self) -> dict:
+        out = {}
+        for folder, cb in self.combo.items():
+            v = cb.get().strip()
+            out[folder] = v.upper() if v.upper() in self.CHOICES else D.slug(v)
+        return out
+
+    def _summary(self):
+        m = self.mapping()
+        n = {r["folder"]: r["n"] for r in self.plan}
+        good = sum(n[f] for f, t in m.items() if t == "GOOD")
+        inbox = sum(n[f] for f, t in m.items() if t == "INBOX")
+        classes = sorted({t for t in m.values() if t not in self.CHOICES and t})
+        bad = [f for f, t in m.items() if not t or t in D.RESERVED]
+        new = [c for c in classes if self.where.get() == "new" or c not in self.app.defects]
+        txt = (f"{good} GOOD   ·   {inbox} to inbox   ·   {len(classes)} defect classes "
+               f"({sum(n[f] for f, t in m.items() if t in classes)} images)")
+        if new:
+            txt += f"\nnew classes: {', '.join(new)}"
+        if good < 50:
+            txt += "\n⚠ fewer than 50 GOOD images: the model will barely see a passing part."
+        if bad:
+            txt += f"\n✖ give these folders a target: {', '.join(bad)}"
+        self.sum.configure(text=txt, text_color=BAD if bad else DIM)
+        self.go.configure(state="disabled" if bad else "normal")
+
+    def close(self):
+        if self.win is not None:
+            self.win.destroy()
+            self.win = None
+
+    def run(self):
+        m = self.mapping()
+        new = self.where.get() == "new"
+        if new:
+            try:
+                name = D.create_project(self.name.get())
+            except ValueError as e:
+                return messagebox.showerror("Cannot create", str(e), parent=self.win)
+            self.app.open_project(name)
+        self.go.configure(state="disabled", text="Copying…")
+        src = self.src
+
+        def done(got):
+            self.close()
+            self.app.reload()
+            self.result = got
+            if not self.modal:                   # selftest / scripted use: no blocking dialogs
+                return
+            lines = "\n".join(f"  {t}: {n}" for t, n in sorted(got.items()))
+            msg = f"Copied into {D.project_title(D.PROJECT)}:\n{lines}"
+            if new and messagebox.askyesno(
+                    "Imported", msg + "\n\nA new product needs its own crop region (ROI). Measure it now from "
+                                      "these images?\n\n(Data health → Re-measure does the same later.)"):
+                self.app.tabs.set("Data health")
+                self.app.tab_data.recalibrate()
+            elif not new:
+                messagebox.showinfo("Imported", msg)
+        self.app.run_bg(lambda: D.run_import(src, m), done)
 
 
 # ------------------------------------------------------------------- Machine
@@ -417,61 +721,61 @@ class ConveyorHMI(ctk.CTkToplevel):
         c, y = self.cv, self.BELT_Y
         c.delete("all")
         on = lambda k: bool(f.get(k))
-        c.create_text(12, 14, anchor="w", text="CONVEYOR", font=("Segoe UI", 12, "bold"), fill=INK)
-        c.create_text(self.W - 12, 14, anchor="e", font=("Segoe UI", 11, "bold"),
+        c.create_text(12, 14, anchor="w", text="CONVEYOR", font=("Segoe UI", 14, "bold"), fill=INK)
+        c.create_text(self.W - 12, 14, anchor="e", font=("Segoe UI", 13, "bold"),
                       text=("RUNNING" if on("Y1") else "STOPPED") if f else f"NO PLC LINK ({link})",
                       fill=(GOOD if on("Y1") else DIM) if f else BAD)
         # belt + moving stripes + rollers
-        c.create_rectangle(self.X_IN, y, self.X_OUT, y + 26, fill="#cbd5e1", outline="#64748b", width=2)
+        c.create_rectangle(self.X_IN, y, self.X_OUT, y + 26, fill=PANEL_2, outline=DIM, width=2)
         x = self.X_IN + self.phase
         while x < self.X_OUT - 4:
-            c.create_line(x, y + 4, x + 10, y + 22, fill="#64748b", width=2)
+            c.create_line(x, y + 4, x + 10, y + 22, fill=DIM, width=2)
             x += 40
         for rx in (self.X_IN, self.X_OUT):
-            c.create_oval(rx - 13, y, rx + 13, y + 26, fill="#94a3b8", outline="#475569", width=2)
+            c.create_oval(rx - 13, y, rx + 13, y + 26, fill=OFF, outline=LINE, width=2)
         # sensor (X0) and camera (M2) at the inspection station
         sx = self.X_STATION
-        c.create_rectangle(sx - 34, y - 76, sx - 26, y, fill=GOOD if on("X0") else "#94a3b8", outline="")
+        c.create_rectangle(sx - 34, y - 76, sx - 26, y, fill=GOOD if on("X0") else OFF, outline="")
         if on("X0"):
             c.create_line(sx - 26, y - 30, sx + 30, y - 30, fill=BAD, width=2, dash=(4, 3))
-        c.create_text(sx - 30, y - 86, text="X0 sensor", font=("Segoe UI", 9), fill=GOOD if on("X0") else DIM)
-        c.create_rectangle(sx - 18, 36, sx + 18, 60, fill=WARN if on("M2") else "#94a3b8", outline="")
-        c.create_polygon(sx - 8, 60, sx + 8, 60, sx + 14, 72, sx - 14, 72, fill=WARN if on("M2") else "#94a3b8")
-        c.create_text(sx + 26, 48, anchor="w", font=("Segoe UI", 9, "bold"),
+        c.create_text(sx - 30, y - 86, text="X0 sensor", font=("Segoe UI", 12), fill=GOOD if on("X0") else DIM)
+        c.create_rectangle(sx - 18, 36, sx + 18, 60, fill=WARN if on("M2") else OFF, outline="")
+        c.create_polygon(sx - 8, 60, sx + 8, 60, sx + 14, 72, sx - 14, 72, fill=WARN if on("M2") else OFF)
+        c.create_text(sx + 26, 48, anchor="w", font=("Segoe UI", 12, "bold"),
                       text="INSPECT (M2)" if on("M2") else "camera", fill=WARN if on("M2") else DIM)
         # reject pusher (Y0) and bin
         px, ext = self.X_PUSH, 34 if on("Y0") else 0
-        c.create_rectangle(px - 16, y - 96, px + 16, y - 70, fill="#475569", outline="")
-        c.create_rectangle(px - 4, y - 70, px + 4, y - 58 + ext, fill=BAD if on("Y0") else "#94a3b8", outline="")
-        c.create_rectangle(px - 13, y - 58 + ext, px + 13, y - 50 + ext, fill=BAD if on("Y0") else "#94a3b8", outline="")
-        c.create_text(px + 22, y - 84, anchor="w", text="Y0 reject", font=("Segoe UI", 9, "bold" if on("Y0") else "normal"),
+        c.create_rectangle(px - 16, y - 96, px + 16, y - 70, fill=LINE, outline="")
+        c.create_rectangle(px - 4, y - 70, px + 4, y - 58 + ext, fill=BAD if on("Y0") else OFF, outline="")
+        c.create_rectangle(px - 13, y - 58 + ext, px + 13, y - 50 + ext, fill=BAD if on("Y0") else OFF, outline="")
+        c.create_text(px + 22, y - 84, anchor="w", text="Y0 reject", font=("Segoe UI", 12, "bold" if on("Y0") else "normal"),
                       fill=BAD if on("Y0") else DIM)
-        c.create_rectangle(px - 30, y + 44, px + 30, y + 110, outline="#64748b", width=2)
-        c.create_text(px, y + 120, text="reject bin", font=("Segoe UI", 9), fill=DIM)
-        c.create_text(self.X_OUT - 6, y + 44, anchor="e", text="pass ->", font=("Segoe UI", 9), fill=DIM)
+        c.create_rectangle(px - 30, y + 44, px + 30, y + 110, outline=DIM, width=2)
+        c.create_text(px, y + 120, text="reject bin", font=("Segoe UI", 12), fill=DIM)
+        c.create_text(self.X_OUT - 6, y + 44, anchor="e", text="pass ->", font=("Segoe UI", 12), fill=DIM)
         if f:                                            # PLC counters: C0 = PASS commands, C1 = REJECT commands
-            c.create_text(px, y + 77, text=str(f["C1"]), font=("Segoe UI", 16, "bold"), fill=BAD)
-            c.create_text(self.X_OUT - 6, y + 64, anchor="e", text=f"PASS  {f['C0']}", font=("Segoe UI", 13, "bold"), fill=GOOD)
-            c.create_text(self.X_OUT - 6, y + 84, anchor="e", text=f"total {f['C0'] + f['C1']}", font=("Segoe UI", 9), fill=DIM)
+            c.create_text(px, y + 77, text=str(f["C1"]), font=("Segoe UI", 18, "bold"), fill=BAD)
+            c.create_text(self.X_OUT - 6, y + 64, anchor="e", text=f"PASS  {f['C0']}", font=("Segoe UI", 15, "bold"), fill=GOOD)
+            c.create_text(self.X_OUT - 6, y + 84, anchor="e", text=f"total {f['C0'] + f['C1']}", font=("Segoe UI", 12), fill=DIM)
         # bottle
         b = self.bottle
         if b:
             bx, by = b["x"], y - 2 + b["y"]
             col = {"station": WARN, "reject": BAD, "pushed": BAD}.get(b["mode"], ACC)
-            c.create_rectangle(bx - 9, by - 40, bx + 9, by, fill="#dbeafe", outline=col, width=2)
-            c.create_rectangle(bx - 4, by - 52, bx + 4, by - 40, fill="#dbeafe", outline=col, width=2)
+            c.create_rectangle(bx - 9, by - 40, bx + 9, by, fill=PANEL_2, outline=col, width=2)
+            c.create_rectangle(bx - 4, by - 52, bx + 4, by - 40, fill=PANEL_2, outline=col, width=2)
             c.create_rectangle(bx - 5, by - 57, bx + 5, by - 52, fill=col, outline="")
         # lamps: the real bits
         lamps = (("X0", "sensor"), ("M2", "trigger"), ("M0", "pass"), ("M1", "reject"), ("Y1", "conveyor"), ("Y0", "solenoid"))
         for i, (k, name) in enumerate(lamps):
             lx = 22 + i * 106
-            col = (BAD if k in ("M1", "Y0") else GOOD) if on(k) else "#cbd5e1"
-            c.create_oval(lx, self.H - 30, lx + 14, self.H - 16, fill=col, outline="#64748b")
-            c.create_text(lx + 20, self.H - 23, anchor="w", text=f"{k} {name}", font=("Segoe UI", 9), fill=INK if on(k) else DIM)
+            col = (BAD if k in ("M1", "Y0") else GOOD) if on(k) else PANEL_2
+            c.create_oval(lx, self.H - 30, lx + 14, self.H - 16, fill=col, outline=DIM)
+            c.create_text(lx + 20, self.H - 23, anchor="w", text=f"{k} {name}", font=("Segoe UI", 12), fill=INK if on(k) else DIM)
         if f:
-            c.create_text(12, self.H - 46, anchor="w", font=("Consolas", 10), fill=DIM,
+            c.create_text(12, self.H - 46, anchor="w", font=("Consolas", 12), fill=DIM,
                           text=f"T0 {f['T0']}   T1 {f['T1']}   {self.note}")
-        c.create_text(self.W - 12, 32, anchor="e", font=("Segoe UI", 8), fill=DIM,
+        c.create_text(self.W - 12, 32, anchor="e", font=("Segoe UI", 11), fill=DIM,
                       text="lamps = real PLC bits; bottle position is illustrative")
 
 
@@ -512,7 +816,7 @@ class MachineTab:
         head.pack(fill="x", pady=(0, 6))
         self.state = ctk.CTkLabel(head, text="DISCONNECTED", font=("Segoe UI", 18, "bold"), text_color=DIM, width=170)
         self.state.pack(side="left", padx=(12, 8), pady=8)
-        self.run_lbl = ctk.CTkLabel(head, text="PLC --", font=("Segoe UI", 13, "bold"), text_color=DIM, width=110)
+        self.run_lbl = ctk.CTkLabel(head, text="PLC --", font=("Segoe UI", 15, "bold"), text_color=DIM, width=110)
         self.run_lbl.pack(side="left")
         self.info = ctk.CTkLabel(head, text="", text_color=DIM, font=MONO, justify="left", anchor="w")
         self.info.pack(side="left", padx=10)
@@ -525,7 +829,7 @@ class MachineTab:
         cfg = app.settings
         conn = ctk.CTkFrame(parent, fg_color=PANEL)
         conn.pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(conn, text="PLC LINK", font=("Segoe UI", 11, "bold"), text_color=DIM).pack(side="left", padx=(12, 8), pady=8)
+        ctk.CTkLabel(conn, text="PLC LINK", font=("Segoe UI", 13, "bold"), text_color=DIM).pack(side="left", padx=(12, 8), pady=8)
         self.mode = ctk.CTkOptionMenu(conn, values=list(self.MODES), width=160, command=lambda _=None: self._mode_changed())
         self.mode.set(next(k for k, v in self.MODES.items() if v == ("serial" if cfg.get("plc_mode") == "serial" else "tcp")))
         self.mode.pack(side="left")
@@ -556,7 +860,7 @@ class MachineTab:
         self.station.pack(side="left")
         ctk.CTkButton(conn, text="Test link", width=80, fg_color="transparent", border_width=1, text_color=INK,
                       command=self.test_link).pack(side="left", padx=8)
-        self.conn_note = ctk.CTkLabel(conn, text="", text_color=DIM, font=("Segoe UI", 11), anchor="w", justify="left")
+        self.conn_note = ctk.CTkLabel(conn, text="", text_color=DIM, font=("Segoe UI", 13), anchor="w", justify="left")
         self.conn_note.pack(side="left", padx=4)
         self.auto = ctk.CTkCheckBox(conn, text="auto-reconnect", width=120)
         if cfg.get("plc_auto_reconnect", True):
@@ -573,7 +877,7 @@ class MachineTab:
         self._op_busy = False
         self._ep = (0.0, None)
 
-        self.flow_lbl = ctk.CTkLabel(parent, text="", font=("Segoe UI", 13, "bold"), text_color=DIM, anchor="w")
+        self.flow_lbl = ctk.CTkLabel(parent, text="", font=("Segoe UI", 15, "bold"), text_color=DIM, anchor="w")
         self.flow_lbl.pack(fill="x", padx=6, pady=(0, 6))
 
         grid = ctk.CTkFrame(parent, fg_color="transparent")
@@ -582,21 +886,21 @@ class MachineTab:
             box = ctk.CTkFrame(grid, fg_color=PANEL)
             box.grid(row=0, column=col, sticky="nsew", padx=(0, 6))
             grid.grid_columnconfigure(col, weight=1, uniform="g")
-            ctk.CTkLabel(box, text=title, font=("Segoe UI", 11, "bold"), text_color=DIM).pack(anchor="w", padx=10, pady=(8, 2))
+            ctk.CTkLabel(box, text=title, font=("Segoe UI", 13, "bold"), text_color=DIM).pack(anchor="w", padx=10, pady=(8, 2))
             for n in names:
                 row = ctk.CTkFrame(box, fg_color="transparent")
                 row.pack(fill="x", padx=8, pady=(1, 3))
                 ctk.CTkLabel(row, text=n, width=34, anchor="w", font=("Consolas", 13, "bold")).pack(side="left")
-                v = ctk.CTkLabel(row, text="--", width=50, corner_radius=6, fg_color="#94a3b8", text_color="white")
+                v = ctk.CTkLabel(row, text="--", width=50, corner_radius=6, fg_color=OFF, text_color="white")
                 v.pack(side="left", padx=4)
-                ctk.CTkLabel(row, text=self.NAMES[n], text_color=DIM, font=("Segoe UI", 11)).pack(side="left")
+                ctk.CTkLabel(row, text=self.NAMES[n], text_color=DIM, font=("Segoe UI", 13)).pack(side="left")
                 self.cells[n] = v
 
         ctl = ctk.CTkFrame(parent, fg_color=PANEL)
         ctl.pack(fill="x", pady=(0, 6))
         row = ctk.CTkFrame(ctl, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=(8, 4))
-        ctk.CTkLabel(row, text="SIMULATOR TEST", font=("Segoe UI", 11, "bold"), text_color=WARN, width=120,
+        ctk.CTkLabel(row, text="SIMULATOR TEST", font=("Segoe UI", 13, "bold"), text_color=WARN, width=120,
                      anchor="w").pack(side="left")
         self.sw = {}
         for dev in self.SIM:
@@ -609,7 +913,7 @@ class MachineTab:
         self.pulse_btn.pack(side="left", padx=8)
         row = ctk.CTkFrame(ctl, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=(0, 8))
-        ctk.CTkLabel(row, text="TEST COMMAND", font=("Segoe UI", 11, "bold"), text_color=WARN, width=120,
+        ctk.CTkLabel(row, text="TEST COMMAND", font=("Segoe UI", 13, "bold"), text_color=WARN, width=120,
                      anchor="w").pack(side="left")
         self.arm = ctk.CTkCheckBox(row, text="arm", width=60)
         self.arm.pack(side="left", padx=(0, 6))
@@ -849,13 +1153,13 @@ class MachineTab:
                 flat.update(snap[k])
         for n, w in self.cells.items():
             if n not in flat:
-                w.configure(text="--", fg_color="#94a3b8")
+                w.configure(text="--", fg_color=OFF)
             elif n[0] == "C":
                 w.configure(text=str(flat[n]), fg_color=GOOD if n == "C0" else BAD)
             elif n[0] == "T":
-                w.configure(text=str(flat[n]), fg_color="#1d4ed8" if flat[n] else "#94a3b8")
+                w.configure(text=str(flat[n]), fg_color=ACC if flat[n] else OFF)
             else:
-                w.configure(text="ON" if flat[n] else "OFF", fg_color=GOOD if flat[n] else "#94a3b8")
+                w.configure(text="ON" if flat[n] else "OFF", fg_color=GOOD if flat[n] else OFF)
         # switches mirror what the PLC reports, so none can claim a state the PLC does not have
         live = svc.simulator_mode and st == PLC_CONNECTED and running    # no test input while the ladder is not running
         now = time.monotonic()
@@ -944,7 +1248,7 @@ class ProductionTab:
         self.task.pack(side="left")
         ctk.CTkButton(bar, text="Scan cameras", width=110, fg_color="transparent", border_width=1, text_color=INK,
                       command=self.scan).pack(side="left", padx=8)
-        self.line_lbl = ctk.CTkLabel(bar, text="LINE STOPPED", font=("Segoe UI", 16, "bold"), text_color=DIM)
+        self.line_lbl = ctk.CTkLabel(bar, text="LINE STOPPED", font=("Segoe UI", 18, "bold"), text_color=DIM)
         self.line_lbl.pack(side="left", padx=14)
         self.feed_s = ctk.CTkEntry(bar, width=40)
         self.feed_s.insert(0, "4")
@@ -965,7 +1269,7 @@ class ProductionTab:
         def box(col, title):
             f = ctk.CTkFrame(top, fg_color=PANEL)
             f.grid(row=0, column=col, sticky="nsew", padx=(0, 6))
-            ctk.CTkLabel(f, text=title, font=("Segoe UI", 11, "bold"), text_color=DIM).pack(anchor="w", padx=10,
+            ctk.CTkLabel(f, text=title, font=("Segoe UI", 13, "bold"), text_color=DIM).pack(anchor="w", padx=10,
                                                                                             pady=(8, 2))
             return f
         plc_box = box(0, "MACHINE / PLC")
@@ -978,13 +1282,14 @@ class ProductionTab:
             self.cam_pick[slot].pack(anchor="w", padx=10)
             self.cam_lbl[slot] = ctk.CTkLabel(f, text="", font=MONO, justify="left", anchor="w")
             self.cam_lbl[slot].pack(fill="x", padx=10, pady=(4, 2))
-            self.cam_img[slot] = ctk.CTkLabel(f, text="no frame", text_color="#94a3b8", fg_color=VIDEO_BG,
-                                              height=190, corner_radius=6)
+            # plain tk.Label: see LiveTab.build_panes (a CTkLabel re-scales its image on every frame)
+            self.cam_img[slot] = tk.Label(f, text="no frame", fg=OFF, bg=VIDEO_BG, height=12, bd=0,
+                                          compound="center", font=theme.BODY)
             self.cam_img[slot].pack(fill="both", expand=True, padx=10, pady=(0, 8))
         ins = box(3, "INSPECTION (last bottle)")
         row = ctk.CTkFrame(ins, fg_color="transparent")
         row.pack(fill="both", expand=True, padx=10, pady=(0, 8))
-        self.ev_img = ctk.CTkLabel(row, text="no bottle yet", text_color="#94a3b8", fg_color=VIDEO_BG, width=200,
+        self.ev_img = ctk.CTkLabel(row, text="no bottle yet", text_color=OFF, fg_color=VIDEO_BG, width=200,
                                    height=230, corner_radius=6)
         self.ev_img.pack(side="left", fill="y")
         side = ctk.CTkFrame(row, fg_color="transparent")
@@ -996,7 +1301,7 @@ class ProductionTab:
 
         prod = ctk.CTkFrame(parent, fg_color=PANEL)
         prod.pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(prod, text="PRODUCTION", font=("Segoe UI", 11, "bold"), text_color=DIM).pack(side="left",
+        ctk.CTkLabel(prod, text="PRODUCTION", font=("Segoe UI", 13, "bold"), text_color=DIM).pack(side="left",
                                                                                               padx=(10, 10))
         self.cnt = {}
         for key, title, col in (("total", "Total", INK), (infer.PASS, "PASS", GOOD), (infer.REJECT, "REJECT", BAD),
@@ -1006,27 +1311,27 @@ class ProductionTab:
             cell.pack(side="left", padx=10, pady=6)
             self.cnt[key] = ctk.CTkLabel(cell, text="0", font=("Segoe UI", 22, "bold"), text_color=col)
             self.cnt[key].pack()
-            ctk.CTkLabel(cell, text=title, text_color=DIM, font=("Segoe UI", 11)).pack()
+            ctk.CTkLabel(cell, text=title, text_color=DIM, font=("Segoe UI", 13)).pack()
         self.travel_lbl = ctk.CTkLabel(prod, text="", font=MONO, text_color=DIM, justify="left")
         self.travel_lbl.pack(side="right", padx=10)
 
         tim = ctk.CTkFrame(parent, fg_color=PANEL)
         tim.pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(tim, text="LINE TIMING", font=("Segoe UI", 11, "bold"), text_color=DIM).pack(side="left",
+        ctk.CTkLabel(tim, text="LINE TIMING", font=("Segoe UI", 13, "bold"), text_color=DIM).pack(side="left",
                                                                                                padx=(10, 6), pady=6)
         self.tim = {}
         for key, label, w in self.TIMING:
-            ctk.CTkLabel(tim, text=label, font=("Segoe UI", 11)).pack(side="left", padx=(6, 2))
+            ctk.CTkLabel(tim, text=label, font=("Segoe UI", 13)).pack(side="left", padx=(6, 2))
             e = ctk.CTkEntry(tim, width=w)
             e.insert(0, f"{cfg[key]:g}")
             e.pack(side="left")
             self.tim[key] = e
-        ctk.CTkLabel(tim, text="FAULT ->", font=("Segoe UI", 11)).pack(side="left", padx=(8, 2))
+        ctk.CTkLabel(tim, text="FAULT ->", font=("Segoe UI", 13)).pack(side="left", padx=(8, 2))
         self.fault_action = ctk.CTkOptionMenu(tim, values=["REJECT", "PASS"], width=86)
         self.fault_action.set(str(cfg["fault_action"]).upper())
         self.fault_action.pack(side="left")
         ctk.CTkButton(tim, text="Save", width=60, command=self.save_timing).pack(side="left", padx=8)
-        self.tim_msg = ctk.CTkLabel(tim, text="", font=("Segoe UI", 11), text_color=DIM)
+        self.tim_msg = ctk.CTkLabel(tim, text="", font=("Segoe UI", 13), text_color=DIM)
         self.tim_msg.pack(side="left")
 
         low = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1034,10 +1339,12 @@ class ProductionTab:
         self.table = ctk.CTkTextbox(low, font=MONO, fg_color=PANEL, text_color=INK, wrap="none")
         self.table.pack(side="left", fill="both", expand=True, padx=(0, 6))
         self.table.configure(state="disabled")
-        self.alarms = ctk.CTkTextbox(low, font=("Consolas", 11), fg_color=PANEL, text_color=BAD, width=380)
+        self.alarms = ctk.CTkTextbox(low, font=("Consolas", 13), fg_color=PANEL, text_color=BAD, width=380)
         self.alarms.pack(side="left", fill="y")
         self.alarms.configure(state="disabled")
+        self._shown_seq = {}
         app.after(300, self._tick)
+        app.after(300, self._video_tick)
 
     # ------------------------------------------------------------ helpers
     @property
@@ -1214,6 +1521,32 @@ class ProductionTab:
             traceback.print_exc()
         self.app.after(250, self._tick)
 
+    def _video_tick(self):
+        """Smooth camera preview (~25 fps), separate from the 250 ms status refresh. Only redraws a slot
+        when its frame seq changed; downscales with cv2 first (PIL LANCZOS on a full frame is slow)."""
+        t0 = time.monotonic()
+        try:
+            if self.running:
+                for slot in self.SLOTS:
+                    src = getattr(self, "_slot_src", {}).get(slot)
+                    cam = self.app.cams.get(src) if src is not None else None
+                    if cam is None or not cam.armed:
+                        continue
+                    f = cam.latest_frame()
+                    if f is None or self._shown_seq.get(slot) == (cam.session, f.seq):
+                        continue
+                    self._shown_seq[slot] = (cam.session, f.seq)
+                    h, w = f.image.shape[:2]
+                    k = min(330 / w, 190 / h)
+                    small = cv2.resize(f.image, (max(1, int(w * k)), max(1, int(h * k))),
+                                       interpolation=cv2.INTER_AREA)
+                    img = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB)))
+                    self._imgs[slot] = img
+                    self.cam_img[slot].configure(image=img, text="")
+        except Exception:                                    # a display glitch must never stop the loop
+            traceback.print_exc()
+        self.app.after(max(10, 40 - int((time.monotonic() - t0) * 1000)), self._video_tick)
+
     def _update(self):
         self._tick_n += 1
         svc = self.app.plc
@@ -1263,12 +1596,6 @@ class ProductionTab:
             wh = "x".join(map(str, cam.frame_wh)) if cam.frame_wh else "--"
             ts = "--" if age is None else f"#{cam.frame_seq}  {age * 1000:.0f} ms ago"
             self.cam_lbl[slot].configure(text=f"{state}\n{wh}  {cam.fps:.1f} fps\nframe {ts}", text_color=col)
-            if show_img:
-                f = cam.latest_frame()
-                if f is not None:
-                    img = bgr_to_ctk(f.image, (330, 190))
-                    self._imgs[slot] = img
-                    self.cam_img[slot].configure(image=img, text="")
 
         line = self.line
         if line is None:
@@ -1347,92 +1674,185 @@ class ProductionTab:
 
 # --------------------------------------------------------------------- Label
 class LabelTab:
-    """Thumbnail grid, multi-select, bulk labelling, keyboard shortcuts."""
+    """Thumbnail grid + one-image inspector for multi-label review.
+
+    The selection is always the target: bulk buttons and keys act on it. In
+    review mode (inspector open) clicking or stepping makes the inspected image
+    the selection, so a key press labels exactly the image on screen.
+    Edits are applied to app.labels at once (the next key press sees them) and
+    written to labels.csv by ONE worker thread in order -- two racing writers
+    could otherwise each load the CSV and drop the other's edit.
+    """
 
     # No "+ve/-ve" here either: at dataset level it means pass/fail, at defect
     # level it means has/has-not, and one label for both reads as the wrong one.
     MODES = {"All images": "all",
              "Inbox - not reviewed": "inbox",
+             "AI suggested - not reviewed": "suggested",
              "GOOD - passes": "good",
              "DEFECTIVE - any defect": "defective",
              "WITH this defect": "pos",
              "WITHOUT this defect": "neg"}
+    LOW_CLASS = 50              # fewer training images than this is flagged on the balance strip
+    CONFIDENT = 0.95            # "accept all confident" needs every probability >= this or <= 1 - this
 
     def __init__(self, app: App, parent):
         self.app, self.page, self.sel, self.items = app, 0, set(), []
-        self.cards: dict[str, ctk.CTkFrame] = {}
+        self.cards: dict = {}
         self._imgs: list = []          # Tk drops images that nothing references
         self._token = 0                # ignore thumbnails from a superseded page
         self.last_click = None         # anchor for shift-click range select
         self._search_after = None      # debounce handle for live search
+        self._cols = 0
+        self.current = None            # image in the inspector
+        self.sugg = D.load_suggestions()
+        self._edits: queue.Queue = queue.Queue()
+        self._pending = 0
+        self._relayout = False         # a queued edit removed/restored files: rebuild the page when drained
+        threading.Thread(target=self._edit_worker, daemon=True).start()
 
+        # ---- filter bar
         bar = ctk.CTkFrame(parent, fg_color=PANEL)
-        bar.pack(fill="x", pady=(0, 8))
-        self.mode = ctk.CTkOptionMenu(bar, values=list(self.MODES), width=200,
-                                      command=lambda _: self.goto(0))
+        bar.pack(fill="x", pady=(0, 6))
+        self.mode = ctk.CTkOptionMenu(bar, values=list(self.MODES), width=190,
+                                      command=lambda _: self.goto(0, reset=True))
         self.mode.pack(side="left", padx=8, pady=8)
-        self.defect = ctk.CTkOptionMenu(bar, values=["-"], width=170,
-                                        command=lambda _: self.goto(0))
+        self.defect = ctk.CTkOptionMenu(bar, values=["-"], width=150,
+                                        command=lambda _: self.goto(0, reset=True))
         self.defect.pack(side="left", padx=(0, 8))
-        self.search = ctk.CTkEntry(bar, placeholder_text="filename filter", width=160)
+        self.search = ctk.CTkEntry(bar, placeholder_text="filename filter", width=130)
         self.search.pack(side="left", padx=(0, 8))
-        self.search.bind("<Return>", lambda e: self.goto(0))
+        self.search.bind("<Return>", lambda e: self.goto(0, reset=True))
         self.search.bind("<KeyRelease>", self.on_search_key)
         self.info = ctk.CTkLabel(bar, text="", text_color=DIM)
         self.info.pack(side="left", padx=8)
         ctk.CTkButton(bar, text="→", width=42, command=lambda: self.goto(self.page + 1)).pack(side="right", padx=(0, 8))
         ctk.CTkButton(bar, text="←", width=42, command=lambda: self.goto(self.page - 1)).pack(side="right", padx=4)
+        self.btn_insp = ctk.CTkButton(bar, text="Inspector »", width=100, command=self.toggle_inspector)
+        self.btn_insp.pack(side="right", padx=(4, 10))
+        self.thumb = ctk.CTkSlider(bar, from_=96, to=220, number_of_steps=31, width=80,
+                                   command=self.on_thumb)
+        self.thumb.set(self.thumb_px())
+        self.thumb.pack(side="right", padx=(0, 6))
+        self.btn_ai = ctk.CTkButton(bar, text="AI pre-label", width=110, fg_color="transparent",
+                                    border_width=1, border_color=INFO, text_color=INFO, command=self.ai_prelabel)
+        self.btn_ai.pack(side="right", padx=4)
 
+        # ---- dataset balance strip
+        self.strip = ctk.CTkFrame(parent, fg_color=PANEL)
+        self.strip.pack(fill="x", pady=(0, 6))
+
+        # ---- bulk actions on the selection
         bulk = ctk.CTkFrame(parent, fg_color=PANEL)
-        bulk.pack(fill="x", pady=(0, 8))
-        self.selinfo = ctk.CTkLabel(bulk, text="0 selected", font=("Segoe UI", 13, "bold"))
+        bulk.pack(fill="x", pady=(0, 6))
+        self.selinfo = ctk.CTkLabel(bulk, text="0 selected", font=theme.H2)
         self.selinfo.pack(side="left", padx=10, pady=8)
-        ctk.CTkButton(bulk, text="Select page", width=100, command=self.select_page).pack(side="left", padx=3)
-        ctk.CTkButton(bulk, text="Select all", width=90, command=self.select_all).pack(side="left", padx=3)
-        ctk.CTkButton(bulk, text="Clear", width=70, command=self.clear_sel).pack(side="left", padx=3)
+        ctk.CTkButton(bulk, text="Select page", width=96, command=self.select_page).pack(side="left", padx=3)
+        ctk.CTkButton(bulk, text="Select all", width=86, command=self.select_all).pack(side="left", padx=3)
+        ctk.CTkButton(bulk, text="Clear", width=64, command=self.clear_sel).pack(side="left", padx=3)
         self.bdefect = ctk.CTkOptionMenu(bulk, values=["-"], width=170)
         self.bdefect.pack(side="left", padx=(14, 4))
-        ctk.CTkButton(bulk, text="Set defect", width=100, fg_color=ACC, text_color=ACC_T,
-                      hover_color=ACC_H, command=lambda: self.apply(1)).pack(side="left", padx=3)
-        ctk.CTkButton(bulk, text="Clear defect", width=105, command=lambda: self.apply(0)).pack(side="left", padx=3)
-        ctk.CTkButton(bulk, text="Mark GOOD", width=105, command=self.mark_good).pack(side="left", padx=3)
-        ctk.CTkButton(bulk, text="Delete", width=75, fg_color="transparent", border_width=1,
-                      text_color=BAD, command=self.delete).pack(side="left", padx=(14, 3))
-        ctk.CTkLabel(bulk, text="1-9 toggle defect · G good · A select page · Esc clear · ←/→ page · Shift-click range",
-                     text_color=DIM, font=("Segoe UI", 11)).pack(side="right", padx=10)
+        self.edit_btns = [
+            ctk.CTkButton(bulk, text="Set defect", width=96, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
+                          command=lambda: self.apply(1)),
+            ctk.CTkButton(bulk, text="Clear defect", width=100, command=lambda: self.apply(0))]
+        for b in self.edit_btns:
+            b.pack(side="left", padx=3)
+        ctk.CTkButton(bulk, text="Mark GOOD", width=96, fg_color="transparent", border_width=1, border_color=GOOD,
+                      text_color=GOOD, command=self.mark_good).pack(side="left", padx=(10, 3))
+        ctk.CTkButton(bulk, text="Accept AI", width=90, fg_color="transparent", border_width=1, border_color=INFO,
+                      text_color=INFO, command=self.accept_ai).pack(side="left", padx=3)
+        ctk.CTkButton(bulk, text="Delete", width=70, fg_color="transparent", border_width=1, border_color=BAD,
+                      text_color=BAD, command=self.delete).pack(side="left", padx=(10, 3))
+        self.btn_undo = ctk.CTkButton(bulk, text="Undo", width=70, command=self.undo)
+        self.btn_undo.pack(side="left", padx=3)
 
-        self.grid = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-        self.grid.pack(fill="both", expand=True)
+        ctk.CTkLabel(parent, text="1-9 toggle defect · G good · Enter accept AI · Del trash · Ctrl+Z undo · "
+                                  "A page · Esc clear · ← → move · Shift-click range · double-click inspect",
+                     text_color=MUTED, font=theme.TINY, anchor="w").pack(side="bottom", fill="x", padx=6, pady=(4, 0))
+
+        # ---- grid + docked inspector
+        body = ctk.CTkFrame(parent, fg_color="transparent")
+        body.pack(fill="both", expand=True)
+        self.insp = ctk.CTkFrame(body, fg_color=PANEL, width=420)
+        self.insp.pack_propagate(False)
+        self.grid = ctk.CTkScrollableFrame(body, fg_color="transparent")
+        self.grid.pack(side="left", fill="both", expand=True)
+        self.grid.bind("<Configure>", self.on_resize)
+        self._build_inspector()
 
         app.bind("<Key>", self.on_key)
+
+    # settings -------------------------------------------------------------
+    def thumb_px(self) -> int:
+        return int(max(96, min(220, self.app.settings.get("thumb_px", 132))))
+
+    def on_thumb(self, v):
+        v = int(v)
+        if v != self.app.settings.get("thumb_px"):
+            self.app.settings["thumb_px"] = v
+            D.save_settings(self.app.settings)
+            if self._search_after is not None:
+                self.app.after_cancel(self._search_after)
+            self._search_after = self.app.after(300, self.load)
+
+    def columns(self) -> int:
+        fixed = int(self.app.settings.get("grid_columns", 0) or 0)
+        if fixed > 0:
+            return fixed
+        w = self.grid.winfo_width()
+        if w <= 1:
+            w = 1100
+        return max(1, (w - 20) // (self.thumb_px() + 18))
+
+    def on_resize(self, _e=None):
+        cols = self.columns()
+        if cols != self._cols:
+            self._cols = cols
+            for i, p in enumerate(self.items):
+                if p in self.cards:
+                    self.cards[p]["card"].grid(row=i // cols, column=i % cols, padx=4, pady=4, sticky="nsew")
 
     # keyboard -------------------------------------------------------------
     def on_key(self, e):
         if self.app.tabs.get() != "Label":
             return
-        if isinstance(e.widget, (ctk.CTkEntry,)) or e.widget.winfo_class() == "Entry":
+        try:
+            if e.widget.winfo_toplevel() is not self.app:      # a dialog has focus
+                return
+            if e.widget.winfo_class() in ("Entry", "Text"):
+                return
+        except Exception:                                    # noqa: BLE001  (widget already destroyed)
             return
         k = e.keysym.lower()
-        if k in "123456789" and k.isdigit():
+        ctrl = bool(e.state & 0x0004)
+        if ctrl and k == "z":
+            self.undo()
+        elif ctrl and k == "a":
+            self.select_page()
+        elif k in "123456789" and len(k) == 1:
             i = int(k) - 1
             if i < len(self.app.defects):
-                self.bdefect.set(self.app.defects[i])
-                self.apply(1)
-        elif k == "g":
+                self.toggle_defect(self.app.defects[i])
+        elif k in ("g", "space"):
             self.mark_good()
+        elif k in ("return", "kp_enter"):
+            self.accept_ai()
+        elif k == "delete":
+            self.delete()
         elif k == "a":
             self.select_page()
         elif k == "escape":
             self.clear_sel()
         elif k == "left":
-            self.goto(self.page - 1)
+            self.step(-1) if self.inspecting else self.goto(self.page - 1)
         elif k == "right":
-            self.goto(self.page + 1)
+            self.step(1) if self.inspecting else self.goto(self.page + 1)
 
     def on_search_key(self, e):
         if self._search_after is not None:
             self.app.after_cancel(self._search_after)
-        self._search_after = self.app.after(250, lambda: self.goto(0))
+        self._search_after = self.app.after(250, lambda: self.goto(0, reset=True))
 
     # data -----------------------------------------------------------------
     def refresh(self):
@@ -1441,11 +1861,19 @@ class LabelTab:
             cur = m.get()
             m.configure(values=ds)
             m.set(cur if cur in ds else ds[0])
+        for b in self.edit_btns:
+            b.configure(state="normal" if self.app.defects else "disabled")
+        self.sugg = D.load_suggestions()
+        self.sel &= set(self.app.labels)
+        self._build_checks()
+        self.draw_strip()
+        self.update_undo()
         self.load()
 
     def query(self):
         mode = self.MODES[self.mode.get()]
         d, q = self.defect.get(), self.search.get().strip().lower()
+        items = self.sugg.get("items", {})
         out = []
         for p in sorted(self.app.labels, key=D._natkey):
             row = self.app.labels[p]
@@ -1453,6 +1881,8 @@ class LabelTab:
                 continue
             reviewed = row.get("reviewed", 1)
             if mode == "inbox" and reviewed:
+                continue
+            if mode == "suggested" and (reviewed or p not in items):
                 continue
             if mode == "good" and not (reviewed and D.is_good(row, self.app.defects)):
                 continue
@@ -1468,7 +1898,10 @@ class LabelTab:
             out.append(p)
         return out
 
-    def goto(self, page):
+    def goto(self, page, reset=False):
+        if reset:
+            # A selection made under one filter must not ride along, unseen, into the next one.
+            self.clear_sel()
         self.page = max(0, page)
         self.load()
 
@@ -1478,7 +1911,7 @@ class LabelTab:
         pages = max(1, -(-len(all_paths) // per))
         self.page = min(self.page, pages - 1)
         self.items = all_paths[self.page * per:(self.page + 1) * per]
-        self.info.configure(text=f"{len(all_paths)} images   ·   page {self.page + 1}/{pages}")
+        self.info.configure(text=f"{len(all_paths)}  ·  page {self.page + 1}/{pages}")
 
         for w in self.grid.winfo_children():
             w.destroy()
@@ -1487,55 +1920,168 @@ class LabelTab:
         self._token += 1
         token = self._token
 
-        cols = 9
+        px = self.thumb_px()
+        self._cols = cols = self.columns()
         for i, p in enumerate(self.items):
-            card = ctk.CTkFrame(self.grid, fg_color=PANEL, border_width=2,
-                                border_color=ACC if p in self.sel else PANEL)
+            # Plain Tk widgets, not CustomTkinter: a page is ~60 cards, and a CTk widget draws itself onto a canvas
+            # (about 4x the cost), which made paging and every label edit visibly slow.
+            card = tk.Frame(self.grid, bg=PANEL, highlightthickness=2, highlightbackground=PANEL,
+                            highlightcolor=PANEL)
             card.grid(row=i // cols, column=i % cols, padx=4, pady=4, sticky="nsew")
-            ph = ctk.CTkLabel(card, text="", width=132, height=132)
-            ph.pack(padx=4, pady=(4, 0))
-            row = self.app.labels[p]
-            tags = [d for d in self.app.defects if row.get(d)]
-            txt = ", ".join(tags) if tags else ("good" if row.get("reviewed", 1) else "new")
-            col = BAD if tags else (GOOD if row.get("reviewed", 1) else WARN)
-            ctk.CTkLabel(card, text=txt[:22], text_color=col, font=("Segoe UI", 10),
-                         wraplength=130).pack(padx=4, pady=(2, 5))
-            for w in (card, ph):
+            stripe = tk.Frame(card, height=4, bg=OFF)
+            stripe.pack(fill="x", padx=3, pady=(3, 0))
+            ph = tk.Label(card, bg=theme.VIDEO_BG, width=px, height=px, text="", bd=0, image=self._blank(px),
+                          compound="center")
+            ph.pack(padx=3, pady=(3, 0))
+            badges = tk.Frame(card, bg=PANEL)
+            badges.pack(fill="x", padx=3, pady=(3, 4))
+            for w in (card, ph, stripe):
                 w.bind("<Button-1>", lambda e, p=p: self.click(p, e))
-                w.bind("<Double-Button-1>", lambda e, p=p: self.open_full(p))
-            self.cards[p] = (card, ph)
+                w.bind("<Double-Button-1>", lambda e, p=p: self.inspect(p))
+            self.cards[p] = {"card": card, "ph": ph, "stripe": stripe, "badges": badges}
+            self.paint(p)
 
         # Decoding 60 JPEGs blocks the window for a beat; do it off-thread and
-        # drop the results if the user has already paged away.
+        # drop the results if the user has already paged away. PIL work happens
+        # there; the CTkImage (a Tk object) is built on the main thread.
         paths = list(self.items)
 
         def work():
             for p in paths:
+                if token != self._token:
+                    return
                 b = D.thumbnail(p)
                 if b is None:
                     continue
                 arr = cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_COLOR)
                 if arr is None:
                     continue
-                img = bgr_to_ctk(arr, (132, 132))
-                self.app.post(lambda p=p, img=img: self.set_thumb(token, p, img))
+                pil = Image.fromarray(cv2.cvtColor(arr, cv2.COLOR_BGR2RGB))
+                pil.thumbnail((px, px), Image.LANCZOS)
+                self.app.post(lambda p=p, pil=pil: self.set_thumb(token, p, pil))
         threading.Thread(target=work, daemon=True).start()
         self.update_sel()
+        if self.inspecting and self.current not in self.app.labels:
+            self.show(self.items[0] if self.items else None)
 
-    def set_thumb(self, token, path, img):
+    def set_thumb(self, token, path, pil):
         if token != self._token or path not in self.cards:
             return
+        img = ImageTk.PhotoImage(pil)
         self._imgs.append(img)
-        self.cards[path][1].configure(image=img, text="")
+        self.cards[path]["ph"].configure(image=img)
+
+    # card look ------------------------------------------------------------
+    def suggestion(self, p):
+        """-> (defects the model would flag, top probability, confident?) or None."""
+        probs = self.sugg.get("items", {}).get(p)
+        if not probs:
+            return None
+        thr = self.app.cfg.get("thresholds", {})
+        hits = [d for d, v in probs.items() if d in self.app.defects and v >= float(thr.get(d, 0.5))]
+        top = max(probs.values()) if probs else 0.0
+        conf = (all(v >= self.CONFIDENT or v <= 1 - self.CONFIDENT for v in probs.values())
+                and len(hits) <= 1)
+        return hits, top, conf
+
+    def paint(self, p):
+        c = self.cards.get(p)
+        row = self.app.labels.get(p)
+        if not c or row is None:
+            return
+        edge = ACC if p in self.sel else PANEL
+        bg = theme.ACC_SOFT if p == self.current and self.inspecting else PANEL
+        c["card"].configure(highlightbackground=edge, highlightcolor=edge, bg=bg)
+        c["badges"].configure(bg=bg)
+        sig = (tuple(self.app.labels[p].get(d, 0) for d in self.app.defects), row.get("reviewed", 1),
+               str(self.suggestion(p)), bg)
+        if c.get("sig") == sig:                       # selection changes repaint the border only, not the badges
+            return
+        c["sig"] = sig
+        for w in c["badges"].winfo_children():
+            w.destroy()
+        tags = [d for d in self.app.defects if row.get(d)]
+        reviewed = row.get("reviewed", 1)
+        if not reviewed:
+            colour = WARN
+            self._badge(c["badges"], "NEW · not reviewed", WARN, theme.FAULT_SOFT)
+        elif tags:
+            colour = BAD
+        else:
+            colour = GOOD
+            self._badge(c["badges"], "GOOD", GOOD, theme.PASS_SOFT)
+        for d in tags:
+            self._badge(c["badges"], f"{self.app.defects.index(d) + 1}  {d.replace('_', ' ')}", BAD,
+                        theme.REJECT_SOFT)
+        s = self.suggestion(p) if not reviewed else None
+        if s:
+            hits, top, conf = s
+            txt = ("AI: " + ", ".join(h.replace("_", " ") for h in hits) if hits else "AI: GOOD") + f"  {top:.0%}"
+            self._badge(c["badges"], txt + ("  ✓" if conf else ""), INFO, theme.INFO_SOFT)
+            colour = INFO
+        c["stripe"].configure(bg=colour)
+
+    def _badge(self, parent, text, fg, bg):
+        tk.Label(parent, text=text, fg=fg, bg=bg, font=theme.TINY, wraplength=self.thumb_px() - 10, justify="left",
+                 anchor="w", padx=4, pady=1).pack(fill="x", pady=1)
+
+    def _blank(self, px):
+        """A transparent 1x1 image: it makes tk.Label's width/height mean pixels, not text characters."""
+        if getattr(self, "_blank_img", None) is None:
+            self._blank_img = ImageTk.PhotoImage(Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
+        return self._blank_img
+
+    # balance strip --------------------------------------------------------
+    def draw_strip(self):
+        for w in self.strip.winfo_children():
+            w.destroy()
+        c = self.app.counts or D.counts(self.app.defects, self.app.labels)
+        thr = self.app.cfg.get("thresholds", {})
+
+        r1 = ctk.CTkFrame(self.strip, fg_color="transparent")
+        r1.pack(fill="x")
+        r2 = ctk.CTkFrame(self.strip, fg_color="transparent")
+        r2.pack(fill="x")
+
+        def chip(text, n, colour, cmd, tip="", row=None):
+            b = ctk.CTkButton(row or r1, text=f"{text} {n}", height=24, corner_radius=12, fg_color=PANEL_2,
+                              hover_color=theme.ACC_SOFT, text_color=colour, font=theme.TINY,
+                              border_width=1, border_color=colour if colour != INK else LINE, command=cmd,
+                              width=30)
+            b.pack(side="left", padx=2, pady=5)
+            if tip:
+                Tooltip(b, tip)
+
+        ctk.CTkFrame(r1, width=6, height=1, fg_color="transparent").pack(side="left")
+        chip("ALL", c.get("_total", 0), INK, lambda: self.filter_to("All images"))
+        good = c.get("_good", 0)
+        chip("GOOD", good, GOOD if good >= self.LOW_CLASS else WARN, lambda: self.filter_to("GOOD - passes"),
+             "" if good >= self.LOW_CLASS else
+             f"Only {good} good images. A real line is mostly good: the model has barely seen a pass.")
+        chip("DEFECTIVE", c.get("_defective", 0), INK, lambda: self.filter_to("DEFECTIVE - any defect"))
+        unrev = c.get("_unreviewed", 0)
+        chip("INBOX", unrev, WARN if unrev else DIM, lambda: self.filter_to("Inbox - not reviewed"),
+             "Not reviewed: excluded from training until someone labels them.")
+        ctk.CTkFrame(r2, width=6, height=1, fg_color="transparent").pack(side="left")
+        for i, d in enumerate(self.app.defects):
+            n = c.get(d, 0)
+            colour = BAD if n == 0 else WARN if n < self.LOW_CLASS else INK
+            tip = (f"No images: this class is disabled at training (threshold "
+                   f"{thr.get(d, 1.01)}) and can never fire." if n == 0 else
+                   f"Only {n} images: too few to trust this class." if n < self.LOW_CLASS else "")
+            chip(f"{i + 1}·{d.replace('_', ' ')}" if i < 9 else d.replace("_", " "), n, colour,
+                 lambda d=d: self.filter_to("WITH this defect", d), tip, row=r2)
+
+    def filter_to(self, mode, defect=None):
+        self.mode.set(mode)
+        if defect:
+            self.defect.set(defect)
+        self.goto(0, reset=True)
 
     # selection ------------------------------------------------------------
-    def toggle(self, p):
-        self.sel.symmetric_difference_update({p})
-        self.paint(p)
-        self.update_sel()
-
     def click(self, p, event):
         shift = bool(event.state & 0x0001)
+        ctrl = bool(event.state & 0x0004)
         if shift and self.last_click in self.items and p in self.items:
             lo, hi = sorted((self.items.index(self.last_click), self.items.index(p)))
             rng = self.items[lo:hi + 1]
@@ -1543,13 +2089,13 @@ class LabelTab:
             for q in rng:
                 self.paint(q)
             self.update_sel()
+        elif self.inspecting and not ctrl:
+            self.show(p)                      # review mode: the inspected image IS the selection
         else:
-            self.toggle(p)
+            self.sel.symmetric_difference_update({p})
+            self.paint(p)
+            self.update_sel()
         self.last_click = p
-
-    def paint(self, p):
-        if p in self.cards:
-            self.cards[p][0].configure(border_color=ACC if p in self.sel else PANEL)
 
     def select_page(self):
         self.sel.update(self.items)
@@ -1569,57 +2115,396 @@ class LabelTab:
             self.paint(p)
         self.update_sel()
 
-    def update_sel(self):
-        self.selinfo.configure(text=f"{len(self.sel)} selected")
+    def offpage(self) -> int:
+        return len(self.sel - set(self.items))
 
-    def open_full(self, p):
-        img = D.imread(D.IMAGE_ROOT / p)
-        if img is None:
-            return
-        win = ctk.CTkToplevel(self.app)
-        win.title(p)
-        win.geometry("1100x800")
-        win.after(200, win.lift)
-        h, w = img.shape[:2]
-        s = min(1050 / w, 700 / h)
-        shown = cv2.resize(img, (round(w * s), round(h * s)))
-        im = bgr_to_ctk(shown)
-        lab = ctk.CTkLabel(win, text="", image=im)
-        lab.image = im
-        lab.pack(padx=10, pady=10)
-        row = self.app.labels.get(p, {})
-        tags = [d for d in self.app.defects if row.get(d)]
-        ctk.CTkLabel(win, text=", ".join(tags) or "good bottle (no defects)",
-                     text_color=BAD if tags else GOOD).pack()
+    def update_sel(self):
+        off = self.offpage()
+        self.selinfo.configure(text=f"{len(self.sel)} selected" + (f"  ({off} not on this page)" if off else ""),
+                               text_color=WARN if off else INK)
+
+    def need_sel(self) -> list | None:
+        if not self.sel:
+            messagebox.showinfo("Nothing selected", "Select some images first.")
+            return None
+        return sorted(self.sel, key=D._natkey)
 
     # edits ----------------------------------------------------------------
-    def apply(self, value):
-        if not self.sel:
-            return messagebox.showinfo("Nothing selected", "Select some images first.")
-        d, paths = self.bdefect.get(), list(self.sel)
-        self.app.run_bg(lambda: D.apply_labels(paths, d, value), lambda _: self.after_edit())
+    def _edit_worker(self):
+        while True:
+            fn, paths = self._edits.get()
+            try:
+                fn()
+                err = None
+            except Exception as e:                       # noqa: BLE001
+                err = e
+            self.app.post(lambda paths=paths, err=err: self._edit_done(paths, err))
 
-    def delete(self):
-        n = len(self.sel)
-        if not n:
-            return messagebox.showinfo("Delete", "Select some images first.")
-        if not messagebox.askyesno("Delete images",
-                                   f"Permanently delete {n} image file(s) from disk?\n"
-                                   f"This cannot be undone."):
+    def submit(self, fn, paths, local=None):
+        """`local(row)` mirrors the edit in app.labels now; `fn` writes it to disk, in order, on the worker.
+        local=None: the edit adds or removes files (delete, undo), so the page is rebuilt once it is written."""
+        if local is None:
+            self._relayout = True
+        for p in paths:
+            if local is not None and p in self.app.labels:
+                local(self.app.labels[p])
+                self.app.labels[p]["reviewed"] = 1
+            self.paint(p)
+        self._pending += 1
+        self._edits.put((fn, list(paths)))
+        if self.inspecting:
+            self.show(self.current)
+
+    def _edit_done(self, paths, err):
+        self._pending -= 1
+        if err is not None:
+            messagebox.showerror("Label edit failed", f"{type(err).__name__}: {err}")
+        if self._pending == 0:                           # re-read the truth once the queue has drained
+            self.app.data_changed()
+            self.sugg = D.load_suggestions()
+            if self._relayout:
+                self._relayout = False
+                self.sel &= set(self.app.labels)
+                self.load()
+            else:
+                for p in self.items:
+                    self.paint(p)
+            self.draw_strip()
+            self.update_undo()
+            if self.inspecting:
+                self.show(self.current)
+
+    def targets(self) -> list:
+        return sorted(self.sel, key=D._natkey)
+
+    def toggle_defect(self, d):
+        paths = self.targets()
+        if not paths:
             return
-        paths = list(self.sel)
-        self.app.run_bg(lambda: D.delete_images(paths),
-                        lambda _: (self.clear_sel(), self.app.reload()))
+        on = not all(self.app.labels.get(p, {}).get(d) for p in paths)
+        self._set_defect(paths, d, on)
+
+    def _set_defect(self, paths, d, on):
+        v = int(on)
+        self.submit(lambda: D.apply_labels(paths, d, v), paths, lambda row: row.__setitem__(d, v))
+
+    def apply(self, value):
+        paths = self.need_sel()
+        d = self.bdefect.get()
+        if not paths or d not in self.app.defects:
+            return
+        if self.offpage() and not messagebox.askyesno(
+                "Selection includes hidden images",
+                f"{'Set' if value else 'Clear'} {d!r} on {len(paths)} images, {self.offpage()} of them NOT on "
+                f"this page?"):
+            return
+        self._set_defect(paths, d, value)
 
     def mark_good(self):
-        if not self.sel:
-            return messagebox.showinfo("Nothing selected", "Select some images first.")
-        paths = list(self.sel)
-        self.app.run_bg(lambda: D.apply_labels(paths, clear_all=True), lambda _: self.after_edit())
+        paths = self.targets()
+        if not paths:
+            return
+        if self.offpage() and not messagebox.askyesno(
+                "Selection includes hidden images",
+                f"Mark {len(paths)} images GOOD, {self.offpage()} of them NOT on this page?"):
+            return
 
-    def after_edit(self):
+        def local(row):
+            for d in self.app.defects:
+                row[d] = 0
+        self.submit(lambda: (D.apply_labels(paths, clear_all=True), D.drop_suggestions(paths)), paths, local)
+        self.after_label()
+
+    def accept_ai(self):
+        paths = [p for p in self.targets() if self.suggestion(p)]
+        if not paths:
+            return
+        mapping = {p: self.suggestion(p)[0] for p in paths}
+
+        def local_for(p):
+            def local(row):
+                for d in self.app.defects:
+                    row[d] = int(d in mapping[p])
+            return local
+        for p in paths:                                  # mirror each one; one disk write for all
+            if p in self.app.labels:
+                local_for(p)(self.app.labels[p])
+        self.submit(lambda: (D.set_labels(mapping, action="accept AI"), D.drop_suggestions(paths)),
+                    paths, lambda row: None)
+        self.after_label()
+
+    def accept_confident(self):
+        sure = [p for p in self.query() if not self.app.labels[p].get("reviewed", 1)
+                and (self.suggestion(p) or (None, 0, False))[2]]
+        if not sure:
+            return messagebox.showinfo("Accept confident", "No suggestion in this view is confident enough "
+                                                           f"(every probability ≥ {self.CONFIDENT:.0%} or "
+                                                           f"≤ {1 - self.CONFIDENT:.0%}, at most one defect).")
+        if not messagebox.askyesno("Accept confident suggestions",
+                                   f"Accept the AI label for {len(sure)} images without looking at each?\n\n"
+                                   f"They become training data. Spot-check a few first."):
+            return
+        self.sel = set(sure)
+        self.accept_ai()
+
+    def after_label(self):
+        if self.inspecting and self.advance.get():
+            self.step(1)
+
+    def delete(self):
+        paths = self.need_sel()
+        if not paths:
+            return
+        off = self.offpage()
+        if not messagebox.askyesno("Move to trash",
+                                   f"Move {len(paths)} image(s) to the project trash?"
+                                   + (f"\n\n{off} of them are NOT on this page." if off else "")
+                                   + "\n\nUndo (Ctrl+Z) puts them back with their labels."):
+            return
         self.sel.clear()
-        self.app.reload()
+        self.update_sel()
+        self.submit(lambda: D.delete_images(paths), paths)
+
+    def update_undo(self):
+        u = D.last_undoable()
+        self.btn_undo.configure(state="normal" if u else "disabled",
+                                text=f"Undo {u[1]} ({u[2]})" if u else "Undo")
+
+    def undo(self):
+        u = D.last_undoable()
+        if not u or self._pending:          # undo only what is already on disk
+            return
+        self.submit(lambda: D.undo(u[0]), [])
+
+    # inspector ------------------------------------------------------------
+    @property
+    def inspecting(self) -> bool:
+        return self.insp.winfo_manager() != ""
+
+    def toggle_inspector(self):
+        if self.inspecting:
+            self.insp.pack_forget()
+            self.btn_insp.configure(text="Inspector »")
+            cur, self.current = self.current, None
+            if cur:
+                self.paint(cur)
+        else:
+            self.insp.pack(side="right", fill="y", padx=(8, 0))
+            self.btn_insp.configure(text="Inspector «")
+            first = next(iter(sorted(self.sel & set(self.items), key=self.items.index)), None)
+            self.show(first or (self.items[0] if self.items else None))
+
+    def inspect(self, p):
+        if not self.inspecting:
+            self.toggle_inspector()
+        self.show(p)
+
+    def open_full(self, p):
+        """Kept for other tabs (Train's misclassified images): show one image in the Label inspector."""
+        if p not in self.app.labels:
+            return
+        self.app.tabs.set("Label")
+        self.inspect(p)
+
+    def _build_inspector(self):
+        f = self.insp
+        top = ctk.CTkFrame(f, fg_color="transparent")
+        top.pack(fill="x", padx=10, pady=(10, 4))
+        ctk.CTkLabel(top, text="INSPECTOR", font=theme.CAPS, text_color=DIM).pack(side="left")
+        self.i_pos = ctk.CTkLabel(top, text="", font=theme.SMALL, text_color=DIM)
+        self.i_pos.pack(side="right")
+        self.i_img = ctk.CTkLabel(f, text="no image", width=400, height=260, fg_color=theme.VIDEO_BG,
+                                  corner_radius=6, text_color=MUTED)
+        self.i_img.pack(padx=10)
+        self.i_name = ctk.CTkLabel(f, text="", font=theme.SMALL, text_color=DIM, wraplength=390, justify="left")
+        self.i_name.pack(anchor="w", padx=10, pady=(4, 0))
+        self.i_state = ctk.CTkLabel(f, text="", font=theme.H2)
+        self.i_state.pack(anchor="w", padx=10, pady=(2, 4))
+        nav = ctk.CTkFrame(f, fg_color="transparent")
+        nav.pack(fill="x", padx=10, pady=(0, 6))
+        ctk.CTkButton(nav, text="« Prev", width=80, command=lambda: self.step(-1)).pack(side="left")
+        ctk.CTkButton(nav, text="GOOD  (G)", width=110, fg_color="transparent", border_width=1, border_color=GOOD,
+                      text_color=GOOD, command=self.mark_good).pack(side="left", padx=6)
+        ctk.CTkButton(nav, text="Next »", width=80, command=lambda: self.step(1)).pack(side="left")
+        self.advance = ctk.CTkCheckBox(nav, text="auto-advance", font=theme.SMALL)
+        self.advance.pack(side="right")
+        self.advance.select()
+        # pinned to the bottom first, so the defect list (which grows with the classes) gets what is left
+        ctk.CTkButton(f, text="Accept all confident AI labels in this view…", fg_color="transparent",
+                      border_width=1, border_color=INFO, text_color=INFO,
+                      command=self.accept_confident).pack(side="bottom", fill="x", padx=10, pady=(0, 10))
+        self.i_queue = ctk.CTkLabel(f, text="", font=theme.SMALL, text_color=DIM)
+        self.i_queue.pack(side="bottom", anchor="w", padx=10, pady=(0, 4))
+        ai = ctk.CTkFrame(f, fg_color=theme.INFO_SOFT, corner_radius=6)
+        ai.pack(side="bottom", fill="x", padx=10, pady=(4, 6))
+        self.i_ai = ctk.CTkLabel(ai, text="no AI suggestion", text_color=INFO, font=theme.SMALL, wraplength=250,
+                                 justify="left")
+        self.i_ai.pack(side="left", padx=8, pady=6)
+        self.i_ai_btn = ctk.CTkButton(ai, text="Accept (Enter)", width=110, fg_color=INFO, text_color=theme.BG,
+                                      hover_color=INFO, command=self.accept_ai)
+        self.i_ai_btn.pack(side="right", padx=8, pady=6)
+        ctk.CTkLabel(f, text="DEFECTS   (click or press the number)", font=theme.CAPS, text_color=DIM).pack(
+            anchor="w", padx=10, pady=(4, 0))
+        self.i_checks_box = ctk.CTkScrollableFrame(f, fg_color="transparent")
+        self.i_checks_box.pack(fill="both", expand=True, padx=6)
+        self.i_checks: dict = {}
+
+    def _build_checks(self):
+        for w in self.i_checks_box.winfo_children():
+            w.destroy()
+        self.i_checks = {}
+        for i, d in enumerate(self.app.defects):
+            cb = ctk.CTkCheckBox(self.i_checks_box, text=f"{i + 1}  {d.replace('_', ' ')}" if i < 9
+                                 else f"     {d.replace('_', ' ')}",
+                                 fg_color=BAD, hover_color=BAD, font=theme.SMALL, checkbox_width=20,
+                                 checkbox_height=20, width=190,
+                                 command=lambda d=d: self.check_clicked(d))
+            cb.grid(row=i // 2, column=i % 2, sticky="w", pady=2, padx=4)
+            self.i_checks[d] = cb
+
+    def check_clicked(self, d):
+        if self.current is None:
+            return
+        on = bool(self.i_checks[d].get())
+        self._set_defect([self.current], d, on)
+
+    def step(self, delta):
+        if not self.items:
+            return
+        if self.current in self.items:
+            i = self.items.index(self.current) + delta
+        else:
+            i = 0
+        if i >= len(self.items):
+            if self.page * max(6, int(self.app.settings.get("per_page", PER_PAGE))) + len(self.items) \
+                    < len(self.query()):
+                self.goto(self.page + 1)
+                self.show(self.items[0] if self.items else None)
+            return
+        if i < 0:
+            if self.page > 0:
+                self.goto(self.page - 1)
+                self.show(self.items[-1] if self.items else None)
+            return
+        self.show(self.items[i])
+
+    def show(self, p):
+        old, self.current = self.current, p
+        if p is not None:
+            was = self.sel
+            self.sel = {p}
+            for q in was | {p}:
+                self.paint(q)
+            self.update_sel()
+        if old and old != p:
+            self.paint(old)
+        if p is None or p not in self.app.labels:
+            self.i_img.configure(image=None, text="no image")
+            self.i_name.configure(text="")
+            self.i_state.configure(text="")
+            return
+        img = D.imread(D.IMAGE_ROOT / p)
+        if img is not None:
+            h, w = img.shape[:2]
+            s = min(400 / w, 260 / h)
+            im = bgr_to_ctk(cv2.resize(img, (max(1, round(w * s)), max(1, round(h * s))),
+                                       interpolation=cv2.INTER_AREA))
+            self._insp_img = im
+            self.i_img.configure(image=im, text="")
+        else:
+            self.i_img.configure(image=None, text="cannot read image")
+        row = self.app.labels[p]
+        tags = [d for d in self.app.defects if row.get(d)]
+        reviewed = row.get("reviewed", 1)
+        self.i_name.configure(text=f"{Path(p).name}\n{Path(p).parent.as_posix()}/")
+        self.i_state.configure(text=("NEW · not reviewed" if not reviewed else
+                                     ("REJECT: " + ", ".join(tags)) if tags else "GOOD"),
+                               text_color=WARN if not reviewed else BAD if tags else GOOD)
+        for d, cb in self.i_checks.items():
+            cb.select() if row.get(d) else cb.deselect()
+        s = self.suggestion(p)
+        if s and not reviewed:
+            hits, top, conf = s
+            probs = self.sugg["items"][p]
+            lines = ", ".join(f"{d.replace('_', ' ')} {probs[d]:.0%}" for d in hits) if hits else "GOOD"
+            self.i_ai.configure(text=f"AI ({self.sugg.get('model') or '?'}): {lines}"
+                                     + ("\nconfident" if conf else "\nNOT confident: check it"))
+            self.i_ai_btn.configure(state="normal")
+        else:
+            self.i_ai.configure(text="no AI suggestion" if reviewed else "no AI suggestion: run AI pre-label")
+            self.i_ai_btn.configure(state="disabled")
+        n_new = sum(1 for q in self.items if not self.app.labels.get(q, {}).get("reviewed", 1))
+        pos = self.items.index(p) + 1 if p in self.items else 0
+        self.i_pos.configure(text=f"{pos} / {len(self.items)} on page")
+        self.i_queue.configure(text=f"{n_new} not reviewed on this page   ·   "
+                                    f"{self.app.counts.get('_unreviewed', 0)} in the inbox")
+
+    # AI pre-label ---------------------------------------------------------
+    def ai_prelabel(self):
+        stamp = self.app.cfg.get("active_model")
+        if not stamp:
+            return messagebox.showinfo("AI pre-label", "This product has no trained model yet. Label a first "
+                                                       "batch by hand, train, then let the model pre-label the rest.")
+        inbox = [p for p, r in self.app.labels.items() if not r.get("reviewed", 1)]
+        if not inbox:
+            return messagebox.showinfo("AI pre-label", "The inbox is empty: nothing to pre-label.")
+        btn = self.btn_ai
+
+        def work():
+            m = infer.Model(stamp)
+            missing = [d for d in self.app.defects if d not in m.defects]
+            out = {}
+            for i, p in enumerate(inbox):
+                img = D.imread(D.IMAGE_ROOT / p)
+                if img is not None:
+                    probs = m.predict(img)
+                    out[p] = {d: round(v, 4) for d, v in probs.items() if d in self.app.defects}
+                if i % 10 == 0:
+                    self.app.post(lambda i=i: btn.configure(text=f"AI… {i}/{len(inbox)}"))
+            d = D.load_suggestions()
+            d.update(model=stamp, time=time.strftime("%Y-%m-%d %H:%M:%S"))
+            d["items"].update(out)
+            D.save_suggestions(d)
+            return len(out), missing
+
+        def done(r):
+            n, missing = r
+            btn.configure(text="AI pre-label", state="normal")
+            self.sugg = D.load_suggestions()
+            self.filter_to("AI suggested - not reviewed")
+            msg = (f"{n} inbox images pre-labelled by model {stamp}.\n\nThey stay NOT reviewed (and out of "
+                   f"training) until you accept or correct each one: Enter accepts, 1-9 corrects.")
+            if missing:
+                msg += (f"\n\nThe model was trained before these classes existed and cannot suggest them: "
+                        f"{', '.join(missing)}. Retrain to include them.")
+            messagebox.showinfo("AI pre-label", msg)
+
+        btn.configure(state="disabled", text="AI… loading model")
+        self.app.run_bg(work, done)
+
+
+class Tooltip:
+    """Hover text for a widget (Tk has none built in)."""
+
+    def __init__(self, widget, text):
+        self.widget, self.text, self.tip = widget, text, None
+        widget.bind("<Enter>", self.show, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+
+    def show(self, _e=None):
+        if self.tip or not self.text:
+            return
+        x, y = self.widget.winfo_rootx() + 10, self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.geometry(f"+{x}+{y}")
+        tk.Label(tw, text=self.text, bg=PANEL_2, fg=INK, font=theme.SMALL, wraplength=320, justify="left",
+                 padx=8, pady=4, bd=1, relief="solid").pack()
+
+    def hide(self, _e=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
 
 
 # ------------------------------------------------------------------ Defects
@@ -1635,7 +2520,7 @@ class DefectsTab:
         right.pack(side="right", fill="y")
         right.pack_propagate(False)
         ctk.CTkLabel(right, text="ADD A DEFECT TYPE", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=14, pady=(14, 6))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=14, pady=(14, 6))
         ctk.CTkLabel(right, wraplength=300, justify="left", text_color=DIM,
                      text="A defect is a column in labels.csv. Adding one sets it to 0 for "
                           "every existing image; then use the -ve filter to find and flag "
@@ -1660,7 +2545,7 @@ class DefectsTab:
         top = ctk.CTkFrame(self.list, fg_color=PANEL)
         top.pack(fill="x", pady=(0, 14))
         ctk.CTkLabel(top, text="DATASET SPLIT", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=14, pady=(12, 2))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=14, pady=(12, 2))
         row = ctk.CTkFrame(top, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=(0, 4))
         for title, n, col in (("GOOD  (+ve, passes)", good, GOOD),
@@ -1671,13 +2556,13 @@ class DefectsTab:
             ctk.CTkLabel(box, text=str(n), text_color=col,
                          font=("Segoe UI", 26, "bold")).pack(anchor="w")
             ctk.CTkLabel(box, text=title, text_color=DIM,
-                         font=("Segoe UI", 11)).pack(anchor="w")
+                         font=("Segoe UI", 13)).pack(anchor="w")
             if title.startswith("GOOD"):
                 ctk.CTkButton(box, text="Upload GOOD images", width=170, fg_color=ACC,
                               text_color=ACC_T, hover_color=ACC_H,
                               command=lambda: self.upload(None)).pack(anchor="w", pady=(6, 0))
         share = good / max(1, good + bad)
-        ctk.CTkLabel(top, wraplength=820, justify="left", padx=0,
+        ctk.CTkLabel(top, wraplength=700, justify="left", padx=0,
                      text_color=WARN if share < 0.5 else GOOD,
                      text=(f"Only {share:.0%} of the labelled set passes. On a real line good is "
                            f"the overwhelming majority, so the model is seeing a world where "
@@ -1687,8 +2572,8 @@ class DefectsTab:
                      ).pack(anchor="w", padx=14, pady=(0, 12))
 
         ctk.CTkLabel(self.list, text="PER-DEFECT", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 2))
-        ctk.CTkLabel(self.list, text_color=DIM, justify="left", wraplength=820,
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(self.list, text_color=DIM, justify="left", wraplength=700,
                      text="How many images carry each defect. A bottle can have several, so these "
                           "add up to more than the defective count above.\n"
                           "WITHOUT is not the same as good: it is every other image, including "
@@ -1699,7 +2584,7 @@ class DefectsTab:
         hdr.pack(fill="x", pady=(0, 4))
         for t, wdt in (("DEFECT", 220), ("WITH", 80), ("WITHOUT", 90), ("STATUS", 330)):
             ctk.CTkLabel(hdr, text=t, width=wdt, anchor="w", text_color=DIM,
-                         font=("Segoe UI", 11, "bold")).pack(side="left")
+                         font=("Segoe UI", 13, "bold")).pack(side="left")
 
         for i, d in enumerate(self.app.defects):
             n = c.get(d, 0)
@@ -1825,7 +2710,7 @@ class TrainTab:
         sel = ctk.CTkFrame(parent, fg_color=PANEL)
         sel.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(sel, text="MODEL SELECTION", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(side="left", padx=(10, 10), pady=8)
+                     font=("Segoe UI", 13, "bold")).pack(side="left", padx=(10, 10), pady=8)
         self.arch = ctk.CTkOptionMenu(sel, values=list(BACKBONE_LABELS), width=210)
         self.arch.pack(side="left")
         ctk.CTkLabel(sel, text_color=DIM,
@@ -1852,8 +2737,8 @@ class TrainTab:
         self.c_f1 = chart_panel(curves, "VALIDATION MACRO-F1 PER EPOCH", 470, 190,
                                 "The checkpoint kept is the best epoch, not the last one.")
 
-        self.log = ctk.CTkTextbox(left, height=180, font=MONO, fg_color="#0a0c0e",
-                                   text_color="#e5e7eb")
+        self.log = ctk.CTkTextbox(left, height=180, font=MONO, fg_color=VIDEO_BG,
+                                   text_color=INK)
         self.log.pack(fill="x")
         self.log.insert("end", "No training run in this session.\n")
         self.metrics = ctk.CTkScrollableFrame(left, fg_color="transparent")
@@ -1863,13 +2748,13 @@ class TrainTab:
         right.pack(side="right", fill="y")
         right.pack_propagate(False)
         ctk.CTkLabel(right, text="MODEL VERSIONS", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=14, pady=(14, 6))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=14, pady=(14, 6))
         self.models = ctk.CTkScrollableFrame(right, fg_color="transparent", height=220)
         self.models.pack(fill="x", padx=8, pady=(0, 10))
 
         ctk.CTkLabel(right, text="BENCHMARK", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=14, pady=(0, 2))
-        ctk.CTkLabel(right, text_color=DIM, font=("Segoe UI", 10), wraplength=310, justify="left",
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=14, pady=(0, 2))
+        ctk.CTkLabel(right, text_color=DIM, font=("Segoe UI", 12), wraplength=310, justify="left",
                      text="Each model's own stored numbers, one row per checkpoint - lets "
                           "different backbones be compared side by side.").pack(anchor="w", padx=14, pady=(0, 6))
         self.bench = ctk.CTkScrollableFrame(right, fg_color="transparent")
@@ -1894,9 +2779,9 @@ class TrainTab:
             row.pack(fill="x", pady=2)
             label = f"{s}  ·  {metas[s].get('arch', '?')}"
             ctk.CTkLabel(row, text=label, text_color=ACC if s == active else None,
-                         font=("Segoe UI", 12, "bold" if s == active else "normal")).pack(side="left")
+                         font=("Segoe UI", 14, "bold" if s == active else "normal")).pack(side="left")
             if s == active:
-                ctk.CTkLabel(row, text="active", text_color=DIM, font=("Segoe UI", 10)).pack(side="left", padx=6)
+                ctk.CTkLabel(row, text="active", text_color=DIM, font=("Segoe UI", 12)).pack(side="left", padx=6)
             else:
                 ctk.CTkButton(row, text="Use", width=48, height=24,
                               command=lambda s=s: self.activate(s)).pack(side="right")
@@ -1908,7 +2793,7 @@ class TrainTab:
             hdr.pack(fill="x")
             for t in ("MODEL", "ACC", "PREC", "REC", "F1", "TRAIN s", "INFER ms", "FPS", "SIZE MB"):
                 ctk.CTkLabel(hdr, text=t, width=68, anchor="w", text_color=DIM,
-                             font=("Segoe UI", 10, "bold")).pack(side="left")
+                             font=("Segoe UI", 12, "bold")).pack(side="left")
             for s in stamps:
                 m = metas[s]
                 seconds = sum(hh.get("seconds", 0) for hh in m.get("history", []))
@@ -2004,7 +2889,7 @@ class TrainTab:
         for t, w in (("DEFECT", 170), ("VAL+", 70), ("THR", 60), ("PREC", 80),
                      ("RECALL", 80), ("F1", 80), ("MISSED", 80)):
             ctk.CTkLabel(hdr, text=t, width=w, anchor="w", text_color=DIM,
-                         font=("Segoe UI", 11, "bold")).pack(side="left")
+                         font=("Segoe UI", 13, "bold")).pack(side="left")
         for d in m["defects"]:
             x = m["per_defect"][d]
             row = ctk.CTkFrame(self.metrics, fg_color=PANEL)
@@ -2022,15 +2907,15 @@ class TrainTab:
                               (x.get("fn", 0), 80, BAD if x.get("fn") else None)):
                 ctk.CTkLabel(row, text=str(txt), width=w, anchor="w", text_color=c).pack(side="left")
 
-        ctk.CTkLabel(self.metrics, text_color=DIM, justify="left", wraplength=900,
+        ctk.CTkLabel(self.metrics, text_color=DIM, justify="left", wraplength=700,
                      text="Recall is the number that matters - a missed defect ships. MISSED is "
                           "false negatives on validation.").pack(anchor="w", pady=(6, 10))
 
         bad = m.get("mistakes", [])
         if bad:
             ctk.CTkLabel(self.metrics, text=f"SHOW ME THE MISTAKES  ({len(bad)})",
-                         text_color=DIM, font=("Segoe UI", 11, "bold")).pack(anchor="w")
-            ctk.CTkLabel(self.metrics, text_color=DIM, justify="left", wraplength=900,
+                         text_color=DIM, font=("Segoe UI", 13, "bold")).pack(anchor="w")
+            ctk.CTkLabel(self.metrics, text_color=DIM, justify="left", wraplength=700,
                          text="Sorted by how confident the model was while being wrong. Expect a "
                               "good share to be mislabelled rather than mispredicted - fix the "
                               "label and retrain. Double-click to open.").pack(anchor="w", pady=(0, 6))
@@ -2051,7 +2936,7 @@ class TrainTab:
                         lab.configure(image=im)
                 kind = "missed" if x["kind"] == "false_neg" else "false alarm"
                 ctk.CTkLabel(card, text=f"{kind}\n{x['defect']} {x['prob']}",
-                             font=("Segoe UI", 9),
+                             font=("Segoe UI", 12),
                              text_color=BAD if x["kind"] == "false_neg" else WARN).pack(pady=(2, 5))
                 for w in (card, lab):
                     w.bind("<Double-Button-1>",
@@ -2179,7 +3064,7 @@ class LiveTab:
         self.grid = ctk.CTkFrame(left, fg_color=VIDEO_BG, corner_radius=8)
         self.grid.pack(fill="both", expand=True)
         self.idle = ctk.CTkLabel(self.grid, text="Cameras stopped.\nTick a source and press Start.",
-                                 text_color="#94a3b8")
+                                 text_color=OFF)
         self.idle.pack(expand=True)
 
         # Real-time performance, §2.6. One row per running camera plus the
@@ -2187,7 +3072,7 @@ class LiveTab:
         mon = ctk.CTkFrame(left, fg_color=PANEL)
         mon.pack(fill="x", pady=(8, 0))
         ctk.CTkLabel(mon, text="REAL-TIME PERFORMANCE", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=(8, 2))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=12, pady=(8, 2))
         self.perf = ctk.CTkFrame(mon, fg_color="transparent")
         self.perf.pack(fill="x", padx=12, pady=(0, 10))
         self.sysline = ctk.CTkLabel(mon, text="", text_color=DIM, font=MONO, anchor="w")
@@ -2200,9 +3085,9 @@ class LiveTab:
         src = ctk.CTkFrame(right, fg_color=PANEL)
         src.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(src, text="CAMERAS", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=(12, 2))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=12, pady=(12, 2))
         ctk.CTkLabel(src, text="Tick every camera that watches this bottle.",
-                     text_color=DIM, font=("Segoe UI", 11), wraplength=300,
+                     text_color=DIM, font=("Segoe UI", 13), wraplength=300,
                      justify="left").pack(anchor="w", padx=12)
         self.srcbox = ctk.CTkFrame(src, fg_color="transparent")
         self.srcbox.pack(fill="x", padx=12, pady=(6, 10))
@@ -2210,7 +3095,7 @@ class LiveTab:
         cap = ctk.CTkFrame(right, fg_color=PANEL)
         cap.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(cap, text="SNAPSHOT INTO A LABEL", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
         self.snapfrom = ctk.CTkOptionMenu(cap, values=["-"], width=300)
         self.snapfrom.pack(padx=12, pady=(0, 6))
         self.capbox = ctk.CTkFrame(cap, fg_color="transparent")
@@ -2218,7 +3103,7 @@ class LiveTab:
         ctk.CTkButton(cap, text="Capture frame", fg_color=ACC, text_color=ACC_T,
                       hover_color=ACC_H, command=self.capture).pack(fill="x", padx=12, pady=(8, 4))
         ctk.CTkLabel(cap, text="Tick nothing to capture a good bottle.", text_color=DIM,
-                     font=("Segoe UI", 11)).pack(anchor="w", padx=12, pady=(0, 6))
+                     font=("Segoe UI", 13)).pack(anchor="w", padx=12, pady=(0, 6))
 
         # A capture goes straight into training, so what was actually saved has
         # to be visible. A mis-aimed camera otherwise adds confident garbage to
@@ -2231,7 +3116,7 @@ class LiveTab:
         side = ctk.CTkFrame(self.shot, fg_color="transparent")
         side.pack(side="left", fill="both", expand=True, padx=(8, 0))
         self.shot_txt = ctk.CTkLabel(side, text="", text_color=DIM, justify="left",
-                                     font=("Segoe UI", 11), wraplength=150, anchor="w")
+                                     font=("Segoe UI", 13), wraplength=150, anchor="w")
         self.shot_txt.pack(anchor="w")
         self.undo_btn = ctk.CTkButton(side, text="Undo - delete it", height=26,
                                       fg_color="transparent", border_width=1, text_color=BAD,
@@ -2240,11 +3125,11 @@ class LiveTab:
         th = ctk.CTkFrame(right, fg_color=PANEL)
         th.pack(fill="both", expand=True)
         ctk.CTkLabel(th, text="THRESHOLDS", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
         self.thbox = ctk.CTkScrollableFrame(th, fg_color="transparent")
         self.thbox.pack(fill="both", expand=True, padx=6)
         ctk.CTkLabel(th, text="Lower = catches more, fails more good bottles.",
-                     text_color=DIM, font=("Segoe UI", 11), wraplength=300,
+                     text_color=DIM, font=("Segoe UI", 13), wraplength=300,
                      justify="left").pack(anchor="w", padx=12, pady=(0, 10))
 
         self.scanned = False
@@ -2254,7 +3139,7 @@ class LiveTab:
             w.destroy()
         self.checks.clear()
         for d in self.app.defects:
-            cb = ctk.CTkCheckBox(self.capbox, text=d, font=("Segoe UI", 12))
+            cb = ctk.CTkCheckBox(self.capbox, text=d, font=("Segoe UI", 14))
             cb.pack(anchor="w", pady=1)
             self.checks[d] = cb
 
@@ -2267,8 +3152,8 @@ class LiveTab:
             box.pack(fill="x", pady=2)
             head = ctk.CTkFrame(box, fg_color="transparent")
             head.pack(fill="x")
-            ctk.CTkLabel(head, text=d, font=("Segoe UI", 11)).pack(side="left")
-            val = ctk.CTkLabel(head, text=f"{float(t.get(d, 0.5)):.2f}", font=("Segoe UI", 11, "bold"))
+            ctk.CTkLabel(head, text=d, font=("Segoe UI", 13)).pack(side="left")
+            val = ctk.CTkLabel(head, text=f"{float(t.get(d, 0.5)):.2f}", font=("Segoe UI", 13, "bold"))
             val.pack(side="right")
             s = ctk.CTkSlider(box, from_=0.05, to=1.0, number_of_steps=19,
                               command=lambda v, d=d, lab=val: self.set_thr(d, v, lab))
@@ -2315,7 +3200,7 @@ class LiveTab:
         self.picked.clear()
         for name, val in self.sources:
             k = infer.CameraSet.key(val)
-            cb = ctk.CTkCheckBox(self.srcbox, text=name, font=("Segoe UI", 12))
+            cb = ctk.CTkCheckBox(self.srcbox, text=name, font=("Segoe UI", 14))
             cb.pack(anchor="w", pady=2)
             if k in ticked:
                 cb.select()
@@ -2380,9 +3265,27 @@ class LiveTab:
             self.app.cams.start([v for _, v in chosen], None, detector)
         self.build_panes([n for n, _ in chosen])
         self.running = True
+        self._frames = {}
+        self._render_gen = getattr(self, "_render_gen", 0) + 1
+        threading.Thread(target=self._render_loop, args=(self._render_gen,), daemon=True).start()
         self.btn_start.configure(state="disabled")
         self.app.after(1200, self.check_started)
         self.tick()
+
+    def _render_loop(self, gen):
+        """Draw the annotated frames OFF the Tk thread (resize, overlay, colour convert), ~20 per second. The Tk
+        thread only wraps the finished picture, so a slow overlay can no longer freeze the window or the buttons."""
+        while self.running and gen == self._render_gen:
+            t0 = time.monotonic()
+            width = 880 if len(self.panes) <= 1 else 470
+            for cam in list(self.app.cams.running()):
+                try:
+                    f = cam.overlay_frame(width=width)
+                    if f is not None:
+                        self._frames[cam.name] = Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB))
+                except Exception:                           # noqa: BLE001 - one bad frame must not stop the view
+                    pass
+            time.sleep(max(0.005, 0.05 - (time.monotonic() - t0)))
 
     def build_detector(self):
         """The shared YOLO detector, loaded on first use. Raises detect.DetectorError if the
@@ -2412,7 +3315,9 @@ class LiveTab:
         for i, name in enumerate(names):
             cell = ctk.CTkFrame(self.grid, fg_color="transparent")
             cell.grid(row=i // cols, column=i % cols, sticky="nsew", padx=3, pady=3)
-            lab = ctk.CTkLabel(cell, text=name, text_color="#94a3b8")
+            # Plain tk.Label + PhotoImage: a CTkLabel re-wraps and re-scales its CTkImage on every configure(), which at
+            # 20 frames/s per camera was most of the Live tab's main-thread time.
+            lab = tk.Label(cell, text=name, fg=OFF, bg=VIDEO_BG, compound="center", bd=0, font=theme.BODY)
             lab.pack(fill="both", expand=True)
             self.panes[name] = lab
         for c in range(cols):
@@ -2437,27 +3342,26 @@ class LiveTab:
             w.destroy()
         self.panes.clear()
         self.idle = ctk.CTkLabel(self.grid, text="Cameras stopped.\nTick a source and press Start.",
-                                 text_color="#94a3b8")
+                                 text_color=OFF)
         self.idle.pack(expand=True)
         self.verdict.configure(text="")
         self.detlabel.configure(text="")
         for w in self.perf.winfo_children():
             w.destroy()
+        self._perf_names = None
 
     def tick(self):
         if not self.running:
             return
         live = self.app.cams.running()
-        width = 880 if len(self.panes) <= 1 else 470
         for cam in live:
             lab = self.panes.get(cam.name)
-            if lab is None:
+            pil = self._frames.pop(cam.name, None)
+            if lab is None or pil is None:
                 continue
-            f = cam.overlay_frame(width=width)
-            if f is not None:
-                img = bgr_to_ctk(f)
-                self._imgs[cam.name] = img       # Tk drops unreferenced images
-                lab.configure(image=img, text="")
+            img = ImageTk.PhotoImage(pil)
+            self._imgs[cam.name] = img           # Tk drops unreferenced images
+            lab.configure(image=img, text="")
 
         # Always refresh, even with no live camera: a dead camera must show FAULT,
         # not keep whatever verdict was on screen when it died.
@@ -2465,7 +3369,7 @@ class LiveTab:
         detail = "; ".join(f"{k}: {', '.join(v)}" for k, v in by_cam.items())
         self.verdict.configure(
             text=state if state == infer.PASS else f"{state} — {detail}",
-            text_color={infer.PASS: ACC, infer.REJECT: BAD}.get(state, WARN))
+            text_color={infer.PASS: GOOD, infer.REJECT: BAD}.get(state, WARN))
         parts = []
         for cam in live:
             i = cam.inspection()
@@ -2485,26 +3389,39 @@ class LiveTab:
             return
         self._perf_t = now
         rows = self.app.cams.stats()
-        for w in self.perf.winfo_children():
-            w.destroy()
-        hdr = ("CAMERA", "FPS", "READ ms", "INFER ms", "LATENCY ms", "UNSCORED", "SCORED")
-        head = ctk.CTkFrame(self.perf, fg_color="transparent")
-        head.pack(fill="x")
-        for t in hdr:
-            ctk.CTkLabel(head, text=t, width=110, anchor="w", text_color=DIM,
-                         font=("Segoe UI", 10, "bold")).pack(side="left")
-        for s in rows:
-            row = ctk.CTkFrame(self.perf, fg_color="transparent")
-            row.pack(fill="x")
+        # The table is built once per set of cameras and then only its text changes: destroying and recreating
+        # ~15 CTk widgets every refresh was a visible stall on every update.
+        names = tuple(s["name"] for s in rows)
+        if names != getattr(self, "_perf_names", None):
+            self._perf_names = names
+            for w in self.perf.winfo_children():
+                w.destroy()
+            hdr = ("CAMERA", "FPS", "READ ms", "INFER ms", "LATENCY ms", "UNSCORED", "SCORED")
+            head = ctk.CTkFrame(self.perf, fg_color="transparent")
+            head.pack(fill="x")
+            for t in hdr:
+                ctk.CTkLabel(head, text=t, width=120, anchor="w", text_color=DIM,
+                             font=("Segoe UI", 14, "bold")).pack(side="left")
+            self._perf_cells = []
+            for _ in rows:
+                row = ctk.CTkFrame(self.perf, fg_color="transparent")
+                row.pack(fill="x")
+                self._perf_cells.append([ctk.CTkLabel(row, text="", width=120, anchor="w", font=MONO)
+                                         for _ in hdr])
+                for c in self._perf_cells[-1]:
+                    c.pack(side="left")
+        for s, cells in zip(rows, self._perf_cells):
             # A high unscored share means bottles can pass the camera without
             # the model ever looking at one of their frames.
             drop_col = BAD if s["drop_pct"] > 50 else WARN if s["drop_pct"] > 20 else DIM
-            for txt, col in ((s["name"], INK), (s["fps"], INK), (s["read_ms"], DIM),
-                             (s["infer_ms"], INK), (s["latency_ms"], DIM),
-                             (f"{s['dropped']} ({s['drop_pct']}%)", drop_col),
-                             (s["scored"], DIM)):
-                ctk.CTkLabel(row, text=str(txt), width=110, anchor="w",
-                             text_color=col, font=MONO).pack(side="left")
+            for c, (txt, col) in zip(cells, ((s["name"], INK), (s["fps"], INK), (s["read_ms"], DIM),
+                                             (s["infer_ms"], INK), (s["latency_ms"], DIM),
+                                             (f"{s['dropped']} ({s['drop_pct']}%)", drop_col),
+                                             (s["scored"], DIM))):
+                c.configure(text=str(txt), text_color=col)
+        if now - getattr(self, "_sys_t", 0.0) < 1.0:       # CPU/RAM/GPU counters once a second is plenty
+            return
+        self._sys_t = now
         st = bench.system_stats()
         bits = []
         if st["cpu_sys"] is not None:
@@ -2568,8 +3485,8 @@ class DataTab:
         roi = ctk.CTkFrame(left, fg_color=PANEL)
         roi.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(roi, text="CROP REGION (ROI)", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=14, pady=(12, 4))
-        ctk.CTkLabel(roi, wraplength=760, justify="left", text_color=DIM,
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(roi, wraplength=700, justify="left", text_color=DIM,
                      text="Everything outside this box is thrown away before training: it removes "
                           "the empty background and normalises bottle scale. Leave generous margin "
                           "so a skewed bottle still fits. The box is stored with the frame size it "
@@ -2597,8 +3514,8 @@ class DataTab:
         dup = ctk.CTkFrame(left, fg_color=PANEL)
         dup.pack(fill="x")
         ctk.CTkLabel(dup, text="NEAR-DUPLICATE FRAMES", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=14, pady=(12, 4))
-        ctk.CTkLabel(dup, wraplength=760, justify="left", text_color=DIM,
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(dup, wraplength=700, justify="left", text_color=DIM,
                      text="Consecutive captures of the same bottle. 300 images of 12 bottles is 12 "
                           "bottles' worth of information - usually the real ceiling on accuracy, "
                           "not the model or the epoch count."
@@ -2611,7 +3528,7 @@ class DataTab:
         right.pack(side="right", fill="y")
         right.pack_propagate(False)
         ctk.CTkLabel(right, text="DATASET", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=14, pady=(14, 6))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=14, pady=(14, 6))
         self.health = ctk.CTkFrame(right, fg_color="transparent")
         self.health.pack(fill="x", padx=14)
 
@@ -2641,7 +3558,7 @@ class DataTab:
             row.pack(fill="x", pady=2)
             ctk.CTkLabel(row, text=name, anchor="w").pack(side="left")
             ctk.CTkLabel(row, text=str(val), text_color=col,
-                         font=("Segoe UI", 12, "bold")).pack(side="right")
+                         font=("Segoe UI", 14, "bold")).pack(side="right")
 
     def save_roi(self):
         try:
@@ -2767,9 +3684,9 @@ class AnalysisTab:
                                     "improve. This is where that shows up.")
 
         ctk.CTkLabel(body, text="MODEL COMPARISON", text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(8, 2))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(8, 2))
         self.cmp_note = ctk.CTkLabel(
-            body, text_color=DIM, justify="left", wraplength=980,
+            body, text_color=DIM, justify="left", wraplength=700,
             text="STORED F1 is each model's own validation run, measured against the labels as "
                  "they stood that day - after any relabelling those numbers are no longer "
                  "comparable. TODAY F1 re-scores each model against current labels, on the exact "
@@ -2909,7 +3826,7 @@ class AnalysisTab:
         hdr.pack(fill="x")
         for t, w in cols:
             ctk.CTkLabel(hdr, text=t, width=w, anchor="w", text_color=DIM,
-                         font=("Segoe UI", 10, "bold")).pack(side="left")
+                         font=("Segoe UI", 12, "bold")).pack(side="left")
         active = self.app.cfg.get("active_model")
         best = max((r.get("macro_f1", 0) for r in retested.values()), default=None)
         for s in stamps:
@@ -2921,7 +3838,7 @@ class AnalysisTab:
                 except Exception:
                     m = {}
             r = retested.get(s, {})
-            row = ctk.CTkFrame(self.cmp, fg_color=BG if s != active else "#e3ecfb")
+            row = ctk.CTkFrame(self.cmp, fg_color=BG if s != active else ACC_SOFT)
             row.pack(fill="x", pady=1)
             worst, wr = "-", None
             src = r.get("per_defect") or m.get("per_defect") or {}
@@ -2995,7 +3912,7 @@ class BenchTab:
         self.ctl_msg = ctk.CTkLabel(lock, text="", font=MONO, text_color=DIM, justify="left")
         self.ctl_msg.pack(side="left", padx=6)
 
-        ctk.CTkLabel(parent, text_color=DIM, justify="left", wraplength=1050,
+        ctk.CTkLabel(parent, text_color=DIM, justify="left", wraplength=700,
                      text="A webcam asked for 1920x1080 at 30 fps will quietly deliver 7 in poor "
                           "light, and OpenCV reports the number it was asked for. Every column "
                           "here is measured from real frames. Sharpness is the variance of the "
@@ -3005,7 +3922,7 @@ class BenchTab:
 
         self.out = ctk.CTkFrame(parent, fg_color="transparent")
         self.out.pack(fill="x")
-        self.chart = ctk.CTkCanvas(parent, height=210, bg=BG, highlightthickness=0)
+        self.chart = ctk.CTkCanvas(parent, height=210, bg=PANEL, highlightthickness=0)
         self.chart.pack(fill="x", pady=8)
         self.log = ctk.CTkTextbox(parent, height=120, font=MONO, fg_color=PANEL,
                                   text_color=INK)
@@ -3152,11 +4069,11 @@ class BenchTab:
         hdr.pack(fill="x")
         for t, w in cols:
             ctk.CTkLabel(hdr, text=t, width=w, anchor="w", text_color=DIM,
-                         font=("Segoe UI", 10, "bold")).pack(side="left")
+                         font=("Segoe UI", 12, "bold")).pack(side="left")
         best = bench.best_combo(self.rows)
         for r in self.rows:
             row = ctk.CTkFrame(self.out,
-                               fg_color="#e3ecfb" if best and r is best else BG)
+                               fg_color=ACC_SOFT if best and r is best else BG)
             row.pack(fill="x", pady=1)
             if r.get("error"):
                 ctk.CTkLabel(row, text=f"{r['requested']}   {r['error']}", anchor="w",
@@ -3206,24 +4123,33 @@ class SettingsTab:
         ctk.CTkLabel(look, text="Text and control size", anchor="w").pack(anchor="w", padx=14)
         rowf = ctk.CTkFrame(look, fg_color="transparent")
         rowf.pack(fill="x", padx=14, pady=(2, 2))
-        self.font_val = ctk.CTkLabel(rowf, text="", width=60, font=("Segoe UI", 12, "bold"))
+        self.font_val = ctk.CTkLabel(rowf, text="", width=60, font=("Segoe UI", 14, "bold"))
         self.font_val.pack(side="right")
         self.font = ctk.CTkSlider(rowf, from_=0.8, to=1.6, number_of_steps=16,
-                                  command=self.set_font)
+                                  command=self.preview_font)
         self.font.set(float(app.settings.get("font_scale", 1.0)))
         self.font.pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(look, text_color=DIM, justify="left", wraplength=760,
+        # Rescaling every widget is slow, so it happens once, when the slider is let go -- not on every step of a drag
+        self.font.bind("<ButtonRelease-1>", lambda e: self.app.after(30, lambda: self.set_font(self.font.get())))
+        ctk.CTkLabel(look, text_color=DIM, justify="left", wraplength=700,
                      text="Scales every control with the text, so buttons grow with their labels "
-                          "instead of clipping them. Applies immediately and is remembered."
+                          "instead of clipping them. Saved when you let go of the slider; applied the next time the app starts."
                      ).pack(anchor="w", padx=14, pady=(0, 4))
         quick = ctk.CTkFrame(look, fg_color="transparent")
         quick.pack(anchor="w", padx=14, pady=(0, 12))
+        self.restart_btn = ctk.CTkButton(quick, text="Restart now", width=110, fg_color=ACC, text_color=ACC_T,
+                                         hover_color=ACC_H, state="disabled", command=self.app.restart,
+                                         text_color_disabled=DIM)
+        self.restart_btn.configure(fg_color=PANEL_2)
+        self.restart_note = ctk.CTkLabel(quick, text="In use now.", text_color=DIM)
         for lab, v in (("Small", 0.9), ("Normal", 1.0), ("Large", 1.2), ("Very large", 1.45)):
             ctk.CTkButton(quick, text=lab, width=90, fg_color="transparent", border_width=1, text_color=ACC,
-                          command=lambda v=v: (self.font.set(v), self.set_font(v))
+                          command=lambda v=v: self.set_font(v)
                           ).pack(side="left", padx=(0, 6))
-        ctk.CTkLabel(look, text_color=DIM, justify="left", wraplength=760,
-                     text="Theme: white and blue. Red, amber and green are kept only where they "
+        self.restart_btn.pack(side="left", padx=(14, 8))
+        self.restart_note.pack(side="left")
+        ctk.CTkLabel(look, text_color=DIM, justify="left", wraplength=700,
+                     text="Theme: dark industrial. Red, amber and green are kept only where they "
                           "carry meaning - a reject an operator reads across a room, a warning, a "
                           "passing recall - so the theme cannot make a reject look like a pass."
                      ).pack(anchor="w", padx=14, pady=(0, 12))
@@ -3264,7 +4190,7 @@ class SettingsTab:
         f = ctk.CTkFrame(parent, fg_color=PANEL)
         f.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(f, text=title, text_color=DIM,
-                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
+                     font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
         return f
 
     def _number(self, parent, label, value, note):
@@ -3274,8 +4200,8 @@ class SettingsTab:
         e = ctk.CTkEntry(row, width=90)
         e.insert(0, str(value))
         e.pack(side="left")
-        ctk.CTkLabel(parent, text=note, text_color=DIM, font=("Segoe UI", 10),
-                     wraplength=760, justify="left").pack(anchor="w", padx=14, pady=(0, 10))
+        ctk.CTkLabel(parent, text=note, text_color=DIM, font=("Segoe UI", 12),
+                     wraplength=700, justify="left").pack(anchor="w", padx=14, pady=(0, 10))
         return e
 
     def refresh(self):
@@ -3287,9 +4213,24 @@ class SettingsTab:
                  f"models     {D.MODELS}\n"
                  f"settings   {D.SETTINGS_JSON}")
 
-    def set_font(self, v):
+    def preview_font(self, v):
         self.font_val.configure(text=f"{float(v):.2f}x")
-        self.app.apply_font_scale(float(v))
+
+    def set_font(self, v):
+        """Save the text size; it takes effect at the next start. Re-scaling every widget in a running window means
+        redrawing ~3,000 of them (20+ s on this PC, during which the app looked frozen), so it is done once, at
+        start-up, when none exist yet."""
+        v = round(max(0.7, min(1.8, float(v))), 2)
+        self.font.set(v)
+        pending = abs(v - self.app.applied_scale) > 1e-6
+        self.font_val.configure(text=f"{v:.2f}x")
+        self.restart_note.configure(text="Saved. Press Restart now to apply." if pending else "In use now.",
+                                    text_color=WARN if pending else DIM)
+        self.restart_btn.configure(state="normal" if pending else "disabled", fg_color=ACC if pending else PANEL_2,
+                                   text_color=ACC_T if pending else DIM)
+        if abs(v - float(self.app.settings.get("font_scale", 1.0))) > 1e-6:
+            self.app.settings["font_scale"] = v
+            D.save_settings(self.app.settings)
 
     def save(self):
         s = self.app.settings
@@ -3318,6 +4259,135 @@ class SettingsTab:
             widget.delete(0, "end")
             widget.insert(0, str(D.DEFAULT_SETTINGS[key]))
         self.saved.configure(text="Reset.")
+
+
+def _selftest_label(app):
+    """The Label workflow end to end -- keys, inspector, trash + undo, AI accept, folder import -- on a
+    throwaway project in a temp folder. The real project's files, labels.csv and active.txt are untouched."""
+    import tempfile
+
+    class _Key:
+        def __init__(self, keysym, state=0):
+            self.keysym, self.state, self.widget = keysym, state, app
+
+    def drain(sec=20.0):
+        t = time.monotonic()
+        while time.monotonic() - t < sec:
+            app.update()
+            if lt._pending == 0 and app.q.empty():
+                return
+            time.sleep(0.02)
+        raise AssertionError("label edits never finished")
+
+    lt = app.tab_label
+    real = (D.PROJECTS, D.ACTIVE_TXT, D.PROJECT)
+    blank = np.full((60, 30, 3), 90, np.uint8)
+    td = tempfile.mkdtemp()
+    try:
+        D.PROJECTS = Path(td) / "projects"
+        D.ACTIVE_TXT = D.PROJECTS / "active.txt"
+        name = D.create_project("Selftest product")
+        for rel in ("+ve/g1.jpg", "+ve/g2.jpg", "-ve/Dent/d1.jpg", "-ve/Scratch/s1.jpg", "_inbox/n1.jpg",
+                    "_inbox/n2.jpg"):
+            f = D.PROJECTS / name / "images" / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            cv2.imencode(".jpg", blank)[1].tofile(str(f))
+        app.open_project(name)
+        app.tabs.set("Label")
+        lt.filter_to("All images")
+        app.update()
+        assert app.defects == ["dent", "scratch"] and len(lt.items) == 6, (app.defects, lt.items)
+        assert sum(len(r.winfo_children()) for r in lt.strip.winfo_children()) >= 6, "balance strip not drawn"
+
+        # 1-9 TOGGLE: the first press sets, the second clears (the old tab could only ever set)
+        g1 = "+ve/g1.jpg"
+        lt.sel = {g1}
+        lt.on_key(_Key("1"))
+        drain()
+        assert app.labels[g1]["dent"] == 1, "key 1 did not set the defect"
+        lt.sel = {g1}
+        lt.on_key(_Key("1"))
+        drain()
+        assert app.labels[g1]["dent"] == 0, "key 1 did not toggle the defect off"
+        assert [r["action"] for r in D.read_log()][-2:] == ["set dent", "clear dent"], D.read_log()
+
+        # a filter change drops the selection; an off-page selection is reported
+        lt.sel = {g1}
+        lt.filter_to("Inbox - not reviewed")
+        assert not lt.sel, "selection survived a filter change"
+        lt.sel = {g1}
+        lt.update_sel()
+        assert "not on this page" in lt.selinfo.cget("text")
+        lt.clear_sel()
+
+        # inspector: review the inbox, label by key, auto-advance to the next image
+        lt.inspect(lt.items[0])
+        assert lt.inspecting and lt.current == "_inbox/n1.jpg" and lt.sel == {"_inbox/n1.jpg"}
+        lt.on_key(_Key("2"))
+        drain()
+        assert app.labels["_inbox/n1.jpg"]["scratch"] == 1 and app.labels["_inbox/n1.jpg"]["reviewed"] == 1
+        assert lt.i_checks["scratch"].get() == 1, "inspector checkbox does not follow the label"
+        lt.on_key(_Key("g"))                          # GOOD + auto-advance
+        drain()
+        assert app.labels["_inbox/n1.jpg"]["scratch"] == 0
+        lt.step(1)
+        lt.step(-1)
+        lt.toggle_inspector()
+        assert not lt.inspecting
+
+        # AI suggestion: shown, never training data until accepted
+        D.save_suggestions({"model": "fake", "time": "t", "items": {"_inbox/n2.jpg": {"dent": 0.99, "scratch": 0.01}}})
+        lt.refresh()
+        lt.filter_to("AI suggested - not reviewed")
+        assert lt.items == ["_inbox/n2.jpg"], lt.items
+        assert app.labels["_inbox/n2.jpg"]["reviewed"] == 0
+        assert lt.suggestion("_inbox/n2.jpg") == (["dent"], 0.99, True)
+        lt.sel = {"_inbox/n2.jpg"}
+        lt.on_key(_Key("Return"))
+        drain()
+        row = app.labels["_inbox/n2.jpg"]
+        assert row["dent"] == 1 and row["scratch"] == 0 and row["reviewed"] == 1, row
+        assert "_inbox/n2.jpg" not in D.load_suggestions()["items"]
+
+        # delete goes to the trash; Ctrl+Z brings back the file AND its labels
+        lt.filter_to("All images")
+        lt.sel = {"-ve/Dent/d1.jpg"}
+        lt.submit(lambda: D.delete_images(["-ve/Dent/d1.jpg"]), ["-ve/Dent/d1.jpg"])  # delete() minus the dialog
+        drain()
+        assert "-ve/Dent/d1.jpg" not in app.labels and len(lt.items) == 5
+        assert lt.btn_undo.cget("state") == "normal"
+        lt.on_key(_Key("z", state=0x0004))
+        drain()
+        assert app.labels["-ve/Dent/d1.jpg"]["dent"] == 1 and len(lt.items) == 6, "undo did not restore"
+
+        # folder import into the current product: a new class appears as a column
+        src = Path(td) / "incoming"
+        for rel in ("Crack/c1.jpg", "Crack/c2.jpg", "ok/o1.jpg"):
+            f = src / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            cv2.imencode(".jpg", blank)[1].tofile(str(f))
+        dlg = ImportDialog(app, src=str(src), modal=False)
+        assert dlg.mapping() == {"Crack": "crack", "ok": "GOOD"}, dlg.mapping()
+        dlg.where.set("cur")
+        dlg.run()
+        t = time.monotonic()
+        while dlg.win is not None and time.monotonic() - t < 20:
+            app.update()
+            time.sleep(0.02)
+        assert "crack" in app.defects and app.counts["crack"] == 2, app.counts
+        assert lt.bdefect.cget("values") and "crack" in lt.bdefect.cget("values")
+        assert (src / "Crack/c1.jpg").exists(), "import moved the source files"
+
+        # no model: AI pre-label refuses instead of failing
+        app.cfg.pop("active_model", None)
+        assert lt.btn_ai.cget("state") == "normal"
+    finally:
+        D.PROJECTS, D.ACTIVE_TXT = real[0], real[1]
+        if lt.inspecting:
+            lt.toggle_inspector()
+        app.open_project(real[2])
+        shutil.rmtree(td, ignore_errors=True)
+    assert D.PROJECT == real[2] and D.ACTIVE_TXT.read_text(encoding="utf-8").strip() == real[2]
 
 
 def selftest():
@@ -3352,6 +4422,10 @@ def selftest():
     assert D.PROJECT, "no project bound"
     assert app.project.get() == D.project_title(D.PROJECT)
     assert app.tab_defects.upload and app.tab_label.delete   # wired, not just drawn
+    assert app.tabs.get() == App.TABS[-1] and set(app.tabs.pages) == set(App.TABS)
+    app.update_lamps()
+    assert app.lamps["PLC"].val.cget("text") and app.lamps["MODEL"].val.cget("text")
+    _selftest_label(app)
 
     # Analysis must survive both having a model and having none, and must draw
     # curves for a checkpoint saved before curves were ever recorded.
@@ -3367,11 +4441,18 @@ def selftest():
     an.metrics = None
     an.draw()
 
-    # Font scaling is one knob and must survive being pushed to both ends.
+    # Font scaling is one knob and must survive being pushed to both ends -- with a scrollable page ON SCREEN
+    # (the Label grid): that combination once recursed CTkScrollbar.set <-> update_idletasks until the window froze.
     before = float(app.settings.get("font_scale", 1.0))
+    app.tabs.set("Label")
+    app.update()
+    t_font = time.monotonic()
     for v in (0.8, 1.6, before):
         app.tab_settings.set_font(v)
         app.update()
+        assert abs(float(app.settings["font_scale"]) - v) < 1e-6, "text size was not saved"
+    assert time.monotonic() - t_font < 5, "changing the text size must not rescale the live window"
+    assert app.tab_settings.restart_btn.cget("state") == "disabled"      # back on the size in use
     assert abs(float(app.settings["font_scale"]) - before) < 1e-6
 
     # Multi-camera panes: build for two sources without opening any device.

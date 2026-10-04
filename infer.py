@@ -14,17 +14,18 @@ import torch
 
 import dataset as D
 import detect
+import theme
 
 _MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 _STD = np.array([0.229, 0.224, 0.225], np.float32)
 
-# Overlay colours, BGR, matching the dashboard theme. PASS is the theme blue.
-# REJECT stays red rather than a second blue: it is the one thing an operator
-# reads across a noisy room at a glance, and a colour scheme is not a reason to
-# make a reject look like a pass.
-C_PASS = (216, 78, 29)             # #1d4ed8
-C_FAIL = (28, 28, 185)             # #b91c1c
-C_FAULT = (9, 83, 180)             # #b45309 amber: "not inspected", distinct from both
+# Overlay colours, BGR, from theme.py: the same green / red / amber that mean
+# PASS / REJECT / FAULT everywhere else in the app. REJECT is the one thing an
+# operator reads across a noisy room at a glance; FAULT ("not inspected") is
+# distinct from both.
+C_PASS = theme.bgr(theme.PASS)
+C_FAIL = theme.bgr(theme.REJECT)
+C_FAULT = theme.bgr(theme.FAULT)
 # component boxes (BGR): bottle, cap, label -- functional, not a design decision
 C_BOX = {"bottle": (230, 160, 40), "cap": (60, 200, 60), "label": (40, 200, 230)}
 C_TEXT = (255, 255, 255)
@@ -551,6 +552,15 @@ class Camera:
             if stop is self._stop:
                 self._invalidate()
 
+    def _infer_guard(self, stop):
+        """Thread entry for _infer_loop. If scoring dies for any reason the scores are dropped (the camera goes
+        FAULT on 'stale score'), never left standing as a last good PASS."""
+        try:
+            self._infer_loop(stop)
+        except Exception as e:                           # noqa: BLE001 - last line of defence
+            if stop is self._stop:
+                self._invalidate(f"scoring thread crashed: {type(e).__name__}: {e}")
+
     def _run(self, stop):
         src = self.source
         cap = open_capture(src, self.capture_wh, self.fourcc)
@@ -558,6 +568,7 @@ class Camera:
             self.error = f"cannot open camera source {src!r}"
             return
         self.error = None
+        threading.Thread(target=self._infer_guard, args=(stop,), daemon=True).start()
         try:
             self._grab_loop(cap, src, stop)
         finally:
@@ -570,7 +581,7 @@ class Camera:
         src_fps = cap.get(cv2.CAP_PROP_FPS) if is_file else 0
         frame_dt = 1.0 / src_fps if src_fps and src_fps > 1 else 0.0
 
-        last, n, t0 = 0.0, 0, time.time()
+        n, t0 = 0, time.time()
         while not stop.is_set():
             t_frame = time.time()
             t_read = time.perf_counter()
@@ -591,78 +602,94 @@ class Camera:
                 frame = orient(frame, self.rotate)
             seq = self.frame_seq + 1           # only the owning thread writes frame_seq
             now = time.time()
+            n += 1
+            if now - t0 >= 1.0:
+                self.fps, n, t0 = n / (now - t0), 0, now
+            # Only the frame is committed here. Scoring runs on its own thread (_infer_loop): when it ran inline
+            # the camera could not take the next frame until the model had finished with the last one, so the
+            # driver's buffer filled with old frames and the picture lagged the real bottle by seconds.
+            with self.lock:
+                self.frame, self.frame_ts, self.frame_seq = frame, t_grab, seq
+                self.frame_wh = (int(frame.shape[1]), int(frame.shape[0]))
+                self.recent.append(Frame(self.camera_id, t_grab, seq, frame))
+            if frame_dt:
+                lag = frame_dt - (time.time() - t_frame)
+                if lag > 0:
+                    stop.wait(lag)            # wait(), so Stop is still instant
+
+    def _infer_loop(self, stop):
+        """Score the NEWEST captured frame, at most ~15 Hz, on a thread of its own.
+
+        A result carries the seq and capture time of the frame it scored, exactly as before, so freshness
+        (result_ts) and the FAULT rules are unchanged. Frames that arrive while a score is running are skipped
+        (counted in `dropped`), never queued: the model always looks at the newest picture, not a backlog."""
+        last_seq, last_t = 0, 0.0
+        while not stop.is_set() and stop is self._stop:
+            with self.lock:
+                frame, fts, fseq = self.frame, self.frame_ts, self.frame_seq
             model, detector = self.model, self.detector
-            probs, hits, ok = self.probs, self.hits, self.ok
-            state, result_ts, fault = self.state, self.result_ts, self.fault
-            result_seq = self.result_seq
-            result_model, result_ms = self.result_model, self.result_infer_ms
-            det_result, det_ts, det_frame, det_fault = (self.det_result, self.det_ts,
-                                                        self.det_frame, self.det_fault)
+            if frame is None or fseq == last_seq:
+                stop.wait(0.004)
+                continue
+            gap = time.time() - last_t
+            if gap < 0.06:                               # ~15 Hz is plenty
+                stop.wait(0.06 - gap)
+                continue
+            if last_seq:
+                self.dropped += max(0, fseq - last_seq - 1)
+            last_seq, last_t = fseq, time.time()
+            with self.lock:
+                probs, hits, ok = self.probs, self.hits, self.ok
+                state, result_ts, fault = self.state, self.result_ts, self.fault
+                result_seq = self.result_seq
+                result_model, result_ms = self.result_model, self.result_infer_ms
+                det_result, det_ts, det_frame, det_fault = (self.det_result, self.det_ts,
+                                                            self.det_frame, self.det_fault)
             if model is None:
                 probs, hits, ok, state, result_ts = {}, [], False, FAULT, None
                 result_seq = result_model = result_ms = None
             if detector is None:
                 det_result = det_ts = det_frame = det_fault = None
-            if model is None and detector is None:
-                pass                                   # nothing to run
-            elif now - last > 0.06:  # ~15 Hz is plenty
-                last = now
-                if model is not None:
-                    t_inf = time.perf_counter()
-                    try:
-                        cfg = D.load_config()
-                        probs = model.predict(frame)
-                        self.infer_ms = (time.perf_counter() - t_inf) * 1000
-                        state, hits = decide(probs, cfg.get("thresholds", {}))
-                        if state == FAULT:
-                            raise ValueError("model returned no usable scores")
-                        ok, result_ts, fault = state == PASS, t_grab, None
-                        result_seq, result_ms = seq, self.infer_ms
-                        result_model = getattr(model, "stamp", None)
-                        self.scored += 1
-                    except Exception as e:                # noqa: BLE001 - must not kill the loop
-                        # Keep grabbing, but drop the scores: this frame was not inspected.
-                        probs, hits, ok, state, result_ts = {}, [], False, FAULT, None
-                        result_seq = result_model = result_ms = None
-                        fault = f"inference failed: {type(e).__name__}: {e}"
-                        self.faults += 1
-                if detector is not None:
-                    t_det = time.perf_counter()
-                    try:
-                        det_result = detector.detect(frame, camera_id=self.camera_id,
-                                                     frame_seq=seq, frame_ts=t_grab)
-                        self.det_ms = (time.perf_counter() - t_det) * 1000
-                        det_ts, det_frame, det_fault = t_grab, frame, None
-                    except Exception as e:                # noqa: BLE001 - must not kill the loop
-                        det_result = det_ts = det_frame = None
-                        det_fault = f"detection failed: {type(e).__name__}: {e}"
-                        self.det_faults += 1
-            else:
-                # A frame arrived that inference did not look at. Not a fault --
-                # it is how the pipeline sheds load instead of building a lag --
-                # but it is the number that says whether a bottle could pass by
-                # unscored, so it has to be counted rather than quietly skipped.
-                # result_ts stays at the last scored frame, so a long run of
-                # these ages the score out into FAULT rather than renewing it.
-                self.dropped += 1
-            self.latency_ms = (time.time() - t_frame) * 1000
-            n += 1
-            if now - t0 >= 1.0:
-                self.fps, n, t0 = n / (now - t0), 0, now
+            if model is not None:
+                t_inf = time.perf_counter()
+                try:
+                    cfg = D.load_config()
+                    probs = model.predict(frame)
+                    self.infer_ms = (time.perf_counter() - t_inf) * 1000
+                    state, hits = decide(probs, cfg.get("thresholds", {}))
+                    if state == FAULT:
+                        raise ValueError("model returned no usable scores")
+                    ok, result_ts, fault = state == PASS, fts, None
+                    result_seq, result_ms = fseq, self.infer_ms
+                    result_model = getattr(model, "stamp", None)
+                    self.scored += 1
+                except Exception as e:                    # noqa: BLE001 - must not kill the loop
+                    # Keep grabbing, but drop the scores: this frame was not inspected.
+                    probs, hits, ok, state, result_ts = {}, [], False, FAULT, None
+                    result_seq = result_model = result_ms = None
+                    fault = f"inference failed: {type(e).__name__}: {e}"
+                    self.faults += 1
+            if detector is not None:
+                t_det = time.perf_counter()
+                try:
+                    det_result = detector.detect(frame, camera_id=self.camera_id,
+                                                 frame_seq=fseq, frame_ts=fts)
+                    self.det_ms = (time.perf_counter() - t_det) * 1000
+                    det_ts, det_frame, det_fault = fts, frame, None
+                except Exception as e:                    # noqa: BLE001 - must not kill the loop
+                    det_result = det_ts = det_frame = None
+                    det_fault = f"detection failed: {type(e).__name__}: {e}"
+                    self.det_faults += 1
+            if stop.is_set() or stop is not self._stop:
+                return                                    # the camera was stopped or restarted while scoring
             with self.lock:
-                self.frame, self.frame_ts, self.frame_seq = frame, t_grab, seq
-                self.frame_wh = (int(frame.shape[1]), int(frame.shape[0]))
-                self.recent.append(Frame(self.camera_id, t_grab, seq, frame))
                 self.result_seq = result_seq
                 self.result_model, self.result_infer_ms = result_model, result_ms
                 self.probs, self.hits, self.ok = probs, hits, ok
                 self.state, self.result_ts, self.fault = state, result_ts, fault
                 self.det_result, self.det_ts = det_result, det_ts
                 self.det_frame, self.det_fault = det_frame, det_fault
-            if frame_dt:
-                lag = frame_dt - (time.time() - t_frame)
-                if lag > 0:
-                    stop.wait(lag)            # wait(), so Stop is still instant
+            self.latency_ms = (time.monotonic() - fts) * 1000    # capture -> result
 
     def snapshot(self) -> np.ndarray | None:
         with self.lock:
