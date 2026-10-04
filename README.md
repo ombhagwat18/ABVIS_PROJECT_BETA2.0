@@ -13,7 +13,7 @@ application: **250 ml Bisleri bottle inspection on a conveyor**.
 | **Application** | Python desktop app (Tk / CustomTkinter, OpenCV, PyTorch) |
 | **Detector** | YOLOv8n: **training complete** (test-evaluated). **Runtime integration: current development** - opt-in in the Live tab, finds component boxes only |
 | **Hardware validation** | None |
-| **Docs** | [`docs/roadmap/`](docs/roadmap/README.md) |
+| **Docs** | [`docs/`](docs/README.md) |
 
 ## Contents
 
@@ -78,7 +78,7 @@ dashboard, security, OCR, active learning, ...) is planned but **deliberately de
 **First complete machine cycle**: a bottle is sensed, inspected, given a PASS / REJECT / FAULT, the PLC receives
 the correct result in time, and the correct bottle is physically rejected. YOLO runtime integration is the
 **current development** step; the phase after it is **inspection window / per-bottle association** (not PLC).
-See [IMPLEMENTATION_PLAN](docs/roadmap/IMPLEMENTATION_PLAN.md).
+See [PROGRESS_PLAN](docs/roadmap/PROGRESS_PLAN.md).
 
 ## Architecture
 
@@ -226,7 +226,7 @@ cylinder with a 5/2 solenoid valve, controlled LED lighting, an inspection enclo
 | 8 | Physical validation |
 | 9 | Industrial platform enhancements (recipes, database, dashboard, security, ...) |
 
-Details: [IMPLEMENTATION_PLAN](docs/roadmap/IMPLEMENTATION_PLAN.md). Deferred features (SQLite, dashboard,
+Details: [PROGRESS_PLAN](docs/roadmap/PROGRESS_PLAN.md). Deferred features (SQLite, dashboard,
 login, OCR/barcode, auto annotation, active learning, anomaly detection, reports, ...):
 [FUTURE_ENHANCEMENTS](docs/roadmap/FUTURE_ENHANCEMENTS.md). They are postponed, not abandoned.
 
@@ -240,10 +240,11 @@ infer.py                cameras, model, PASS/REJECT/FAULT, frame metadata, optio
 detect.py               YOLOv8n component detector runtime (Detection / DetectionResult contract)
 inspection_trace.py     InspectionRecord + TraceStore (in-memory)
 annotate.py             annotation data layer + YOLO export
+autoannotate.py         model box proposals (accept/reject, active-learning order)
 annotation_studio.py    Annotate tab (boxes/polygons)
 bench.py, calibrate.py, charts.py, migrate.py   benchmarking, ROI calibration, charts, layout migration
 yolo_stage2_train.py    Stage 2 YOLOv8 training / evaluation / benchmark
-yolo_train.py           older synthetic YOLO smoke test (not the real training)
+legacy/yolo_train_smoke_test.py  older synthetic YOLO smoke test (not the real training)
 stage2_dataset/         Stage 2 scripts, annotations.json, split.json, manifests, reports, data.yaml
                         (images + generated export are NOT in Git)
 models/stage2_yolo/     MODEL_PROVENANCE.json, training_metadata.json, results, curves (weights NOT in Git)
@@ -252,7 +253,7 @@ plc file/               PLC simulator script + ISPSoft project (ladder unreadabl
 docs/roadmap/         project documentation
 FINAL_YEAR_BLACKBOOK/   project write-up
 docs/, docs/design/PLAN.md          original design docs (historical)
-app.py, index.html      earlier web version - unused (nothing imports or launches them)
+legacy/web_dashboard/  earlier web version (app.py, index.html) - unused, kept for reference
 ```
 
 ## Setup and run
@@ -314,12 +315,12 @@ Stage 2 export validation: `stage2_dataset/validate_yolo_export.py` (19 checks; 
 
 | | |
 |---|---|
-| [docs/roadmap/README.md](docs/roadmap/README.md) | Index |
+| [docs/README.md](docs/README.md) | Index |
 | [CURRENT_SYSTEM](docs/roadmap/CURRENT_SYSTEM.md) | What exists |
 | [CURRENT_SCOPE](docs/roadmap/CURRENT_SCOPE.md) | What is in scope now |
 | [FUTURE_ENHANCEMENTS](docs/roadmap/FUTURE_ENHANCEMENTS.md) | What is deferred |
 | [INDUSTRIAL_ARCHITECTURE](docs/roadmap/INDUSTRIAL_ARCHITECTURE.md) | Target architecture |
-| [IMPLEMENTATION_PLAN](docs/roadmap/IMPLEMENTATION_PLAN.md) | Phased plan |
+| [PROGRESS_PLAN](docs/roadmap/PROGRESS_PLAN.md) | Phased plan |
 | [FEATURE_STATUS](docs/roadmap/FEATURE_STATUS.md) | Per-feature status |
 | [HARDWARE_INTEGRATION](docs/hardware/HARDWARE_INTEGRATION.md) | Hardware, timing, unknowns |
 | [TRACEABILITY_PLAN](docs/roadmap/TRACEABILITY_PLAN.md) | Records today and later |

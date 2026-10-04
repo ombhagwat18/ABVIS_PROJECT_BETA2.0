@@ -1,7 +1,7 @@
 # Multi-project inspection trainer — design
 
 **Date:** 2026-08-09
-**Diagram:** `pipeline.drawio`
+**Diagram:** `docs/design/diagrams/pipeline.drawio`
 
 ## Goal
 

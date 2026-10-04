@@ -60,8 +60,7 @@ folder structure — clearly marked where content is not yet available):
 - `07_Current_System_Implementation/CURRENT_SYSTEM_IMPLEMENTATION.md`
 - `08_Experimental_Results/RESULTS_SUMMARY.md`
 - `11_Figures_and_Graphs/README.md` + 7 PNG charts
-- `12_Tables/README.md` + table documents
-- `13_Screenshots/README.md` (placeholder)
+- `12_Tables/` table documents
 
 ## Source of truth for all numbers
 

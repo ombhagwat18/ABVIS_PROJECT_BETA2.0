@@ -41,4 +41,4 @@ monitoring, and inspection traceability. See
 ## Screenshots
 
 Application screenshots have not yet been captured for this documentation
-package — see `13_Screenshots/README.md`.
+package — screenshots still to be captured (Label, Train, Analysis, Live, Production tabs).

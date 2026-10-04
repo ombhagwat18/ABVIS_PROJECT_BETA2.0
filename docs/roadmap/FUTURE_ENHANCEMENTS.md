@@ -63,4 +63,4 @@ work, and because several of them (history, reports, recipes) are only meaningfu
 
 The same rule applies to every item: *prove the minimum machine first*. Each deferred feature is listed in
 [FEATURE_STATUS.md](FEATURE_STATUS.md) with status `DEFERRED` or `FUTURE`, and Phase 9 of
-[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) is where they re-enter.
+[PROGRESS_PLAN.md](PROGRESS_PLAN.md) is where they re-enter.
