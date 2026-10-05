@@ -1,65 +1,32 @@
-# Traceability Plan
+# Traceability
 
-Traceability today means **software-level inspection records**. It is a data contract and an in-memory store,
-not a production traceability system. No database is planned until the machine cycle works.
+*Status 2026-10-06.* The production record is **persistent and implemented** (software-tested; not yet run on the machine).
 
-## 1. Current: `InspectionRecord` and `TraceStore` (`inspection_trace.py`)
+## 1. What is recorded today
 
-`InspectionRecord.from_inspection(camera.inspection())` builds a frozen record. `TraceStore` is a bounded
-(default 1000), thread-safe, newest-first in-memory history. The trace layer **records** what the camera
-concluded; it never decides PASS/REJECT/FAULT.
-
-### Fields and whether they are populated today
-
-| Field | Meaning | Today |
+| Where | What | Code |
 |---|---|---|
-| `inspection_id` | `<run_id>-<camera_id>-<session>-<seq>` for PASS/REJECT (the scored frame); `...-F<n>` for FAULT. Unique across camera restarts and app launches | Populated |
-| `run_id` | Random token per process launch (session/seq restart from 1 every launch) | Populated |
-| `timestamp` | Wall-clock epoch seconds, for humans/reports only, never freshness | Populated |
-| `state` | PASS / REJECT / FAULT, from `infer.py` | Populated |
-| `decision` | What is to be done with the bottle | Populated, but **always equal to `state`** -- no decision policy exists yet |
-| `camera_id` | Source id (e.g. `"0"`) | Populated |
-| `session_id` | Camera session counter (increments on each start) | Populated |
-| `frame_seq`, `frame_ts` | Newest captured frame: per-session sequence and monotonic stamp | Populated (`None` before the first frame) |
-| `result_seq`, `result_ts` | The frame that was actually scored | Populated for PASS/REJECT; `None` for FAULT |
-| `reasons` | Why FAULT (tuple) | Populated for FAULT |
-| `hits` | Defects at/above threshold | Populated for REJECT |
-| `model_id` | Checkpoint stamp that produced the score (for FAULT: the model loaded, or `None`) | Populated |
-| `processing_ms` | Inference time of the scored frame (`perf_counter`); **not** capture-to-result latency | Populated for PASS/REJECT; `None` for FAULT |
-| `project_id` | Active project slug | Populated |
-| `detector_state`, `detector_model_id`, `detector_ms`, `detections` | Optional component-detector info (OFF/OK/NO DETECTIONS/FAULT, checkpoint id, `detect()` time, boxes as original-frame pixels). Observational: never a verdict | Populated when the detector is enabled; `None`/empty otherwise |
-| `job_id` | Job/recipe id | **Placeholder -- always `None`** (no job system) |
-| `evidence_path` | Saved evidence image | **Placeholder -- always `None`** (no images are saved) |
+| `projects/<project>/production/production.db` (SQLite) | **runs** (each START: job, product, models, recipe fingerprint, SIMULATOR / REAL PLC, line settings), **inspections** (one row per bottle: result, defects, confidence, command and PLC answer, timings, per-camera frame windows, evidence path, full record as JSON), **alarms** (raise / acknowledge / clear) | `production_store.py` |
+| `projects/<project>/production/evidence/<date>/` | first frame + overlay per bottle, by the evidence policy (NONE / ALL / REJECT_ONLY / FAULT_ONLY / REJECT_AND_FAULT / SAMPLE:n) | `production_store.py` |
+| `projects/<project>/production/<date>.csv` | daily CSV (kept) | `machine_cycle.py` |
+| `logs/<channel>.log` | event logs: app, camera, ai, plc, machine, alarm, production | `applog.py` |
+| `models/deployments.jsonl`, `models/model_status.json` | model activation history, who validated / approved what and why | `model_registry.py` |
+| `models/stage2_yolo/MODEL_PROVENANCE.json` + candidate records | dataset -> annotations -> split -> export -> training -> checkpoint (sha256) -> test | `yolo_stage2_train.py`, `model_bench.py` |
+| `projects/<project>/label_log.csv` | every label edit, reversible | `dataset.py` |
 
-Unavailable information is `None` / empty; values are never invented.
+Every bottle can be traced to the run (job, product), the models and recipe version, the PLC mode, and the picture.
+Read and export it on the **Database** page: [DATABASE](../guides/DATABASE.md).
 
-### Limits of the current implementation
+## 2. Older in-memory trace (`inspection_trace.py`)
 
-- **In-memory only:** nothing survives a restart; evicted records are gone (`TraceStore.evicted` counts them).
-- **No persistence, no database, no evidence images, no production history, no counters, no reports.**
-- **Not wired into the application:** the GUI does not create records yet. A producer must record each new
-  `result_seq` exactly once -- the store does not deduplicate.
-- Timestamps use `time.monotonic()`, which ticks every ~15.6 ms on Windows.
-- Tested with a fake capture and model, not with the real camera or a real checkpoint end to end.
+`InspectionRecord` / `TraceStore` (bounded, thread-safe, in memory) is the earlier frame-level record. The production
+line does **not** use it; it uses `production_store`. It remains as a tested data contract.
 
-## 2. Next (small, in-memory/file level)
+## 3. Gaps (honest)
 
-- Create records from the live inspection path, once per scored result (and for FAULT transitions).
-- Associate the detector/classifier model and version (including the YOLO checkpoint checksum) with each record.
-- Evidence association: save the triggering frame for REJECT/FAULT and fill `evidence_path`.
-- Simple production counters (total / pass / reject / fault) derived from records.
-- Per-bottle inspection ids once an inspection window exists (see [PROGRESS_PLAN.md](PROGRESS_PLAN.md)).
-
-## 3. Future (deferred until the machine is proven)
-
-- Persistent storage and queryable history (SQLite is the likely choice -- **not built, deliberately**).
-- Reports, dashboards, alarm history.
-- Audit trail of configuration and model changes; traceability from a rejected bottle back to model, dataset
-  and training run.
-
-## Training-side traceability (already in place, as files)
-
-`models/stage2_yolo/MODEL_PROVENANCE.json` records the chain *dataset -> annotations -> split -> YOLO export ->
-training configuration -> checkpoint (sha256) -> validation -> test*, with hashes of `annotations.json`,
-`split.json`, `scene_map.json` and the export tree. Together with `stage2_dataset/` scripts this lets a future
-engineer answer which data produced which model and how it was evaluated.
+- No batch / lot number, operator name or shift owner in the record (job and product are typed on the Production page).
+- No audit trail of configuration edits (thresholds, recipe, settings).
+- No user login; the engineer PIN is not a security control.
+- Evidence is the first frame used, not every frame; there is no image retention / clean-up policy besides the
+  free-disk check (stops writing below 1 GB).
+- The record has not been exercised against a physical line; field names may need to change after commissioning.

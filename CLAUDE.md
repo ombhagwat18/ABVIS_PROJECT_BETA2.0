@@ -668,6 +668,9 @@ regress them:
 
 ## Key docs already in the repo
 
+- `docs/PROJECT_BRIEF_FOR_REVIEW.md` - one self-contained brief (hardware, architecture, status, known problems, review
+  questions) for a reviewer or an AI assistant; keep its numbers in step with FEATURE_STATUS when they change.
+
 All documentation is indexed in `docs/README.md` (hardware, guides, roadmap, audit, design). Camera placement / line timing: `docs/hardware/CAMERA_PLACEMENT_AND_LINE_PLAN.md`; tab purposes: `docs/guides/TAB_GUIDE.md`.
 
 - `docs/design/PLAN.md` — original design doc: data shape, the five bugs above in full

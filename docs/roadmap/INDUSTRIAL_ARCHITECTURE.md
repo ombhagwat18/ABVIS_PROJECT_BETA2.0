@@ -1,32 +1,31 @@
-# Industrial Architecture (target)
+# Industrial Architecture
 
-This is the **target** architecture the project is heading toward. It is **not** the current implementation --
-see [CURRENT_SYSTEM.md](CURRENT_SYSTEM.md) for what exists. Much of this is deliberately deferred
-([FUTURE_ENHANCEMENTS.md](FUTURE_ENHANCEMENTS.md)).
+*Status 2026-10-06: most layers now exist in software (tags below). Physical validation is still missing for all of them.*
+See [CURRENT_SYSTEM.md](CURRENT_SYSTEM.md) for what exists and [FUTURE_ENHANCEMENTS.md](FUTURE_ENHANCEMENTS.md) for what is deferred.
 
 ## Layers
 
 ```
-JOB / RECIPE                 which product, which rules; one versioned configuration     [FUTURE]
+JOB / RECIPE                 which product, which rules; one versioned configuration     [PARTIAL: job + product per run, recipe editor + hash; no wizard]
       |
 PRODUCT CONFIGURATION        classes, dimensions, tolerances, thresholds                  [PARTIAL: per-project config.json]
       |
-CAMERA + LIGHTING            devices, exposure/gain/focus, controlled illumination        [PARTIAL: camera index only]
+CAMERA + LIGHTING            devices, exposure/gain/focus, controlled illumination        [PARTIAL: camera lock, rotate, reconnect; lighting not in software]
       |
-ACQUISITION / TRIGGER        sensor-triggered capture, frame sequence + timestamps        [PARTIAL: frame metadata done; trigger missing]
+ACQUISITION / TRIGGER        sensor-triggered capture, frame sequence + timestamps        [IMPLEMENTED in software: X0 -> M2 -> frames after trigger, per-camera window]
       |
 PREPROCESSING                ROI crop, resize, normalisation                              [IMPLEMENTED: dataset.model_input]
       |
-AI + TRADITIONAL VISION      detection / classification / segmentation; measurement       [PARTIAL: classifier live, YOLO offline]
+AI + TRADITIONAL VISION      detection / classification / segmentation; measurement       [PARTIAL: classifier + YOLO in the line; segmentation untrained; no traditional vision]
       |
 INSPECTION / DECISION ENGINE per-bottle aggregation, rules, multi-camera fusion,
-                             PASS / REJECT / FAULT with reasons                           [PARTIAL: per-frame thresholds + fail-safe states]
+                             PASS / REJECT / FAULT with reasons                           [IMPLEMENTED in software: decision.py + verdict.py for the screens]
       |
-TRACEABILITY                 inspection record, evidence, counters, history               [PARTIAL: in-memory record]
+TRACEABILITY                 inspection record, evidence, counters, history               [IMPLEMENTED in software: SQLite, evidence, alarms, logs, export]
       |
-PLC INTERFACE                result delivery, handshake, watchdog, timeout                [NOT IMPLEMENTED]
+PLC INTERFACE                result delivery, handshake, watchdog, timeout                [IMPLEMENTED: M0/M1/M2 handshake; NO watchdog / timeout]
       |
-MACHINE CONTROL              deterministic logic: conveyor, interlocks, reject timing     [PLC -- unverified]
+MACHINE CONTROL              deterministic logic: conveyor, interlocks, reject timing     [PLC: ladder read + simulated; presets wrong, no E-stop / interlock / timeout]
       |
 REJECT / ACTUATOR            cylinder + valve                                             [HARDWARE]
 ```
