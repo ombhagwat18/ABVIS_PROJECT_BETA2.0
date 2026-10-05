@@ -34,6 +34,48 @@ What runs on the real PLC right now is **UNKNOWN**. The first physical link (202
 has compared the PLC's memory with this file. Upload it from the PLC in ISPSoft (or read T0/T1 presets on the
 Machine page while a REJECT runs) before trusting this table for the real machine.
 
+## 1b. Simulation check: is the ladder correct for this software?
+
+`plc/ladder_sim.py` runs the **real ladder from the .isp** in a scan-by-scan simulator (virtual time, no PLC) and
+tests it against the software's PASS / REJECT handshake. In the app: **Production -> engineer row -> Simulation
+check...** (or Machine page -> Simulation check). Command line:
+
+```
+python -m plc.ladder_sim                        # the saved ladder + settings.json
+python -m plc.ladder_sim other.isp --t0 1.5 --t1 0.5 --trace
+```
+
+Each scenario is PASS / LIMIT (works, known ladder limit) / WARN (works but unsafe or unprotected) / FAIL (the
+software would misbehave) / SKIP (cannot be simulated reliably). Result for the current file (2026-10-05, settings
+T0 0.75 s / T1 0.25 s):
+
+| | Scenario | Result |
+|---|---|---|
+| S1 | X0 -> M2, held until answered | PASS |
+| S2 | PASS answer clears M0 and M2, no Y0 | PASS |
+| S3 | REJECT answer clears M2 | PASS |
+| S4 | Reject cycle timing equals settings | **FAIL**: Y0 starts 15 s after M1 and stays 5 s; settings say 0.75 s / 0.25 s |
+| S5 | One Y0 pulse, cycle ends clean | PASS |
+| S6 | Bottle during a reject cycle gets a trigger | LIMIT: no trigger for 20 s (NOT INSPECTED) |
+| S7 | Second bottle before the first is answered | LIMIT: one-bottle handshake |
+| S8 | Conveyor X1 latch / X2 release | PASS |
+| S9 | Machine-page START/STOP (M10/M11) | WARN: ladder never reads them |
+| S10 | E-stop input X3 stops the conveyor | WARN: ignored |
+| S11 | Y0 blocked while the belt is stopped | WARN: no interlock |
+| S12 | PC never answers | WARN: bottle passes uninspected |
+| S13 | Ladder T0 fits the belt | **FAIL**: 15 s is not a travel time (the line would refuse to start) |
+| S14 | Minimum spacing after a REJECT | LIMIT: 20 s |
+
+So the ladder logic is **correct in structure** (S1-S3, S5, S8 pass, which matches the ISPSoft simulator
+measurements of 2026-10-03: Y0 after 15 s for 5 s) but the **presets are wrong for this software** (S4, S13).
+Changing T0 to K15 and T1 to K5 and entering 1.5 / 0.5 in the app turns S4 and S13 into PASS (checked by the
+simulator's self-test on the contract ladder).
+
+Limits of the simulator: the .isp decoder reads each network's contacts but not the series/parallel wiring.
+Several contacts in one network are simulated as AND and reported (S0, and S8/S9 are SKIPped when Y1 uses OR
+branches such as `X1 OR M10`). Timer base 100 ms and scan order are INFERRED from Delta behaviour and match the
+simulator. It does not prove the real PLC holds this program, nor the wiring.
+
 ## 2. Requirements checklist
 
 Status as `plc.ladder_check` reports it for the current file, with `settings.json` T0 = 0.75 s / T1 = 0.25 s:

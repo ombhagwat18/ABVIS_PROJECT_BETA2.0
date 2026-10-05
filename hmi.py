@@ -14,7 +14,7 @@ import shutil
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
@@ -25,6 +25,7 @@ import machine_cycle as MC
 import model_registry as MR
 import theme
 import tracking as TR
+import verdict as V
 from theme import (ACC, ACC_H, ACC_SOFT, ACC_T, BAD, DIM, FIELD, GOOD, INK, LINE, MONO, OFF, PANEL, PANEL_2,
                    WARN)
 
@@ -323,7 +324,7 @@ class HistoryTab:
     """Persistent production history (production_store): every bottle of a day, its result, defects,
     PLC outcome and evidence, the day's counts / defect distribution / hourly throughput, and alarms."""
 
-    FILTERS = ("All", "PASS", "REJECT", "FAULT")
+    FILTERS = ("All", "GOOD", "DEFECT", "FAULT")
 
     def __init__(self, app, parent):
         self.app = app
@@ -350,8 +351,8 @@ class HistoryTab:
         cnt = ctk.CTkFrame(top, fg_color=PANEL, border_width=1, border_color=LINE)
         cnt.pack(side="left", fill="y", padx=(0, 8))
         self.cnt = {}
-        for k, title, col in (("total", "TOTAL", INK), ("PASS", "PASS", GOOD), ("REJECT", "REJECT", BAD),
-                              ("FAULT", "FAULT", WARN), ("yield", "PASS %", INK)):
+        for k, title, col in (("total", "TOTAL", INK), ("PASS", "GOOD", GOOD), ("REJECT", "DEFECT", BAD),
+                              ("FAULT", "FAULT", WARN), ("yield", "GOOD %", INK)):
             cell = ctk.CTkFrame(cnt, fg_color="transparent")
             cell.pack(side="left", padx=12, pady=10)
             self.cnt[k] = ctk.CTkLabel(cell, text="0", font=theme.BIG, text_color=col)
@@ -397,7 +398,7 @@ class HistoryTab:
         if cur not in days:
             self.day.set(days[0])
         day = self.day.get()
-        f = self.filter.get()
+        f = {"GOOD": "PASS", "DEFECT": "REJECT"}.get(self.filter.get(), self.filter.get())
         span = self.span(day)
         self.rows = st.recent(1000, day=None if span else day, final=None if f == "All" else f, span=span)
         s = st.summary_range(*span, label=f"{day} shift {self.shift.get()}") if span else st.summary(day)
@@ -412,8 +413,8 @@ class HistoryTab:
         for r in self.rows:
             d = r["data"]
             conf = "" if r["confidence"] is None else f"{r['confidence']:.2f}"
-            line = (f"{time.strftime('%H:%M:%S', time.localtime(r['wall'])):<9}{r['inspection_id']:<8}{r['final']:<8}"
-                    f"{(r['defects'] or ('-' if r['final'] == 'PASS' else d.get('reason', '')))[:25]:<26}{conf:>5}  "
+            line = (f"{time.strftime('%H:%M:%S', time.localtime(r['wall'])):<9}{r['inspection_id']:<8}{V.shown_result(r['final']):<8}"
+                    f"{(', '.join(V.pretty(x) for x in (r['defects'] or '').split(';') if x) or ('-' if r['final'] == 'PASS' else d.get('reason', '')))[:25]:<26}{conf:>5}  "
                     f"{(r['command'] or '-'):<7}{(r['plc_status'] or '')[:25]:<26}{'yes' if r['evidence'] else ''}")
             self.list.insert("end", line)
             self.list.itemconfig("end", fg={"PASS": GOOD, "REJECT": BAD}.get(r["final"], WARN))
@@ -869,3 +870,340 @@ class RecipeDialog(ctk.CTkToplevel):
         self.msg.configure(text="Project recipe removed: the built-in bottle rule is used.", text_color=GOOD)
         if self.on_saved:
             self.on_saved()
+
+
+# =============================================================================== simulation check
+class SimulationCheckDialog(ctk.CTkToplevel):
+    """"Is it the ladder or is it the code?"  Two read-only checks, no PLC, no cameras, no hardware:
+
+      1. LADDER: the saved ISPSoft program is run in a scan simulator (plc.ladder_sim) against the software's
+         PASS / REJECT handshake, timing, bottle spacing and safety expectations.
+      2. SOFTWARE: every module self-test (selfcheck.py) in its own process, against a fake PLC that emulates the
+         decoded ladder, fake cameras and fake models.
+
+    If 1 FAILs the ladder (or the T0/T1 entered in the app) is wrong; if 2 FAILs the code is wrong. Both can pass
+    and the machine still fail: neither is a hardware test."""
+
+    COLOUR = {"PASS": GOOD, "LIMIT": WARN, "WARN": WARN, "FAIL": BAD, "SKIP": DIM}
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.title("Simulation check - ENGINEER ONLY (commissioning aid; to be removed once the system is proven)")
+        self.geometry("1000x720")
+        self.transient(app)
+        f = box(self, "LADDER FILE (read only)", fill="x", padx=12, pady=(12, 6))
+        row = ctk.CTkFrame(f, fg_color="transparent")
+        row.pack(fill="x", padx=12, pady=(0, 10))
+        from plc import ladder_check as LC
+        self.path = ctk.CTkEntry(row, width=640)
+        self.path.insert(0, str(LC.DEFAULT_ISP))
+        self.path.pack(side="left")
+        ctk.CTkButton(row, text="Browse...", width=90, command=self.browse).pack(side="left", padx=6)
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", padx=12, pady=4)
+        self.b_lad = ctk.CTkButton(row, text="1  Check the LADDER (simulation)", width=280, fg_color=ACC,
+                                   text_color=ACC_T, hover_color=ACC_H, command=self.check_ladder)
+        self.b_lad.pack(side="left")
+        self.b_sw = ctk.CTkButton(row, text="2  Check the SOFTWARE (self-tests, ~1 min)", width=320,
+                                  command=lambda: self.check_software(False))
+        self.b_sw.pack(side="left", padx=8)
+        self.b_full = ctk.CTkButton(row, text="2b  Full (incl. GUI, models)", width=200,
+                                    command=lambda: self.check_software(True))
+        self.b_full.pack(side="left")
+        self.b_plc = ctk.CTkButton(row, text="3  Read the connected PLC now", width=240, command=self.read_plc)
+        self.b_plc.pack(side="left", padx=8)
+        self.verdict = ctk.CTkLabel(self, text="", font=theme.H2, anchor="w", justify="left", wraplength=960)
+        self.verdict.pack(fill="x", padx=14, pady=(8, 2))
+        self.out = ctk.CTkTextbox(self, font=MONO, wrap="word")
+        self.out.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        for k, c in self.COLOUR.items():
+            self.out._textbox.tag_config(k, foreground=c)
+        self.out._textbox.tag_config("DIM", foreground=DIM)
+        self.out.insert("end", "Press 1 to test the ladder file against what the software needs, 2 to test the code.\n"
+                               "Both are simulations: they find logic and timing mistakes, they do not replace the "
+                               "physical tests.")
+        self.out.configure(state="disabled")
+        self.after(100, self.lift)
+
+    def browse(self):
+        p = filedialog.askopenfilename(parent=self, title="ISPSoft project", filetypes=[("ISPSoft", "*.isp"), ("All", "*.*")])
+        if p:
+            self.path.delete(0, "end")
+            self.path.insert(0, p)
+
+    def _put(self, lines):
+        """lines: [(text, tag)]"""
+        self.out.configure(state="normal")
+        self.out.delete("1.0", "end")
+        for t, tag in lines:
+            self.out._textbox.insert("end", t + "\n", tag)
+        self.out.configure(state="disabled")
+
+    def check_ladder(self):
+        from plc import ladder_sim as LS
+        cfg = dict(self.app.settings)
+        try:
+            v, c, res, nets = LS.simulate(self.path.get().strip(), cfg)
+        except Exception as e:                                         # noqa: BLE001 - shown
+            self.verdict.configure(text=f"Cannot read the ladder: {e}", text_color=BAD)
+            return
+        bad = c.get("FAIL", 0)
+        self.verdict.configure(text=v + "   " + "  ".join(f"{k} {n}" for k, n in c.items() if n),
+                               text_color=BAD if bad else (WARN if c.get("WARN") or c.get("LIMIT") else GOOD))
+        lines = [(f"settings.json used: T0 {cfg.get('plc_t0_s')} s, T1 {cfg.get('plc_t1_s')} s, E-stop input "
+                  f"{cfg.get('estop_device') or 'none'}", "DIM"),
+                 ("networks: " + " | ".join(n.text() for n in nets), "DIM"), ("", "DIM")]
+        for r in res:
+            lines.append((f"{r.status:<5} {r.id}  {r.title}", r.status))
+            lines.append((f"        {r.detail}", "DIM"))
+            if r.status in ("FAIL", "WARN", "LIMIT") and r.impact:
+                lines.append((f"        why it matters: {r.impact}", "DIM"))
+        lines += [("", "DIM"), ("What to do: docs/hardware/PLC_LADDER_REQUIREMENTS.md lists the rung for every FAIL / WARN.",
+                                 "DIM")]
+        self._put(lines)
+
+    def read_plc(self):
+        """Read-only snapshot of whatever PLC the app is connected to (SIMULATOR or the REAL one): the same bits the
+        ladder simulation reasons about, so the two can be compared by eye. Writes nothing."""
+        svc = self.app.plc
+        snap = svc.snapshot()
+        mode = "SIMULATOR" if svc.simulator_mode else "REAL PLC"
+        if snap is None:
+            self.verdict.configure(text=f"{mode}: not connected (Machine page -> Connect)", text_color=WARN)
+            return self._put([("No live PLC data. Connect on the Machine page first; this button only reads.", "DIM")])
+        self.verdict.configure(text=f"{mode} {svc.client.transport.description}   PLC {'RUN' if snap['plc_run'] else 'STOP'}   "
+                                    f"data {snap['age_s']:.1f} s old", text_color=GOOD if snap["plc_run"] else WARN)
+        lines = []
+        for k, title in (("inputs", "INPUTS X"), ("internal", "INTERNAL M"), ("outputs", "OUTPUTS Y"),
+                         ("timers", "TIMER VALUES T (x 0.1 s)"), ("counters", "COUNTERS C")):
+            lines.append((title, "DIM"))
+            lines.append(("   " + "   ".join(f"{n}={v}" for n, v in snap[k].items()), "PASS"))
+        lines += [("", "DIM"), ("Compare with the ladder simulation: e.g. with the real ladder, a REJECT should keep M1 ON while T0 counts "
+                               "up to its preset, then Y0 ON for T1.", "DIM")]
+        self._put(lines)
+
+    def check_software(self, full):
+        import selfcheck
+        for b in (self.b_lad, self.b_sw, self.b_full, self.b_plc):
+            b.configure(state="disabled")
+        self.verdict.configure(text="running self-tests...", text_color=WARN)
+        done = []
+
+        def progress(label, r):
+            done.append((label, r))
+            self.app.post(lambda: self._show_sw(done, running=True))
+
+        def work():
+            return selfcheck.run_all(full, progress)
+
+        def finish(res):
+            self._show_sw(done, running=False)
+            for b in (self.b_lad, self.b_sw, self.b_full, self.b_plc):
+                b.configure(state="normal")
+        self.app.run_bg(work, finish)
+
+    def _show_sw(self, done, running):
+        bad = [d for d in done if not d[1][1]]
+        self.verdict.configure(
+            text=(f"{len(done) - len(bad)}/{len(done)} passed" + (f", {len(bad)} FAILED: the code has a problem"
+                                                                if bad else ("" if running else ": the code is consistent with itself"))
+                  + (" (running...)" if running else "")), text_color=BAD if bad else (WARN if running else GOOD))
+        lines = []
+        for label, (_, ok, msg, sec, why) in done:
+            lines.append((f"{'PASS' if ok else 'FAIL'}  {label}  ({sec:.1f} s)", "PASS" if ok else "FAIL"))
+            lines.append((f"        {why}", "DIM"))
+            if not ok:
+                lines.append((f"        {msg}", "FAIL"))
+        lines += [("", "DIM"), ("Software-only checks with fakes; not a hardware test.", "DIM")]
+        self._put(lines)
+
+
+# =============================================================================== database
+class DatabaseTab:
+    """The production database, readable: a table of what was stored (bottles / alarms / runs), a plain-words
+    explanation of every column, the file location, and export (CSV for Excel, printable HTML report)."""
+
+    RANGES = ("Today", "Last 7 days", "Last 30 days", "All time", "Shift A today", "Shift B today", "Shift C today")
+
+    def __init__(self, app, parent):
+        self.app = app
+        self.cols: list = []
+        self.rows: list = []
+        bar = ctk.CTkFrame(parent, fg_color=PANEL)
+        bar.pack(fill="x", pady=(0, 6))
+        r1 = ctk.CTkFrame(bar, fg_color="transparent")
+        r1.pack(fill="x", padx=8, pady=(8, 2))
+        ctk.CTkLabel(r1, text="Table").pack(side="left", padx=(4, 4))
+        self.table = ctk.CTkSegmentedButton(r1, values=["Bottles", "Alarms", "Runs"], command=lambda _=None: self.refresh())
+        self.table.set("Bottles")
+        self.table.pack(side="left")
+        ctk.CTkLabel(r1, text="Range").pack(side="left", padx=(14, 4))
+        self.range = ctk.CTkOptionMenu(r1, values=list(self.RANGES), width=140, command=lambda _=None: self.refresh())
+        self.range.pack(side="left")
+        ctk.CTkLabel(r1, text="Result").pack(side="left", padx=(14, 4))
+        self.result = ctk.CTkOptionMenu(r1, values=["All", "GOOD", "DEFECT", "FAULT"], width=100,
+                                        command=lambda _=None: self.refresh())
+        self.result.pack(side="left")
+        self.q = ctk.CTkEntry(r1, width=200, placeholder_text="search (e.g. missing cap, 000012)")
+        self.q.pack(side="left", padx=(14, 4))
+        self.q.bind("<Return>", lambda e: self.refresh())
+        ctk.CTkButton(r1, text="Search", width=70, command=self.refresh).pack(side="left")
+        r2 = ctk.CTkFrame(bar, fg_color="transparent")
+        r2.pack(fill="x", padx=8, pady=(2, 8))
+        ctk.CTkButton(r2, text="Export CSV (Excel)", width=150, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
+                      command=self.export_csv).pack(side="left", padx=(4, 6))
+        ctk.CTkButton(r2, text="Production report (print / PDF)", width=230, command=self.export_report).pack(side="left", padx=6)
+        ctk.CTkButton(r2, text="Open evidence picture", width=170, command=self.open_evidence).pack(side="left", padx=6)
+        ctk.CTkButton(r2, text="Open database folder", width=170, command=self.open_folder).pack(side="left", padx=6)
+        self.info = ctk.CTkLabel(parent, text="", font=MONO, text_color=DIM, anchor="w", justify="left")
+        self.info.pack(fill="x", padx=6, pady=(0, 4))
+
+        body = ctk.CTkFrame(parent, fg_color="transparent")
+        body.pack(fill="both", expand=True)
+        body.grid_columnconfigure(0, weight=3, uniform="d", minsize=0)
+        body.grid_columnconfigure(1, weight=2, uniform="d", minsize=0)
+        body.grid_rowconfigure(0, weight=1)
+        left = ctk.CTkFrame(body, fg_color=PANEL, border_width=1, border_color=LINE)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        ctk.CTkLabel(left, text="ROWS (click a column title to sort; scroll with the bars)", font=theme.CAPS,
+                     text_color=DIM).pack(anchor="w", padx=12, pady=(8, 2))
+        wrap = tk.Frame(left, bg=PANEL, width=100, height=100)
+        wrap.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        wrap.grid_propagate(False)                       # the wide table must scroll, never push the explanation away
+        wrap.grid_rowconfigure(0, weight=1)
+        wrap.grid_columnconfigure(0, weight=1)
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Prod.Treeview", background=FIELD, foreground=INK, fieldbackground=FIELD, rowheight=24,
+                        bordercolor=LINE, font=("Consolas", 12))
+        style.configure("Prod.Treeview.Heading", background=PANEL_2, foreground=INK, font=("Segoe UI", 12, "bold"),
+                        relief="flat")
+        style.map("Prod.Treeview", background=[("selected", ACC_SOFT)], foreground=[("selected", INK)])
+        self.tree = ttk.Treeview(wrap, style="Prod.Treeview", show="headings", selectmode="browse")
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        vs = ctk.CTkScrollbar(wrap, orientation="vertical", command=self.tree.yview)
+        vs.grid(row=0, column=1, sticky="ns")
+        hs = ctk.CTkScrollbar(wrap, orientation="horizontal", command=self.tree.xview)
+        hs.grid(row=1, column=0, sticky="ew")
+        self.tree.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
+        self.tree.tag_configure("GOOD", foreground=GOOD)
+        self.tree.tag_configure("DEFECT", foreground=BAD)
+        self.tree.tag_configure("FAULT", foreground=WARN)
+        self._sort = (None, False)
+
+        right = ctk.CTkFrame(body, fg_color=PANEL, border_width=1, border_color=LINE)
+        right.grid(row=0, column=1, sticky="nsew")
+        ctk.CTkLabel(right, text="WHAT THE COLUMNS MEAN, AND HOW THE DATABASE WORKS", font=theme.CAPS,
+                     text_color=DIM).pack(anchor="w", padx=12, pady=(8, 2))
+        self.explain = ctk.CTkTextbox(right, font=("Segoe UI", 13), wrap="word")
+        self.explain.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    # ------------------------------------------------------------------ data
+    def span(self):
+        r = self.range.get()
+        now = time.time()
+        today = time.strftime("%Y-%m-%d")
+        t0 = time.mktime(time.strptime(today, "%Y-%m-%d"))
+        if r == "Today":
+            return t0, t0 + 86400
+        if r == "Last 7 days":
+            return now - 7 * 86400, now + 60
+        if r == "Last 30 days":
+            return now - 30 * 86400, now + 60
+        if r == "All time":
+            return None
+        import production_store
+        name = r.split()[1]
+        sh = next((x for x in production_store.DEFAULT_SHIFTS if x[0] == name), None)
+        return production_store.shift_span(today, sh)
+
+    def key(self):
+        return {"Bottles": "inspections", "Alarms": "alarms", "Runs": "runs"}[self.table.get()]
+
+    def refresh(self):
+        import production_export as PE
+        st = self.app.store()
+        key = self.key()
+        self.cols, self.rows = PE.rows_for(st, key, self.span(), self.result.get() if key == "inspections" else "All",
+                                           self.q.get(), limit=5000)
+        self._draw()
+        i = PE.info(st)
+        self.info.configure(text=f"file {i['path']}   {i['size_kb']} KB   bottles {i['rows']['inspections']}   "
+                                 f"alarms {i['rows']['alarms']}   runs {i['rows']['runs']}   "
+                                 f"first {i['first'] or '-'}   last {i['last'] or '-'}   showing {len(self.rows)}")
+        ex = [f"- {k}: {v}" for k, v in PE.EXPLAIN[key]]
+        self.explain.configure(state="normal")
+        self.explain.delete("1.0", "end")
+        self.explain.insert("end", f"TABLE: {self.table.get().upper()}\n" + "\n".join(ex) + "\n\n" + PE.ABOUT)
+        self.explain.configure(state="disabled")
+
+    def _draw(self):
+        tv = self.tree
+        tv.delete(*tv.get_children())
+        tv["columns"] = self.cols
+        for c in self.cols:
+            tv.heading(c, text=c.upper(), command=lambda c=c: self._sort_by(c))
+            tv.column(c, width=max(90, min(300, 9 * max([int(len(c) * 1.4)] + [len(str(r[self.cols.index(c)])) for r in self.rows[:60]]))),
+                      anchor="w", stretch=False)
+        for r in self.rows:
+            tag = r[self.cols.index("result")] if "result" in self.cols else (
+                "FAULT" if self.cols and self.cols[0] == "time" and "severity" in self.cols else "")
+            tv.insert("", "end", values=r, tags=(tag,) if tag in ("GOOD", "DEFECT", "FAULT") else ())
+
+    def _sort_by(self, c):
+        i = self.cols.index(c)
+        rev = self._sort == (c, False)
+        self.rows.sort(key=lambda r: (str(r[i]).isdigit() is False, float(r[i]) if str(r[i]).replace(".", "", 1).isdigit()
+                                      else str(r[i])), reverse=rev)
+        self._sort = (c, rev)
+        self._draw()
+
+    # ------------------------------------------------------------------ export
+    def export_csv(self):
+        import production_export as PE
+        key = self.key()
+        out = filedialog.asksaveasfilename(defaultextension=".csv", initialfile=f"production_{key}_{time.strftime('%Y%m%d')}.csv",
+                                           filetypes=[("CSV (Excel)", "*.csv")])
+        if not out:
+            return
+        n = PE.export_csv(self.app.store(), key, out, self.span(), self.result.get() if key == "inspections" else "All",
+                          self.q.get())
+        messagebox.showinfo("Export", f"{n} row(s) written to\n{out}\n\nOpen it with Excel.")
+
+    def export_report(self):
+        import production_export as PE
+        span = self.span() or (0.0, time.time() + 60)
+        out = filedialog.asksaveasfilename(defaultextension=".html", initialfile=f"production_report_{time.strftime('%Y%m%d')}.html",
+                                           filetypes=[("HTML report", "*.html")])
+        if not out:
+            return
+        PE.export_report(self.app.store(), out, span, f"Production report - {D.project_title(D.PROJECT)}",
+                         self.range.get())
+        try:
+            os.startfile(out)                                              # noqa: S606 - local file
+        except (AttributeError, OSError):
+            pass
+        messagebox.showinfo("Report", f"Saved to\n{out}\n\nIn the browser: Print -> Save as PDF.")
+
+    def open_evidence(self):
+        sel = self.tree.selection()
+        if not sel or "evidence" not in self.cols:
+            return messagebox.showinfo("Evidence", "Select a bottle row first.")
+        ev = self.tree.item(sel[0], "values")[self.cols.index("evidence")]
+        if not ev:
+            return messagebox.showinfo("Evidence", "No picture was kept for this bottle (see Settings -> evidence images kept).")
+        p = self.app.store().folder / ev
+        if p.exists():
+            try:
+                os.startfile(str(p))                                       # noqa: S606
+            except (AttributeError, OSError) as e:
+                messagebox.showinfo("Evidence", f"{p}\n({e})")
+        else:
+            messagebox.showwarning("Evidence", f"{p} is missing.")
+
+    def open_folder(self):
+        try:
+            os.startfile(str(self.app.store().folder))                     # noqa: S606
+        except (AttributeError, OSError) as e:
+            messagebox.showinfo("Folder", f"{self.app.store().folder}\n({e})")
