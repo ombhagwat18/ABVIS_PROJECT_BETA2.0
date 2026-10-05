@@ -3,8 +3,9 @@
 AI-based bottle defect inspection, being built toward a configurable industrial machine-vision platform. First
 application: **250 ml Bisleri bottle inspection on a conveyor**.
 
-> **Current state: a verified software baseline. It has not been connected to, or tested on, a physical
-> machine.** No PLC communication, reject control or production deployment exists yet. See
+> **Current state: a verified software baseline, now at first hardware integration.** The software talks to the
+> real Delta DVP-SS2 PLC over RS-232 (first read-only link 2026-10-04). **The complete inspect -> PASS/REJECT ->
+> physical reject cycle has not yet been run on the machine**, and no production deployment exists. See
 > [What works today](#what-works-today) and [What does NOT work yet](#what-does-not-work-yet).
 
 | | |
@@ -12,7 +13,7 @@ application: **250 ml Bisleri bottle inspection on a conveyor**.
 | **Stage** | Software baseline; next milestone is the first complete machine cycle |
 | **Application** | Python desktop app (Tk / CustomTkinter, OpenCV, PyTorch) |
 | **Detector** | YOLOv8n: **training complete** (test-evaluated). **Runtime integration: current development** - opt-in in the Live tab, finds component boxes only |
-| **Hardware validation** | None |
+| **Hardware validation** | First PLC link only (COM5, RS-232, read-only); reject cycle, timing and cameras on the machine not yet validated |
 | **Docs** | [`docs/`](docs/README.md) |
 
 ## Contents
@@ -46,9 +47,9 @@ dashboard, security, OCR, active learning, ...) is planned but **deliberately de
 | YOLOv8n detector - runtime | **Current development**: opt-in in the Live tab; bottle/cap/label boxes shown; software-tested; live-tested only on scenes with no bottle |
 | PASS / REJECT / FAULT, frame/session metadata | Implemented, software-tested |
 | Inspection record / trace store | In-memory foundation only |
-| Sensor trigger, tracking, decision rules, timing | Not implemented |
-| PLC communication, reject control | Not implemented; PLC I/O mapping **unverified** |
-| Physical machine | **NOT TESTED** (no sensor, PLC, conveyor or reject; the only live test used two desktop cameras with no bottle in view) |
+| Per-bottle decision (`decision.py`), PLC trigger -> decision -> M0/M1 cycle (`machine_cycle.py`), Production tab | Implemented, software-tested with a fake PLC emulating the decoded ladder |
+| PLC communication (`plc/`, Modbus ASCII) | Simulator-tested; **first real-PLC read-only link 2026-10-04** (COM5, 9600 7E1, station 1, PLC in RUN) |
+| Physical machine | **Not validated**: no inspected bottle has yet driven M0/M1 on the real machine; camera placement, timing (distance, speed, T0) and E-stop input not yet set |
 
 ### What works today
 
@@ -68,10 +69,14 @@ dashboard, security, OCR, active learning, ...) is planned but **deliberately de
   as a defect (it can be occlusion, angle, blur, lighting or a false negative). "YOLO only" mode reports FAULT by design.
 - The detector has not been validated on live bottle frames (the Stage 2 images are Iriun-viewer screenshots, and
   on a bottle-free room it drew low-confidence false boxes at the 0.25 development threshold).
-- No bottle tracking / inspection window / temporal voting; no decision rules for detections; no fault latching.
-- No sensor trigger, no timing model, no PLC integration (a manual simulator script exists), no reject control.
-- No persistence, evidence images, production counters, dashboard, login or reports.
-- Nothing has run on the physical machine; PLC addresses are unknown.
+- The conveyor distance and speed are unmeasured (`settings.json` 0 = not measured), and the saved ladder's T0/T1
+  (K150 / K50 = 15 s / 5 s) do not match the intended K15 / K5 (1.5 s / 0.5 s), so reject timing is not yet valid.
+- Camera locking (focus / exposure) is implemented but not yet configured on the mounted cameras; two EMEET
+  cameras need separate USB ports for two 1080p streams.
+- No hardware E-stop input is configured (`estop_device`); the software STOP latch is not a safety device.
+- No persistence beyond the daily production CSV, no evidence-image store, dashboard, login or reports.
+- The real PLC port is shared with Delta COMMGR/ISPSoft: only one program can hold the COM port, so close COMMGR
+  before connecting the app.
 
 ### Next milestone
 
@@ -204,8 +209,13 @@ Intended hardware (as described by the project owner; **none verified from this 
 EMEET NOVA 4K cameras, photoelectric bottle sensor, Delta DVP-series PLC programmed in ISPSoft, Festo DSNU
 cylinder with a 5/2 solenoid valve, controlled LED lighting, an inspection enclosure.
 
-- The repository contains a PLC **simulator script** and an ISPSoft project whose ladder cannot be read here.
-  **PLC addresses / I/O mapping are not verified.**
+- The repository contains the ISPSoft project (`plc file/final_year/`, decoded by `docs/roadmap/PLC_COMMUNICATION.md`)
+  and the `plc/` package. Addresses are verified against the simulator and by the 2026-10-04 real-PLC read:
+  X0 photo-eye, X1 start, X2 stop, M0 PASS, M1 REJECT, M2 trigger, Y0 reject solenoid, Y1 conveyor. Y outputs are
+  never written by the software; the ladder owns conveyor and reject timing.
+- Commissioning aids: Machine tab (live I/O, operator-armed PASS/REJECT, opt-in OPERATOR TEST buttons for
+  conveyor start/stop via M10/M11 and a virtual bottle via M2) and
+  [BENCH_TEST_DECISION_ENGINE](docs/guides/BENCH_TEST_DECISION_ENGINE.md).
 - The reject has to happen inside the time a bottle takes to travel from the sensor/camera to the reject
   position (`distance / conveyor speed`); the whole capture-to-actuator chain must fit inside that. No physical
   values or latencies are recorded yet. See [HARDWARE_INTEGRATION](docs/hardware/HARDWARE_INTEGRATION.md).
@@ -323,6 +333,7 @@ Stage 2 export validation: `stage2_dataset/validate_yolo_export.py` (19 checks; 
 | [PROGRESS_PLAN](docs/roadmap/PROGRESS_PLAN.md) | Phased plan |
 | [FEATURE_STATUS](docs/roadmap/FEATURE_STATUS.md) | Per-feature status |
 | [HARDWARE_INTEGRATION](docs/hardware/HARDWARE_INTEGRATION.md) | Hardware, timing, unknowns |
+| [BENCH_TEST_DECISION_ENGINE](docs/guides/BENCH_TEST_DECISION_ENGINE.md) | Which tab drives the decision engine; bench testing with the real PLC |
 | [TRACEABILITY_PLAN](docs/roadmap/TRACEABILITY_PLAN.md) | Records today and later |
 
 Original design doc (historical): [docs/design/PLAN.md](docs/design/PLAN.md). Latest audit: [docs/audit/SYSTEM_AUDIT_2026-10-03.md](docs/audit/SYSTEM_AUDIT_2026-10-03.md).

@@ -10,10 +10,17 @@ A bottle-inspection system for a QC conveyor (first target: 250 ml bottles), in 
   images, manage defect classes, train a multi-label classifier (Stage 1), annotate boxes and
   polygons, and run live multi-camera inspection with PASS / REJECT / FAULT verdicts. A
   YOLOv8n component detector (Stage 2) is trained and available as an opt-in runtime path.
-- **Machine path** — `plc/` talks Modbus ASCII to a Delta DVP PLC (so far only the ISPSoft
-  simulator), and `decision.py` + `machine_cycle.py` turn a PLC trigger into one decision per
-  bottle and a timed PLC command. **Nothing has been run on the physical machine**; every
-  "tested" in this repo means a software self-test with fakes.
+- **Machine path** — `plc/` talks Modbus ASCII to a Delta DVP-SS2 PLC (the ISPSoft simulator, and since
+  2026-10-04 a first read-only link to the real PLC), and `decision.py` + `machine_cycle.py` turn a PLC trigger
+  into one decision per bottle and a timed PLC command. **The full inspect -> M0/M1 -> reject cycle has not been
+  run on the physical machine**; every "tested" in this repo means a software self-test with fakes unless
+  `docs/roadmap/PLC_COMMUNICATION.md` labels it PHYSICAL.
+- **Real PLC link gotchas** (COM5, RS-232, ASCII 9600 7E1, station 1): Delta **COMMGR keeps the COM port open
+  while its driver exists**, even with ISPSoft offline, so the app gets "Access is denied" -- delete the COMMGR
+  driver/exit it first (one program per port). A running `gui.py` rewrites `settings.json` `plc_com` from its
+  Machine-tab dropdown (it once reverted COM5 to a Bluetooth COM10), so stop the app before editing it. The
+  saved ladder still has T0 K150 / T1 K50 (15 s / 5 s) -- `plc_t0_s` must equal what is actually in the PLC.
+  Net 1 is `X1 -> SET Y1` (latched), so the conveyor runs until X2; software cannot write Y1 by design.
 
 Git repo on `main`; `.gitignore` is whitelist-style (see below).
 
@@ -361,7 +368,9 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   map and write policy), `client.py` (`PLCClient` + `TcpTransport` for the simulator /
   `SerialTransport` for the real PLC), `service.py`. **`PLCService` is the one owner of the
   link**: one worker thread does every transaction; application code (GUI, machine cycle)
-  talks to `PLCService`, never to `PLCClient`. Only M0 (PASS) / M1 (REJECT) are writable;
+  talks to `PLCService`, never to `PLCClient`. Only M0 (PASS) / M1 (REJECT) are writable (exception: the
+  opt-in commissioning `PLCService.operator_write` -- M10/M11 conveyor pulses and M2 "virtual bottle", off
+  unless `settings.json` `plc_operator_controls` is true; see `docs/guides/BENCH_TEST_DECISION_ENGINE.md`);
   Y outputs are never written — the ladder owns conveyor, reject delay and pulse.
   `simulator_test_write` (X0/X1/X2/M0/M1/M2 stimuli) refuses any non-loopback transport.
 - **Command rules you must not weaken:** one answer per trigger; the trigger is marked
