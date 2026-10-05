@@ -27,26 +27,32 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 
+import alarms as AL
 import annotation_studio
+import applog
 import bench
 import charts
 import dataset as D
 import decision as DEC
 import detect
+import hmi
 import infer
 import machine_cycle as MC
+import machine_state as MS
+import production_store
 import segment
 import theme
+import tracking as TR
 from plc import (CONNECTED as PLC_CONNECTED, DEGRADED as PLC_DEGRADED, FAULT as PLC_FAULT, SERIAL_FORMATS, PLCClient,
                  PLCService, SerialTransport, TcpTransport, serial_ports)
 from plc import address_map as PLC_AM
 
 theme.apply_ctk(ctk)
 
-# Every colour comes from theme.py (dark industrial HMI): grey for the interface,
+# Every colour comes from theme.py (light industrial HMI by default): grey for the interface,
 # green / red / amber only for PASS / REJECT / FAULT, blue only for selection.
 from theme import (ACC, ACC_H, ACC_SOFT, ACC_T, BAD, BG, DIM, FAULT, GOOD, INFO, INK, LINE, MONO, MUTED, OFF,  # noqa: E402
-                   PANEL, PANEL_2, RAIL, VIDEO_BG, WARN)
+                   PANEL, PANEL_2, RAIL, VIDEO_BG, WARN, BAD as REJECT_C, FAULT_SOFT, PASS_SOFT, REJECT_SOFT)
 PER_PAGE = 60
 
 
@@ -148,13 +154,17 @@ class NavShell(ctk.CTkFrame):
         self.buttons: dict[str, ctk.CTkButton] = {}
         self._group_of = {n: g for g, names in groups for n in names}
         self._group_frames: dict[str, ctk.CTkFrame] = {}
+        self._group_labels: dict = {}
+        self.groups = groups
         for g, _ in groups:
-            ctk.CTkLabel(self.rail, text=g, font=theme.CAPS, text_color=MUTED, anchor="w").pack(
-                fill="x", padx=16, pady=(14, 2))
+            lab = ctk.CTkLabel(self.rail, text=g, font=theme.CAPS, text_color=MUTED, anchor="w")
+            lab.pack(fill="x", padx=16, pady=(14, 2))
             f = ctk.CTkFrame(self.rail, fg_color="transparent")
             f.pack(fill="x")
             self._group_frames[g] = f
+            self._group_labels[g] = lab
         self.current: str | None = None
+        self.visible: set | None = None              # None = every page (engineer mode)
 
     def add(self, name: str) -> ctk.CTkFrame:
         page = ctk.CTkFrame(self.area, fg_color="transparent", corner_radius=0)
@@ -171,6 +181,24 @@ class NavShell(ctk.CTkFrame):
 
     def tab(self, name: str) -> ctk.CTkFrame:
         return self.pages[name]
+
+    def show_only(self, names=None):
+        """Operator mode: only these pages in the rail (None = all). Pages stay built; nothing is destroyed."""
+        self.visible = set(names) if names is not None else None
+        for g, lab in self._group_labels.items():
+            lab.pack_forget()
+            self._group_frames[g].pack_forget()
+        for g, members in self.groups:
+            shown = [n for n in members if n in self.buttons and (self.visible is None or n in self.visible)]
+            for n in members:
+                if n in self.buttons:
+                    self.buttons[n].pack_forget()
+            if not shown:
+                continue
+            self._group_labels[g].pack(fill="x", padx=16, pady=(14, 2))
+            self._group_frames[g].pack(fill="x")
+            for n in shown:
+                self.buttons[n].pack(fill="x", padx=8, pady=1)
 
     def get(self) -> str:
         return self.current or ""
@@ -218,6 +246,15 @@ class App(ctk.CTk):
         self.plc_autoconnect = (("--selftest" not in sys.argv and self.settings.get("plc_mode") != "serial")
                                 if plc_autoconnect is None else plc_autoconnect)
         self.apply_font_scale(self.settings.get("font_scale", 1.0), save=False)
+        # Coded machine alarms (alarms.py), persisted through the project's production store.
+        applog.setup()
+        applog.log("app", "application started", project=D.PROJECT, theme=theme.MODE)
+        self.alarms = AL.AlarmManager(on_change=self._on_alarm)
+        self.plc.add_listener(applog.plc_listener)
+        self._store = None
+        self._store_dir = None
+        self.production_dir = None                   # override (self-test: a temporary folder)
+        self.ui_mode = "engineer" if self.settings.get("ui_mode") == "engineer" else "operator"
 
         # ---- status bar: what is this station inspecting, and is everything it depends on alive
         head = ctk.CTkFrame(self, fg_color=RAIL, corner_radius=0, height=52)
@@ -234,6 +271,9 @@ class App(ctk.CTk):
                       border_width=1, command=self.import_dataset).pack(side="left")
         self.clock = ctk.CTkLabel(head, text="", font=theme.SMALL, text_color=DIM)
         self.clock.pack(side="right", padx=(10, 16))
+        self.mode_btn = ctk.CTkButton(head, text="", width=150, border_width=1, fg_color="transparent",
+                                      text_color=INK, command=self.toggle_mode)
+        self.mode_btn.pack(side="right", padx=(6, 4))
         self.lamps = {}
         for key in ("MODEL", "CAMERAS", "LINE", "PLC"):          # packed from the right: reads PLC LINE CAMERAS MODEL
             self.lamps[key] = StatusLamp(head, key)
@@ -251,35 +291,86 @@ class App(ctk.CTk):
         for name in self.TABS:
             self.tabs.add(name)
 
+        self.tab_production = ProductionTab(self, self.tabs.tab("Production"))
+        self.tab_history = hmi.HistoryTab(self, self.tabs.tab("History"))
+        self.tab_health = hmi.HealthTab(self, self.tabs.tab("Health"))
+        self.tab_models = hmi.ModelsTab(self, self.tabs.tab("Models"))
         self.tab_label = LabelTab(self, self.tabs.tab("Label"))
         self.tab_defects = DefectsTab(self, self.tabs.tab("Defects"))
         self.tab_train = TrainTab(self, self.tabs.tab("Train"))
         self.tab_analysis = AnalysisTab(self, self.tabs.tab("Analysis"))
         self.tab_live = LiveTab(self, self.tabs.tab("Live"))
         self.tab_machine = MachineTab(self, self.tabs.tab("Machine"))
-        self.tab_production = ProductionTab(self, self.tabs.tab("Production"))
         self.tab_bench = BenchTab(self, self.tabs.tab("Camera"))
         self.tab_data = DataTab(self, self.tabs.tab("Data health"))
         self.tab_annotate = annotation_studio.AnnotationTab(self, self.tabs.tab("Annotate"))
         self.tab_settings = SettingsTab(self, self.tabs.tab("Settings"))
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.set_mode(self.ui_mode, save=False)
         self.reload()
         self.after(60, self.pump)
 
-    TABS = ("Label", "Defects", "Train", "Analysis", "Live", "Machine", "Production", "Camera",
-            "Data health", "Annotate", "Settings")
-    # The navigation rail: the same pages, grouped by what the operator is doing.
-    GROUPS = (("DATA", ("Label", "Defects", "Annotate", "Data health")),
-              ("MODEL", ("Train", "Analysis")),
-              ("RUNTIME", ("Live", "Production", "Machine", "Camera")),
+    TABS = ("Production", "History", "Health", "Label", "Defects", "Train", "Analysis", "Models", "Live",
+            "Machine", "Camera", "Data health", "Annotate", "Settings")
+    # The navigation rail: the same pages, grouped by what the person is doing. The operator sees
+    # PRODUCTION only; ENGINEER mode shows everything (nothing is removed, only hidden).
+    GROUPS = (("PRODUCTION", ("Production", "History", "Health")),
+              ("DATA", ("Label", "Defects", "Annotate", "Data health")),
+              ("MODEL", ("Train", "Analysis", "Models")),
+              ("ENGINEERING", ("Live", "Machine", "Camera")),
               ("SYSTEM", ("Settings",)))
+    OPERATOR_PAGES = ("Production", "History", "Health")
 
     def all_tabs(self):
-        return (self.tab_label, self.tab_defects, self.tab_train, self.tab_analysis,
-                self.tab_live, self.tab_machine, self.tab_production, self.tab_bench, self.tab_data,
-                self.tab_annotate,
-                self.tab_settings)
+        return (self.tab_production, self.tab_history, self.tab_health, self.tab_label, self.tab_defects,
+                self.tab_train, self.tab_analysis, self.tab_models, self.tab_live, self.tab_machine,
+                self.tab_bench, self.tab_data, self.tab_annotate, self.tab_settings)
+
+    # ------------------------------------------------------------- operator / engineer
+    def set_mode(self, mode: str, save: bool = True):
+        self.ui_mode = "engineer" if mode == "engineer" else "operator"
+        eng = self.ui_mode == "engineer"
+        self.tabs.show_only(None if eng else self.OPERATOR_PAGES)
+        if not eng and self.tabs.get() not in self.OPERATOR_PAGES:
+            self.tabs.set("Production")
+        self.mode_btn.configure(text="ENGINEER MODE" if eng else "OPERATOR MODE",
+                                text_color=WARN if eng else INK, border_color=WARN if eng else LINE)
+        self.tab_production.set_mode(self.ui_mode)
+        if save:
+            self.settings["ui_mode"] = self.ui_mode
+            D.save_settings(self.settings)
+
+    def toggle_mode(self):
+        if self.ui_mode == "operator":
+            pin = str(self.settings.get("engineer_pin") or "")
+            if pin:
+                got = ctk.CTkInputDialog(title="Engineer mode", text="Engineer PIN:").get_input()
+                if got != pin:
+                    return
+            self.set_mode("engineer")
+        else:
+            self.set_mode("operator")
+
+    def _on_alarm(self, a):
+        """Every alarm change: persisted in the production record and written to logs/alarm.log."""
+        applog.alarm_listener(a)
+        if self._store is not None:
+            self._store.log_alarm(a)
+
+    # ------------------------------------------------------------- production record
+    def store(self) -> "production_store.ProductionStore":
+        """The active project's production store (SQLite + evidence). Alarms are persisted through it."""
+        folder = Path(self.production_dir) if self.production_dir else D.PROJECT_DIR / "production"
+        if self._store is None or self._store_dir != folder:
+            if self._store is not None:
+                self._store.close()
+            self._store = production_store.ProductionStore(
+                folder, self.settings.get("evidence_policy", "REJECT_AND_FAULT"),
+                on_problem=lambda code, cause: self.alarms.raise_(code, cause, source="production store"))
+            self._store_dir = folder
+        self._store.policy = self.settings.get("evidence_policy", "REJECT_AND_FAULT")
+        return self._store
 
     def apply_font_scale(self, scale: float, save: bool = True):
         """One knob for text size: CustomTkinter scales fonts with the widgets,
@@ -327,8 +418,9 @@ class App(ctk.CTk):
         self.lamps["PLC"].show({PLC_CONNECTED: GOOD, PLC_DEGRADED: WARN, PLC_FAULT: BAD}.get(st, OFF),
                                {PLC_CONNECTED: "OK", PLC_DEGRADED: "SLOW", PLC_FAULT: "FAULT"}.get(st, "OFF"))
         line = getattr(self, "tab_production", None)
-        on = bool(line and line.running)
-        self.lamps["LINE"].show(GOOD if on else OFF, "RUNNING" if on else "STOPPED")
+        st = line.mstate if line is not None else MS.OFFLINE          # the ONE machine state (machine_state.py)
+        cls = MS.LOOK.get(st, ("OFF", ""))[0]
+        self.lamps["LINE"].show({"PASS": GOOD, "BAD": BAD, "WARN": WARN, "ACC": ACC}.get(cls, OFF), st.replace("_", " "))
         n = len(self.cams.running())
         self.lamps["CAMERAS"].show(GOOD if n else OFF, f"{n} ON" if n else "OFF")
         model = self.cfg.get("active_model")
@@ -489,6 +581,9 @@ class App(ctk.CTk):
         self.cams.stop()
         self.tab_machine.close()
         self.plc.stop()                      # sends nothing; the PLC clears M0/M1 itself
+        if self._store is not None:
+            self._store.close()
+        applog.log("app", "application closed")
         self.destroy()
 
 
@@ -819,6 +914,10 @@ class MachineTab:
         self.state.pack(side="left", padx=(12, 8), pady=8)
         self.run_lbl = ctk.CTkLabel(head, text="PLC --", font=("Segoe UI", 15, "bold"), text_color=DIM, width=110)
         self.run_lbl.pack(side="left")
+        # which machine this is talking to, impossible to miss: a simulator test must never be mistaken for the real PLC
+        self.where_lbl = ctk.CTkLabel(head, text="", font=theme.CAPS, text_color=ACC_T, fg_color=OFF, corner_radius=6,
+                                      width=110)
+        self.where_lbl.pack(side="left", padx=(0, 8))
         self.info = ctk.CTkLabel(head, text="", text_color=DIM, font=MONO, justify="left", anchor="w")
         self.info.pack(side="left", padx=10)
         ctk.CTkButton(head, text="Disconnect", width=96, fg_color="transparent", border_width=1, text_color=INK,
@@ -892,7 +991,7 @@ class MachineTab:
                 row = ctk.CTkFrame(box, fg_color="transparent")
                 row.pack(fill="x", padx=8, pady=(1, 3))
                 ctk.CTkLabel(row, text=n, width=34, anchor="w", font=("Consolas", 13, "bold")).pack(side="left")
-                v = ctk.CTkLabel(row, text="--", width=50, corner_radius=6, fg_color=OFF, text_color="white")
+                v = ctk.CTkLabel(row, text="--", width=50, corner_radius=6, fg_color=OFF, text_color=ACC_T)
                 v.pack(side="left", padx=4)
                 ctk.CTkLabel(row, text=self.NAMES[n], text_color=DIM, font=("Segoe UI", 13)).pack(side="left")
                 self.cells[n] = v
@@ -918,10 +1017,10 @@ class MachineTab:
                      anchor="w").pack(side="left")
         self.arm = ctk.CTkCheckBox(row, text="arm", width=60)
         self.arm.pack(side="left", padx=(0, 6))
-        self.btn_pass = ctk.CTkButton(row, text="PASS (M0)", width=100, fg_color=GOOD, state="disabled",
+        self.btn_pass = ctk.CTkButton(row, text="PASS (M0)", width=100, fg_color=GOOD, text_color=ACC_T, state="disabled",
                                       command=lambda: self.send("PASS"))
         self.btn_pass.pack(side="left", padx=4)
-        self.btn_rej = ctk.CTkButton(row, text="REJECT (M1)", width=110, fg_color=BAD, state="disabled",
+        self.btn_rej = ctk.CTkButton(row, text="REJECT (M1)", width=110, fg_color=BAD, text_color=ACC_T, state="disabled",
                                      command=lambda: self.send("REJECT"))
         self.btn_rej.pack(side="left", padx=4)
         self.cmd_lbl = ctk.CTkLabel(row, text="", font=MONO, anchor="w", justify="left")
@@ -1132,6 +1231,8 @@ class MachineTab:
         h = svc.health_check()
         st = h["link_state"]
         self.state.configure(text=st, text_color={PLC_CONNECTED: GOOD, PLC_DEGRADED: WARN, PLC_FAULT: BAD}.get(st, DIM))
+        self.where_lbl.configure(text="SIMULATOR" if svc.simulator_mode else "REAL PLC",
+                                 fg_color=ACC if svc.simulator_mode else BAD)
         snap = svc.snapshot() if st == PLC_CONNECTED else None
         if snap is not None and snap["age_s"] > 1.5:     # connected but the values are old: do not show them as live
             snap = None
@@ -1244,19 +1345,28 @@ class MachineTab:
 
 # ---------------------------------------------------------------- Production
 class ProductionTab:
-    """The inspection line on one screen: PLC trigger -> line cameras -> selected AI task -> decision
-    -> FIFO -> scheduled PLC command -> Y0, plus counters, the FIFO / history table and alarms.
+    """THE operator screen: machine state, both cameras live, the current bottle, counters, recent
+    bottles and alarms, and three large controls (START INSPECTION / STOP / RESET FAULT).
 
-    The logic lives in machine_cycle.py (FIFO, deadlines, PLC commands) and decision.py (rules); this
-    tab only starts/stops it and shows it. It shares the app's one PLCService and CameraSet: starting
-    the line stops the Live tab's cameras, and the line's cameras run capture-only (the models run
-    per bottle inside the Inspector)."""
+    The logic lives elsewhere: machine_cycle.py (trigger -> per-bottle inspection -> FIFO -> PLC command),
+    decision.py (the only place a PASS / REJECT / FAULT is decided), machine_state.py (the ONE machine
+    state every widget shows), tracking.py (time-based bottle tracking, camera stations), alarms.py and
+    production_store.py (coded alarms, persistent history + evidence). This tab gathers cached facts,
+    shows them and starts/stops the line. It shares the app's one PLCService and CameraSet.
+
+    Start sequence: readiness check (machine_state.readiness) -> load models (background) -> open the line
+    cameras -> INITIALIZING until every camera has delivered a frame -> RUNNING. Nothing here starts on
+    its own: the line, the cameras and the PLC link all need an explicit action.
+
+    Engineer mode adds the line timing row, the speed-calibration and line-layout dialogs, the AI task,
+    camera scan, the software HALT latch and the simulator bottle feed."""
 
     SLOTS = ("Camera 0", "Camera 1")
     TIMING = (("inspection_to_reject_mm", "Inspect->reject mm", 70), ("conveyor_mm_s", "Speed mm/s", 60),
               ("plc_t0_s", "T0 s", 46), ("plc_t1_s", "T1 s", 46), ("reject_tolerance_s", "Late limit s", 46),
               ("inspect_frames", "Frames", 36), ("inspect_window_s", "Window s", 46),
               ("capture_delay_s", "Capture delay s", 46))
+    WARMUP_S = 8.0                               # line cameras must deliver a first frame within this
 
     def __init__(self, app: App, parent):
         self.app = app
@@ -1264,127 +1374,192 @@ class ProductionTab:
         self._imgs: dict = {}
         self._srcmap: dict = {}                  # option label -> camera index
         self._table_sig = None
-        self._alarm_n = -1
+        self._alarm_sig = None
         self._next_feed = 0.0
         self._tick_n = 0
         self._loading = False
+        self._warming = None                     # (deadline, task, srcs, models, cams) while INITIALIZING
+        self._stopping = False
+        self._cam_test = False
+        self._testing = False
+        self._test_rec = None
+        self._quality: dict = {}
+        self._quality_at = 0.0
+        self._cam_bad: dict = {}                 # slot -> last logged fault state
+        self._reopen_at: dict = {}
+        self._reopening: dict = {}
+        self._reopens: dict = {}                 # slot -> reconnect attempts this session
+        self.mstate, self.mreason = MS.OFFLINE, ""
+        self.msg = ("", DIM)
         cfg = MC.line_settings(app.settings)
 
-        bar = ctk.CTkFrame(parent, fg_color=PANEL)
+        # ---- state banner: the ONE machine state, the PLC mode, job / product
+        ban = ctk.CTkFrame(parent, fg_color=PANEL, border_width=1, border_color=LINE)
+        ban.pack(fill="x", pady=(0, 6))
+        self.state_box = ctk.CTkFrame(ban, fg_color=OFF, corner_radius=6, width=290)
+        self.state_box.pack(side="left", padx=8, pady=8, fill="y")
+        self.line_lbl = ctk.CTkLabel(self.state_box, text=MS.OFFLINE, font=theme.BIG, text_color=ACC_T, width=270)
+        self.line_lbl.pack(padx=10, pady=(6, 0))
+        self.state_reason = ctk.CTkLabel(self.state_box, text="", font=theme.TINY, text_color=ACC_T, wraplength=270)
+        self.state_reason.pack(padx=10, pady=(0, 6))
+        info = ctk.CTkFrame(ban, fg_color="transparent")
+        info.pack(side="left", fill="both", expand=True, padx=6, pady=6)
+        r1 = ctk.CTkFrame(info, fg_color="transparent")
+        r1.pack(fill="x")
+        self.plc_mode_lbl = ctk.CTkLabel(r1, text="", font=theme.CAPS, corner_radius=6, text_color=ACC_T,
+                                         fg_color=OFF, width=120)
+        self.plc_mode_lbl.pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(r1, text="Job").pack(side="left", padx=(0, 4))
+        self.job = ctk.CTkEntry(r1, width=130, placeholder_text="job / batch")
+        if cfg.get("job_id"):
+            self.job.insert(0, str(cfg["job_id"]))
+        self.job.pack(side="left")
+        ctk.CTkLabel(r1, text="Product").pack(side="left", padx=(10, 4))
+        self.product = ctk.CTkEntry(r1, width=150, placeholder_text="e.g. 250 ml bottle")
+        if cfg.get("product"):
+            self.product.insert(0, str(cfg["product"]))
+        self.product.pack(side="left")
+        self.models_lbl = ctk.CTkLabel(info, text="", font=MONO, text_color=DIM, anchor="w", justify="left")
+        self.models_lbl.pack(fill="x", pady=(4, 0))
+        self.msg_lbl = ctk.CTkLabel(info, text="", font=theme.SMALL, anchor="w", justify="left", wraplength=900)
+        self.msg_lbl.pack(fill="x")
+
+        # ---- the three operator controls + tests
+        bar = ctk.CTkFrame(parent, fg_color="transparent")
         bar.pack(fill="x", pady=(0, 6))
-        self.btn_start = ctk.CTkButton(bar, text="Start line", width=96, fg_color=ACC, text_color=ACC_T,
-                                       hover_color=ACC_H, command=self.start_line)
-        self.btn_start.pack(side="left", padx=(10, 4), pady=8)
-        ctk.CTkButton(bar, text="Stop line", width=86, command=self.stop_line).pack(side="left")
-        ctk.CTkButton(bar, text="STOP", width=70, fg_color=BAD, hover_color="#a02020", text_color="#ffffff",
-                      font=("Segoe UI", 14, "bold"), command=self.halt_line).pack(side="left", padx=(8, 2))
-        self.btn_reset = ctk.CTkButton(bar, text="Reset halt", width=84, fg_color="transparent", border_width=1,
-                                       text_color=INK, command=self.reset_halt)
-        self.btn_reset.pack(side="left")
-        ctk.CTkLabel(bar, text="AI task").pack(side="left", padx=(14, 4))
-        self.task = ctk.CTkOptionMenu(bar, values=list(DEC.TASK_LABELS), width=200)
+        big = ("Segoe UI", 18, "bold")
+        self.btn_start = ctk.CTkButton(bar, text="START INSPECTION", width=230, height=54, font=big, fg_color=GOOD,
+                                       text_color=ACC_T, hover_color=GOOD, command=self.start_line)
+        self.btn_start.pack(side="left", padx=(0, 6))
+        self.btn_stop = ctk.CTkButton(bar, text="STOP", width=150, height=54, font=big, fg_color=BAD, text_color=ACC_T,
+                                      hover_color=BAD, command=self.stop_line)
+        self.btn_stop.pack(side="left", padx=6)
+        self.btn_reset = ctk.CTkButton(bar, text="RESET FAULT", width=170, height=54, font=big, fg_color=WARN,
+                                       text_color=ACC_T, hover_color=WARN, command=self.reset_halt)
+        self.btn_reset.pack(side="left", padx=6)
+        self.btn_test = ctk.CTkButton(bar, text="TEST INSPECTION\n(no PLC)", width=150, height=54,
+                                      command=self.test_inspection)
+        self.btn_test.pack(side="left", padx=(18, 6))
+        self.btn_camtest = ctk.CTkButton(bar, text="CAMERA TEST", width=130, height=54, command=self.toggle_cam_test)
+        self.btn_camtest.pack(side="left", padx=6)
+        self.btn_snap = ctk.CTkButton(bar, text="Capture\ntest frame", width=100, height=54, command=self.capture_test)
+        self.btn_snap.pack(side="left", padx=6)
+
+        # ---- engineer row: task, cameras, simulator, timing, calibration (hidden for the operator)
+        self.eng = ctk.CTkFrame(parent, fg_color=PANEL, border_width=1, border_color=WARN)
+        eng1 = ctk.CTkFrame(self.eng, fg_color="transparent")
+        eng1.pack(fill="x", padx=6, pady=(6, 2))
+        ctk.CTkLabel(eng1, text="ENGINEER", font=theme.CAPS, text_color=WARN).pack(side="left", padx=(4, 10))
+        ctk.CTkLabel(eng1, text="AI task").pack(side="left", padx=(0, 4))
+        self.task = ctk.CTkOptionMenu(eng1, values=list(DEC.TASK_LABELS), width=200)
         self.task.set(next((k for k, v in DEC.TASK_LABELS.items() if v == cfg["line_task"]), "Detection"))
         self.task.pack(side="left")
-        ctk.CTkButton(bar, text="Scan cameras", width=110, fg_color="transparent", border_width=1, text_color=INK,
-                      command=self.scan).pack(side="left", padx=8)
-        self.line_lbl = ctk.CTkLabel(bar, text="LINE STOPPED", font=("Segoe UI", 18, "bold"), text_color=DIM)
-        self.line_lbl.pack(side="left", padx=14)
-        self.feed_s = ctk.CTkEntry(bar, width=40)
-        self.feed_s.insert(0, "4")
-        self.feed_s.pack(side="right", padx=(2, 10))
-        self.feed = ctk.CTkCheckBox(bar, text="auto-feed every (s)", width=140)
-        self.feed.pack(side="right")
-        self.sim_btn = ctk.CTkButton(bar, text="Simulate bottle (X0)", width=150, fg_color="transparent",
-                                     border_width=1, text_color=WARN, command=self.simulate_bottle)
-        self.sim_btn.pack(side="right", padx=6)
-        self.models_lbl = ctk.CTkLabel(parent, text="", font=MONO, text_color=DIM, anchor="w", justify="left")
-        self.models_lbl.pack(fill="x", padx=6, pady=(0, 4))
-
-        top = ctk.CTkFrame(parent, fg_color="transparent")
-        top.pack(fill="x", pady=(0, 6))
-        for c, w in enumerate((3, 4, 4, 5)):
-            top.grid_columnconfigure(c, weight=w, uniform="p")
-
-        def box(col, title):
-            f = ctk.CTkFrame(top, fg_color=PANEL)
-            f.grid(row=0, column=col, sticky="nsew", padx=(0, 6))
-            ctk.CTkLabel(f, text=title, font=("Segoe UI", 13, "bold"), text_color=DIM).pack(anchor="w", padx=10,
-                                                                                            pady=(8, 2))
-            return f
-        plc_box = box(0, "MACHINE / PLC")
-        self.plc_lbl = ctk.CTkLabel(plc_box, text="", font=MONO, justify="left", anchor="nw")
-        self.plc_lbl.pack(fill="both", expand=True, padx=10, pady=(0, 8))
-        self.cam_pick, self.cam_lbl, self.cam_img = {}, {}, {}
-        for i, slot in enumerate(self.SLOTS):
-            f = box(1 + i, slot.upper())
-            self.cam_pick[slot] = ctk.CTkOptionMenu(f, values=["- not used -"], width=260)
-            self.cam_pick[slot].pack(anchor="w", padx=10)
-            self.cam_lbl[slot] = ctk.CTkLabel(f, text="", font=MONO, justify="left", anchor="w")
-            self.cam_lbl[slot].pack(fill="x", padx=10, pady=(4, 2))
-            # plain tk.Label: see LiveTab.build_panes (a CTkLabel re-scales its image on every frame)
-            self.cam_img[slot] = tk.Label(f, text="no frame", fg=OFF, bg=VIDEO_BG, height=12, bd=0,
-                                          compound="center", font=theme.BODY)
-            self.cam_img[slot].pack(fill="both", expand=True, padx=10, pady=(0, 8))
-        ins = box(3, "INSPECTION (last bottle)")
-        row = ctk.CTkFrame(ins, fg_color="transparent")
-        row.pack(fill="both", expand=True, padx=10, pady=(0, 8))
-        self.ev_img = ctk.CTkLabel(row, text="no bottle yet", text_color=OFF, fg_color=VIDEO_BG, width=200,
-                                   height=230, corner_radius=6)
-        self.ev_img.pack(side="left", fill="y")
-        side = ctk.CTkFrame(row, fg_color="transparent")
-        side.pack(side="left", fill="both", expand=True, padx=(10, 0))
-        self.res_lbl = ctk.CTkLabel(side, text="--", font=("Segoe UI", 30, "bold"), text_color=DIM, anchor="w")
-        self.res_lbl.pack(anchor="w")
-        self.ins_lbl = ctk.CTkLabel(side, text="", font=MONO, justify="left", anchor="nw", wraplength=330)
-        self.ins_lbl.pack(fill="both", expand=True, anchor="w")
-
-        prod = ctk.CTkFrame(parent, fg_color=PANEL)
-        prod.pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(prod, text="PRODUCTION", font=("Segoe UI", 13, "bold"), text_color=DIM).pack(side="left",
-                                                                                              padx=(10, 10))
-        self.cnt = {}
-        for key, title, col in (("total", "Total", INK), (infer.PASS, "PASS", GOOD), (infer.REJECT, "REJECT", BAD),
-                                (infer.FAULT, "FAULT", WARN), ("queue", "Queue", ACC),
-                                ("not_inspected", "Not inspected", WARN), ("missed_reject", "Missed rejects", BAD)):
-            cell = ctk.CTkFrame(prod, fg_color="transparent")
-            cell.pack(side="left", padx=10, pady=6)
-            self.cnt[key] = ctk.CTkLabel(cell, text="0", font=("Segoe UI", 22, "bold"), text_color=col)
-            self.cnt[key].pack()
-            ctk.CTkLabel(cell, text=title, text_color=DIM, font=("Segoe UI", 13)).pack()
-        self.travel_lbl = ctk.CTkLabel(prod, text="", font=MONO, text_color=DIM, justify="left")
-        self.travel_lbl.pack(side="right", padx=10)
-
-        tim = ctk.CTkFrame(parent, fg_color=PANEL)
-        tim.pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(tim, text="LINE TIMING", font=("Segoe UI", 13, "bold"), text_color=DIM).pack(side="left",
-                                                                                               padx=(10, 6), pady=6)
+        self.cam_pick = {}
+        for slot in self.SLOTS:
+            ctk.CTkLabel(eng1, text=slot).pack(side="left", padx=(10, 4))
+            self.cam_pick[slot] = ctk.CTkOptionMenu(eng1, values=["- not used -"], width=210)
+            self.cam_pick[slot].pack(side="left")
+        ctk.CTkButton(eng1, text="Scan cameras", width=110, command=self.scan).pack(side="left", padx=8)
+        ctk.CTkButton(eng1, text="HALT (latch)", width=100, fg_color="transparent", border_width=1, text_color=BAD,
+                      border_color=BAD, command=self.halt_line).pack(side="right", padx=4)
+        eng2 = ctk.CTkFrame(self.eng, fg_color="transparent")
+        eng2.pack(fill="x", padx=6, pady=(0, 2))
         self.tim = {}
         for key, label, w in self.TIMING:
-            ctk.CTkLabel(tim, text=label, font=("Segoe UI", 13)).pack(side="left", padx=(6, 2))
-            e = ctk.CTkEntry(tim, width=w)
+            ctk.CTkLabel(eng2, text=label, font=theme.SMALL).pack(side="left", padx=(6, 2))
+            e = ctk.CTkEntry(eng2, width=w)
             e.insert(0, f"{cfg[key]:g}")
             e.pack(side="left")
             self.tim[key] = e
-        ctk.CTkLabel(tim, text="FAULT ->", font=("Segoe UI", 13)).pack(side="left", padx=(8, 2))
-        self.fault_action = ctk.CTkOptionMenu(tim, values=["REJECT", "PASS"], width=86)
+        ctk.CTkLabel(eng2, text="FAULT ->", font=theme.SMALL).pack(side="left", padx=(8, 2))
+        self.fault_action = ctk.CTkOptionMenu(eng2, values=["REJECT", "PASS"], width=86)
         self.fault_action.set(str(cfg["fault_action"]).upper())
         self.fault_action.pack(side="left")
-        ctk.CTkLabel(tim, text="E-stop input", font=("Segoe UI", 13)).pack(side="left", padx=(8, 2))
-        self.estop_dev = ctk.CTkEntry(tim, width=46, placeholder_text="X3")
+        ctk.CTkLabel(eng2, text="E-stop input", font=theme.SMALL).pack(side="left", padx=(8, 2))
+        self.estop_dev = ctk.CTkEntry(eng2, width=46, placeholder_text="X3")
         if cfg["estop_device"]:
             self.estop_dev.insert(0, str(cfg["estop_device"]))
         self.estop_dev.pack(side="left")
-        ctk.CTkButton(tim, text="Save", width=60, command=self.save_timing).pack(side="left", padx=8)
-        self.tim_msg = ctk.CTkLabel(tim, text="", font=("Segoe UI", 13), text_color=DIM)
-        self.tim_msg.pack(side="left")
+        ctk.CTkButton(eng2, text="Save", width=60, command=self.save_timing).pack(side="left", padx=8)
+        eng3 = ctk.CTkFrame(self.eng, fg_color="transparent")
+        eng3.pack(fill="x", padx=6, pady=(0, 6))
+        ctk.CTkButton(eng3, text="Speed calibration...", width=150,
+                      command=lambda: hmi.SpeedCalibrationDialog(self.app, self._reload_timing)).pack(side="left", padx=4)
+        ctk.CTkButton(eng3, text="Line layout / camera stations...", width=230,
+                      command=self.open_layout).pack(side="left", padx=4)
+        ctk.CTkButton(eng3, text="Recipe...", width=90,
+                      command=lambda: hmi.RecipeDialog(self.app, detect.CLASS_NAMES)).pack(side="left", padx=4)
+        self.tim_msg = ctk.CTkLabel(eng3, text="", font=theme.SMALL, text_color=DIM, anchor="w")
+        self.tim_msg.pack(side="left", padx=8)
+        self.feed_s = ctk.CTkEntry(eng3, width=40)
+        self.feed_s.insert(0, "4")
+        self.feed_s.pack(side="right", padx=(2, 4))
+        self.feed = ctk.CTkCheckBox(eng3, text="auto-feed every (s)", width=140)
+        self.feed.pack(side="right")
+        self.sim_btn = ctk.CTkButton(eng3, text="Simulate bottle (X0)", width=150, fg_color="transparent",
+                                     border_width=1, text_color=WARN, command=self.simulate_bottle)
+        self.sim_btn.pack(side="right", padx=6)
 
-        low = ctk.CTkFrame(parent, fg_color="transparent")
-        low.pack(fill="both", expand=True)
-        self.table = ctk.CTkTextbox(low, font=MONO, fg_color=PANEL, text_color=INK, wrap="none")
+        # ---- centre: two live cameras + the current bottle
+        self.mid = ctk.CTkFrame(parent, fg_color="transparent")
+        self.mid.pack(fill="both", expand=True, pady=(0, 6))
+        for c, w in enumerate((5, 5, 4)):
+            self.mid.grid_columnconfigure(c, weight=w, uniform="m")
+        self.mid.grid_rowconfigure(0, weight=1)
+        self.cam_lbl, self.cam_img, self.cam_title = {}, {}, {}
+        for i, slot in enumerate(self.SLOTS):
+            f = ctk.CTkFrame(self.mid, fg_color=PANEL, border_width=1, border_color=LINE)
+            f.grid(row=0, column=i, sticky="nsew", padx=(0, 6))
+            self.cam_title[slot] = ctk.CTkLabel(f, text=f"CAMERA {i + 1}", font=theme.CAPS, text_color=DIM, anchor="w")
+            self.cam_title[slot].pack(fill="x", padx=10, pady=(8, 2))
+            # plain tk.Label: see LiveTab.build_panes (a CTkLabel re-scales its image on every frame)
+            self.cam_img[slot] = tk.Label(f, text="camera off", fg=OFF, bg=VIDEO_BG, height=8, bd=0,
+                                          compound="center", font=theme.BODY)
+            self.cam_img[slot].pack(fill="both", expand=True, padx=10)
+            self.cam_lbl[slot] = ctk.CTkLabel(f, text="", font=MONO, justify="left", anchor="w")
+            self.cam_lbl[slot].pack(fill="x", padx=10, pady=(4, 8))
+        ins = ctk.CTkFrame(self.mid, fg_color=PANEL, border_width=1, border_color=LINE)
+        ins.grid(row=0, column=2, sticky="nsew")
+        ctk.CTkLabel(ins, text="CURRENT BOTTLE", font=theme.CAPS, text_color=DIM, anchor="w").pack(fill="x", padx=10,
+                                                                                                  pady=(8, 2))
+        self.res_box = ctk.CTkFrame(ins, fg_color=PANEL_2, corner_radius=6)
+        self.res_box.pack(fill="x", padx=10)
+        self.res_lbl = ctk.CTkLabel(self.res_box, text="--", font=theme.HUGE, text_color=DIM)
+        self.res_lbl.pack(pady=4)
+        self.ins_lbl = ctk.CTkLabel(ins, text="", font=MONO, justify="left", anchor="nw", wraplength=420)
+        self.ins_lbl.pack(fill="x", padx=10, pady=(6, 4))
+        self.ev_img = ctk.CTkLabel(ins, text="no bottle yet", text_color=OFF, fg_color=VIDEO_BG, height=110,
+                                   corner_radius=6)
+        self.ev_img.pack(fill="both", expand=True, padx=10, pady=(0, 6))
+        self.ready_lbl = ctk.CTkLabel(ins, text="", font=theme.SMALL, justify="left", anchor="nw", wraplength=420)
+        self.ready_lbl.pack(fill="x", padx=10, pady=(0, 8))
+        self.plc_lbl = self.ready_lbl            # compatibility name (machine data is in the readiness list)
+
+        # ---- counters
+        prod = ctk.CTkFrame(parent, fg_color=PANEL, border_width=1, border_color=LINE)
+        prod.pack(fill="x", pady=(0, 6), before=self.mid)       # counters always visible, above the cameras
+        self.cnt = {}
+        for key, title, col in (("total", "TOTAL", INK), (infer.PASS, "PASS", GOOD), (infer.REJECT, "REJECT", BAD),
+                                (infer.FAULT, "FAULT", WARN), ("not_inspected", "NOT INSPECTED", WARN),
+                                ("missed_reject", "MISSED REJECT", BAD), ("queue", "QUEUE", ACC)):
+            cell = ctk.CTkFrame(prod, fg_color="transparent")
+            cell.pack(side="left", padx=14, pady=6)
+            self.cnt[key] = ctk.CTkLabel(cell, text="0", font=theme.BIG, text_color=col)
+            self.cnt[key].pack()
+            ctk.CTkLabel(cell, text=title, text_color=DIM, font=theme.CAPS).pack()
+        self.travel_lbl = ctk.CTkLabel(prod, text="", font=MONO, text_color=DIM, justify="left")
+        self.travel_lbl.pack(side="right", padx=10)
+
+        # ---- recent bottles + alarms
+        low = ctk.CTkFrame(parent, fg_color="transparent", height=170)
+        low.pack(fill="x")
+        self.table = ctk.CTkTextbox(low, font=MONO, wrap="none", height=150)
         self.table.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        self.table.insert("end", "RECENT BOTTLES\nnone yet - the list fills when the line runs")
         self.table.configure(state="disabled")
-        self.alarms = ctk.CTkTextbox(low, font=("Consolas", 13), fg_color=PANEL, text_color=BAD, width=380)
+        self.alarms = ctk.CTkTextbox(low, font=("Consolas", 13), text_color=BAD, width=430, height=150)
         self.alarms.pack(side="left", fill="y")
+        self.alarms.insert("end", "ALARMS\nshown here while the line runs; history on the History page")
         self.alarms.configure(state="disabled")
         self._shown_seq = {}
         app.after(300, self._tick)
@@ -1395,21 +1570,40 @@ class ProductionTab:
     def running(self) -> bool:
         return self.line is not None and self.line.running
 
+    @property
+    def busy(self) -> bool:
+        """Line running, starting, or a camera / AI test holding the cameras."""
+        return self.running or self._loading or self._warming is not None or self._cam_test or self._testing
+
+    def set_mode(self, mode: str):
+        if mode == "engineer":
+            self.eng.pack(fill="x", pady=(0, 6), before=self.mid)
+        else:
+            self.eng.pack_forget()
+
     def refresh(self):
         if not self._srcmap and not self._loading:
-            self.scan()
+            # Camera NAMES only (a COM query, no device is opened). "Scan cameras" probes the devices.
+            try:
+                names = infer.camera_names()
+            except Exception:                                    # noqa: BLE001
+                names = []
+            if names:
+                self._set_cams([{"index": i, "name": n, "width": 0, "height": 0} for i, n in enumerate(names)],
+                               probed=False)
 
     def scan(self):
-        if self.running:
-            return messagebox.showinfo("Line running", "Stop the line before scanning for cameras.")
+        if self.busy:
+            return messagebox.showinfo("Cameras in use", "Stop the line / camera test before scanning for cameras.")
         n = int(self.app.settings.get("camera_probe", 5))
         self._loading = True
         self.app.run_bg(lambda: infer.list_cameras(n), self._set_cams)
 
-    def _set_cams(self, cams):
-        self._loading = False
-        self._srcmap = {f"{c['index']}: {c.get('name') or 'camera'} ({c['width']}x{c['height']} default)": c["index"]
-                        for c in cams}
+    def _set_cams(self, cams, probed: bool = True):
+        if probed:
+            self._loading = False
+        self._srcmap = {f"{c['index']}: {c.get('name') or 'camera'}"
+                        + (f" ({c['width']}x{c['height']})" if c.get("width") else ""): c["index"] for c in cams}
         values = ["- not used -"] + list(self._srcmap)
         want = [int(s) for s in self.app.settings.get("line_cameras", []) if str(s).isdigit()]
         if not want:                                   # default: the EMEET Nova 4K units, else the first cameras
@@ -1456,32 +1650,124 @@ class ProductionTab:
         except ValueError as e:
             self.tim_msg.configure(text=str(e), text_color=BAD)
             return False
+        vals["job_id"], vals["product"] = self.job.get().strip(), self.product.get().strip()
         self.app.settings.update(vals)
         D.save_settings(self.app.settings)
         cfg = MC.line_settings(self.app.settings)
-        bad = MC.timing_problem(cfg)
+        bad = MC.line_problems(cfg, self.chosen())
         if bad:
-            self.tim_msg.configure(text=f"saved, but the line will not start: {bad}", text_color=BAD)
+            self.tim_msg.configure(text=f"saved, but the line will not start: {'; '.join(bad)}"[:300], text_color=BAD)
             return False
         tt, measured = MC.travel_time(cfg)
-        self.tim_msg.configure(text=f"saved: travel {tt:.2f} s" + ("" if measured else " (= T0: distance/speed not set)"),
-                               text_color=DIM)
+        self.tim_msg.configure(text=f"saved: travel {tt:.2f} s" + ("" if measured else " (= T0: distance/speed not set)")
+                               + f"  |  {TR.position_source(cfg).describe()}", text_color=DIM)
         return True
+
+    def _reload_timing(self):
+        """A dialog saved settings: show them in the timing row."""
+        cfg = MC.line_settings(self.app.settings)
+        for key, _, _ in self.TIMING:
+            self.tim[key].delete(0, "end")
+            self.tim[key].insert(0, f"{cfg[key]:g}")
+        self.save_timing()
+
+    def open_layout(self):
+        names = {v: k for k, v in self._srcmap.items()}
+        hmi.LineLayoutDialog(self.app, [(s, names.get(s, f"camera {s}")) for s in self.chosen()], self._reload_timing)
+
+    # ------------------------------------------------------------ machine state (the one source of truth)
+    def facts(self, models_injected: bool = False) -> dict:
+        svc = self.app.plc
+        h = svc.health_check()
+        link = h["link_state"]
+        snap = svc.snapshot() if link == PLC_CONNECTED else None
+        if snap is not None and snap["age_s"] > 1.5:
+            snap = None
+        timing = []
+        try:                                       # what is typed in the timing row is what Start will save
+            cfg = MC.line_settings(dict(self.app.settings, **self._timing_from_ui()))
+        except ValueError as e:
+            cfg = MC.line_settings(self.app.settings)
+            timing.append(str(e))
+        timing += MC.line_problems(cfg, self.chosen())
+        task = DEC.TASK_LABELS.get(self.task.get(), "detection")
+        stages = DEC.TASKS.get(task, ())
+        cams = []
+        for slot in self.SLOTS:
+            pick = self.cam_pick[slot].get()
+            if pick == "- not used -":
+                continue
+            src = self._srcmap.get(pick)
+            cam = self.app.cams.get(src) if src is not None else None
+            if self.running and cam is not None:
+                ok = bool(cam.alive and not cam.error)
+                cams.append((slot, ok, "streaming" if ok else (cam.error or "not streaming")))
+            else:
+                cams.append((slot, src is not None, "selected" if src is not None else "not found"))
+        models = []
+        if self.line is not None and self.running:
+            mids = self.line.inspector.models()
+            models = [(st, True, str(mids.get(st))) for st in stages]
+        else:
+            for st in stages:
+                if models_injected:
+                    models.append((st, True, "provided"))
+                elif st == DEC.CLASSIFICATION:
+                    stamp = D.load_config().get("active_model")
+                    ok = bool(stamp) and (D.MODELS / str(stamp) / "model.pt").exists()
+                    models.append((st, ok, str(stamp) if ok else "no active classifier"))
+                elif st == DEC.DETECTION:
+                    w = Path(self.app.settings.get("detector_weights") or detect.DEFAULT_WEIGHTS)
+                    models.append((st, w.exists(), w.name if w.exists() else f"{w.name} missing"))
+                else:
+                    w = self.app.settings.get("segmenter_weights")
+                    models.append((st, bool(w) and Path(w).exists(), "no segmentation model trained"))
+        dev = str(cfg.get("estop_device") or "").upper()
+        estop = None
+        if dev and snap is not None:
+            flat = {}
+            for k in ("inputs", "internal", "outputs"):
+                flat.update(snap[k])
+            if dev in flat:
+                v = bool(flat[dev])
+                estop = v if cfg.get("estop_active_high") else not v
+        recipe = []
+        if DEC.DETECTION in stages:
+            r = D.load_config().get("inspection")
+            recipe = DEC.recipe_problems(r) if r else []
+        line = self.line if self.running else None
+        halted = line.halted if line is not None else None
+        return {"plc_link": link, "plc_run": None if snap is None else bool(snap["plc_run"]),
+                "plc_real": not svc.simulator_mode, "cameras": cams, "models": models,
+                "timing": timing, "estop": estop, "recipe": recipe,
+                "line_running": self.running, "line_starting": self._loading or self._warming is not None,
+                "line_stopping": self._stopping, "line_halted": halted,
+                "halted_by_estop": bool(halted and "E-stop" in halted),
+                "line_error": line.error if line is not None else None,
+                "inspecting": line.snapshot()["inspecting"] if line is not None else 0,
+                "starting_detail": "opening cameras, waiting for first frames" if self._warming else "loading models"}
 
     # ------------------------------------------------------------ line control
     def start_line(self, models: dict | None = None):
         """models: injected {"classification"/"detection"/"segmentation": object} for the self-test;
         normally the required models are loaded in the background first."""
-        if self.running or self._loading:
+        if self.running or self._loading or self._warming is not None:
             return
+        if self._cam_test:
+            self.toggle_cam_test()
         if self.app.plc.link_state() != PLC_CONNECTED:
             return messagebox.showwarning("PLC", "Connect the PLC first (Machine tab): the line is driven by its "
                                                  "trigger (X0 -> M2).")
         srcs = self.chosen()
         if not srcs:
-            return messagebox.showinfo("No camera", "Choose Camera 0 and/or Camera 1 (Scan cameras), then Start.")
+            return messagebox.showinfo("No camera", "Choose Camera 0 and/or Camera 1 (engineer mode), then Start.")
         if not self.save_timing():
-            return
+            return messagebox.showwarning("Timing", self.tim_msg.cget("text"))
+        st, why = MS.state(self.facts(models_injected=models is not None))
+        if st != MS.READY:
+            bad = [c for c in MS.readiness(self.facts(models_injected=models is not None)) if not c.ok]
+            return messagebox.showwarning("Not ready", "The line cannot start:\n\n" + "\n".join(
+                f"- {c.name}: {c.detail}  ->  {c.action}" for c in bad) or why)
         task = DEC.TASK_LABELS[self.task.get()]
         self.app.settings.update(line_task=task, line_cameras=srcs)
         D.save_settings(self.app.settings)
@@ -1489,14 +1775,13 @@ class ProductionTab:
         if models is not None:
             return self._go(task, srcs, models)
         self._loading = True
-        self.line_lbl.configure(text="LOADING MODELS…", text_color=WARN)
 
         def work():
             out, errs = {}, []
             if DEC.CLASSIFICATION in stages:
                 stamp = D.load_config().get("active_model")
                 if not stamp:
-                    errs.append("Classification: no active classifier in this project (Train tab -> Use)")
+                    errs.append("Classification: no active classifier in this project (Models -> activate)")
                 else:
                     try:
                         out[DEC.CLASSIFICATION] = infer.Model(stamp)
@@ -1520,16 +1805,17 @@ class ProductionTab:
             self._loading = False
             out, errs = r
             if errs:
-                self.line_lbl.configure(text="LINE STOPPED", text_color=DIM)
+                for e in errs:
+                    self.app.alarms.raise_("MODEL_NOT_FOUND", e, key=e[:20], source="start")
                 return messagebox.showerror("Cannot start the line", "\n\n".join(errs))
             self._go(task, srcs, out)
         self.app.run_bg(work, done)
 
-    def _go(self, task, srcs, models):
+    def _open_cams(self, srcs) -> list:
+        """Line cameras, capture only (models run per bottle in the Inspector). Stops the Live tab first."""
         if self.app.tab_live.running:
             self.app.tab_live.stop()
         cfg = MC.line_settings(self.app.settings)
-        names = {v: k for k, v in self._srcmap.items()}
         cams = []
         for slot, src in zip(self.SLOTS, srcs):
             cam = self.app.cams.add(src, f"{slot} (#{src})")
@@ -1537,33 +1823,83 @@ class ProductionTab:
             cam.capture_wh = tuple(cfg["line_capture_wh"]) if cfg["line_capture_wh"] else None
             cam.fourcc = cfg["line_fourcc"] or None
             cams.append(cam)
-        self.app.cams.start(srcs, None, None)                # capture only: models run per bottle
+        self.app.cams.start(srcs, None, None)
         self._slot_src = dict(zip(self.SLOTS, srcs))
+        return cams
+
+    def _go(self, task, srcs, models):
+        cams = self._open_cams(srcs)
+        self._warming = (time.monotonic() + self.WARMUP_S, task, srcs, models, cams)
+        self._check_warm()
+
+    def _check_warm(self):
+        """INITIALIZING: the line starts only when every line camera has delivered a frame."""
+        if self._warming is None:
+            return
+        deadline, task, srcs, models, cams = self._warming
+        if all(c.latest_frame() is not None for c in cams):
+            self._warming = None
+            return self._launch(task, models, cams)
+        if time.monotonic() > deadline or any(c.error for c in cams):
+            self._warming = None
+            dead = [c.name for c in cams if c.latest_frame() is None]
+            why = "; ".join(f"{c.name}: {c.error}" for c in cams if c.error) or f"no frame from {', '.join(dead)}"
+            self.app.alarms.raise_("CAMERA_DISCONNECTED", f"line not started: {why}", source="start")
+            self.app.cams.stop()
+            self.msg = (f"Line NOT started: camera did not deliver images ({why})", BAD)
+
+    def _launch(self, task, models, cams):
+        cfg = MC.line_settings(self.app.settings)
         insp = MC.Inspector(cams, task, classifier=models.get(DEC.CLASSIFICATION),
                             detector=models.get(DEC.DETECTION), segmenter=models.get(DEC.SEGMENTATION),
                             frames=cfg["inspect_frames"], window_s=cfg["inspect_window_s"])
-        self.app.plc.watch_x0 = True                          # bottle accounting: X0 edges with no trigger
-        self.line = MC.MachineCycle(self.app.plc, insp, cfg, log_dir=D.PROJECT_DIR / "production")
+        svc = self.app.plc
+        try:
+            store = self.app.store()
+            store.run_id = None                               # a new run per start
+            line = MC.MachineCycle(svc, insp, cfg, log_dir=store.folder, alarms=self.app.alarms, store=store,
+                                   run_info={"project": D.PROJECT, "recipe": D.load_config().get("inspection"),
+                                             "mode": "SIMULATOR" if svc.simulator_mode else "REAL PLC"})
+        except ValueError as e:
+            self.app.cams.stop()
+            self.msg = (f"Line NOT started: {e}", BAD)
+            self.app.alarms.raise_("TIMING_INVALID", str(e), source="start")
+            return
+        svc.watch_x0 = True                                   # bottle accounting: X0 edges with no trigger
+        self.line = line
         self.line.start()
-        self.btn_start.configure(state="disabled")
+        self.msg = (f"Line started ({'SIMULATOR' if svc.simulator_mode else 'REAL PLC'}), run {store.run_id}", DIM)
         self._table_sig = None
 
     def stop_line(self):
-        if self.line is not None:
-            self.line.stop()
-        self.app.plc.watch_x0 = False
-        self.app.cams.stop()
-        self.btn_start.configure(state="normal")
+        """Orderly STOP: no new triggers are answered, bottles still being inspected end as FAULT (remove by
+        hand), cameras stop. Bottles already answered are left to the PLC."""
+        self._stopping = True
+        try:
+            self._warming = None
+            if self.line is not None and self.line.running:
+                self.line.stop()
+                self.msg = ("Line stopped by the operator.", DIM)
+            self.app.plc.watch_x0 = False
+            self.app.cams.stop()
+            self._cam_test = False
+            self.btn_camtest.configure(text="CAMERA TEST")
+        finally:
+            self._stopping = False
 
     def halt_line(self):
-        """Operator STOP: latch the software halt (no PLC command is sent until Reset). The hardware
-        E-stop is what actually removes power; this stops the program answering the PLC."""
+        """Software HALT latch: no PLC command is sent until RESET FAULT. The hardware E-stop is what actually
+        removes power; this stops the program answering the PLC."""
         if self.line is not None and self.line.running:
-            self.line.halt("operator STOP button")
+            self.line.halt("operator HALT button")
 
     def reset_halt(self):
-        if self.line is not None and self.line.halted and not self.line.reset():
-            messagebox.showwarning("Cannot reset", "The hardware E-stop input still reads pressed.")
+        if self.line is not None and self.line.halted:
+            if not self.line.reset():
+                return messagebox.showwarning("Cannot reset", "The hardware E-stop input still reads pressed.")
+        else:
+            self.app.alarms.acknowledge_all()
+        self.msg = ("Fault reset / alarms acknowledged.", DIM)
 
     def close(self):
         self.stop_line()
@@ -1574,9 +1910,89 @@ class ProductionTab:
             return messagebox.showinfo("Simulator only", "Bottles can only be simulated on the ISPSoft simulator.")
         self.app.tab_machine.pulse_x0()
 
+    # ------------------------------------------------------------ tests without the PLC
+    def toggle_cam_test(self):
+        """CAMERA TEST: open the chosen cameras (capture only) and show them live with image quality, no PLC,
+        no AI. Press again to stop."""
+        if self._cam_test:
+            self.app.cams.stop()
+            self._cam_test = False
+            self.btn_camtest.configure(text="CAMERA TEST")
+            return
+        if self.running or self._warming is not None or self._loading:
+            return messagebox.showinfo("Line running", "Stop the line first.")
+        srcs = self.chosen()
+        if not srcs:
+            return messagebox.showinfo("No camera", "Choose the line cameras first (engineer mode).")
+        self._open_cams(srcs)
+        self._cam_test = True
+        self.btn_camtest.configure(text="STOP CAMERA TEST")
+        self.msg = ("Camera test: live images, no PLC, no AI.", DIM)
+
+    def capture_test(self):
+        """Save the newest frame of every streaming line camera to captures/camtest_<time>/."""
+        cams = [self.app.cams.get(s) for s in getattr(self, "_slot_src", {}).values()]
+        frames = [(c, c.latest_frame()) for c in cams if c is not None]
+        frames = [(c, f) for c, f in frames if f is not None]
+        if not frames:
+            return messagebox.showinfo("Capture", "No camera is streaming: start the CAMERA TEST first.")
+        out = Path("captures") / f"camtest_{time.strftime('%Y%m%d-%H%M%S')}"
+        out.mkdir(parents=True, exist_ok=True)
+        for c, f in frames:
+            cv2.imwrite(str(out / f"cam{c.source}_seq{f.seq}.png"), f.image)
+        q = {str(c.source): bench.frame_quality(f.image) for c, f in frames}
+        (out / "quality.json").write_text(json.dumps(q, indent=2))
+        self.msg = (f"Saved {len(frames)} test frame(s) to {out}", DIM)
+
+    def test_inspection(self):
+        """TEST INSPECTION: what would the line decide about the bottle in front of the cameras now? Same models,
+        decision engine and recipe as production; the PLC is never touched. Result + images in captures/."""
+        if self.running or self._warming is not None or self._loading or self._testing:
+            return messagebox.showinfo("Busy", "Stop the line first.")
+        srcs = self.chosen()
+        if not srcs:
+            return messagebox.showinfo("No camera", "Choose the line cameras first (engineer mode).")
+        if self._cam_test:
+            self.toggle_cam_test()
+        if self.app.tab_live.running:
+            self.app.tab_live.stop()
+        self.app.cams.stop()
+        task = DEC.TASK_LABELS[self.task.get()]
+        self._testing = True
+        self.res_lbl.configure(text="TESTING...", text_color=WARN)
+        self.ins_lbl.configure(text=f"{len(srcs)} camera(s), task {task}\n(the PLC is not used)")
+
+        def done(rec):
+            self._testing = False
+            self._test_rec = rec
+            dec = rec["decision"]
+            col = {infer.PASS: GOOD, infer.REJECT: BAD}.get(dec["state"], WARN)
+            self.res_lbl.configure(text=dec["state"], text_color=col)
+            self.res_box.configure(fg_color={infer.PASS: PASS_SOFT, infer.REJECT: REJECT_SOFT}.get(dec["state"],
+                                                                                                  FAULT_SOFT))
+            ms = [fr.get("ms", 0) for c in rec["cameras"].values() for fr in c.get("frames", [])]
+            self.ins_lbl.configure(text=(f"TEST (no PLC)  {time.strftime('%H:%M:%S')}\n"
+                                         f"Defect    {', '.join(dec['defects']) or '-'}\nReason    {dec['reason'][:160]}\n"
+                                         f"AI time   {sum(ms):.0f} ms over {len(ms)} frame(s)\n"
+                                         f"Saved     {rec.get('out_dir', '')}"))
+            ov = sorted(Path(rec.get("out_dir", ".")).glob("*_overlay.jpg"))
+            if ov:
+                img = cv2.imread(str(ov[0]))
+                if img is not None:
+                    self._ev = bgr_to_ctk(img, (420, 260))
+                    self.ev_img.configure(image=self._ev, text="")
+
+        def work():
+            try:
+                return MC.bench_inspect("TEST", [str(s) for s in srcs], task=task, frames=2)
+            finally:
+                self._testing = False
+        self.app.run_bg(work, done)
+
     # ------------------------------------------------------------ view (main thread)
     def _tick(self):
         try:
+            self._check_warm()
             self._update()
         except Exception:                                    # a display glitch must never stop the loop
             traceback.print_exc()
@@ -1587,7 +2003,7 @@ class ProductionTab:
         when its frame seq changed; downscales with cv2 first (PIL LANCZOS on a full frame is slow)."""
         t0 = time.monotonic()
         try:
-            if self.running:
+            if self.running or self._cam_test or self._warming is not None:
                 for slot in self.SLOTS:
                     src = getattr(self, "_slot_src", {}).get(slot)
                     cam = self.app.cams.get(src) if src is not None else None
@@ -1597,111 +2013,202 @@ class ProductionTab:
                     if f is None or self._shown_seq.get(slot) == (cam.session, f.seq):
                         continue
                     self._shown_seq[slot] = (cam.session, f.seq)
+                    lab = self.cam_img[slot]
+                    bw, bh = max(200, lab.winfo_width() - 4), max(150, lab.winfo_height() - 4)
                     h, w = f.image.shape[:2]
-                    k = min(330 / w, 190 / h)
+                    k = min(bw / w, bh / h)
                     small = cv2.resize(f.image, (max(1, int(w * k)), max(1, int(h * k))),
                                        interpolation=cv2.INTER_AREA)
                     img = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB)))
                     self._imgs[slot] = img
-                    self.cam_img[slot].configure(image=img, text="")
+                    lab.configure(image=img, text="")
         except Exception:                                    # a display glitch must never stop the loop
             traceback.print_exc()
         self.app.after(max(10, 40 - int((time.monotonic() - t0) * 1000)), self._video_tick)
 
+    def _show_state(self, f):
+        st, why = MS.state(f)
+        self.mstate, self.mreason = st, why
+        cls = MS.LOOK[st][0]
+        colour = {"PASS": GOOD, "BAD": BAD, "WARN": WARN, "ACC": ACC}.get(cls, OFF)
+        self.state_box.configure(fg_color=colour)
+        self.line_lbl.configure(text=st.replace("_", " "))
+        self.state_reason.configure(text=(MS.LOOK[st][1] if st in (MS.READY, MS.RUNNING) else why)[:150])
+        live = self.running or self._warming is not None or self._loading
+        self.btn_start.configure(state="normal" if st == MS.READY else "disabled",
+                                 fg_color=GOOD if st == MS.READY else PANEL_2)
+        self.btn_stop.configure(state="normal" if live or self._cam_test else "disabled",
+                                fg_color=BAD if live or self._cam_test else PANEL_2)
+        alarm = bool(self.app.alarms.active()) or (self.line is not None and self.line.halted)
+        self.btn_reset.configure(state="normal" if alarm else "disabled", fg_color=WARN if alarm else PANEL_2)
+        idle = not live and not self._testing
+        self.btn_test.configure(state="normal" if idle else "disabled")
+        self.btn_camtest.configure(state="normal" if idle or self._cam_test else "disabled")
+        # the start checklist (or, while running, what the machine is doing)
+        if not live:
+            lines = [f"{'OK ' if c.ok else 'NO '} {c.name}: {c.detail}"[:70] for c in MS.readiness(f)]
+            self.ready_lbl.configure(text="START CHECKS\n" + "\n".join(lines),
+                                     text_color=INK if st == MS.READY else WARN)
+        else:
+            self.ready_lbl.configure(text="", text_color=DIM)
+
+    RECONNECT_S = 3.0                            # a dead line camera is reopened at most this often
+
+    def _camera_watch(self, slot, cam, src):
+        """Log camera state changes (events, not frames) and, while the line runs, reopen a dead camera in the
+        background. Bottles inspected while it is down are FAULT (camera fault); nothing else is paused."""
+        bad = bool(cam.error) or not cam.alive
+        if bad != self._cam_bad.get(slot):
+            self._cam_bad[slot] = bad
+            applog.log("camera", f"{slot} (#{src}) " + (f"FAULT: {cam.error or 'not streaming'}" if bad else "streaming"),
+                       "ERROR" if bad else "INFO", wh="x".join(map(str, cam.frame_wh or ())) or "-",
+                       fps=round(cam.fps, 1))
+        if (bad and self.running and not self._reopening.get(slot)
+                and time.monotonic() - self._reopen_at.get(slot, 0.0) > self.RECONNECT_S):
+            self._reopen_at[slot] = time.monotonic()
+            self._reopening[slot] = True
+            n = self._reopens[slot] = self._reopens.get(slot, 0) + 1
+            applog.log("camera", f"{slot} (#{src}) reconnect attempt {n}", "WARNING")
+
+            def work():
+                try:
+                    cam.stop()
+                    if self.running:
+                        cam.start(src)
+                finally:
+                    self._reopening[slot] = False
+            threading.Thread(target=work, name=f"reopen-{slot}", daemon=True).start()
+
+    def _monitor(self, f):
+        """Condition alarms while the line is (starting to) run. Idle conditions are cleared: an operator who has
+        not connected the PLC yet is not an alarm."""
+        on = self.running or self._warming is not None
+        A = self.app.alarms
+        A.set_condition("PLC_COMM_FAULT", on and f["plc_link"] in (PLC_FAULT, "DISCONNECTED"),
+                        f"link {f['plc_link']}")
+        A.set_condition("PLC_NOT_RUNNING", on and f["plc_run"] is False, "PLC reports STOP")
+        A.set_condition("E_STOP", f["estop"] is True, f"input {self.app.settings.get('estop_device')} pressed")
+
     def _update(self):
         self._tick_n += 1
         svc = self.app.plc
-        h = svc.health_check()
-        st = h["link_state"]
-        snap = svc.snapshot() if st == PLC_CONNECTED else None
-        if snap:
-            fl = {}
-            for k in ("inputs", "internal", "outputs", "timers", "counters"):
-                fl.update(snap[k])
-            on = lambda n: "ON " if fl.get(n) else "off"
-            lat = "--" if h["last_latency_ms"] is None else f"{h['last_latency_ms']:.0f} ms"
-            txt = (f"link    {st}\nPLC     {'RUN' if snap['plc_run'] else 'STOP'}   latency {lat}\n"
-                   f"X0 {on('X0')}  M2 {on('M2')}\nM0 {on('M0')}  M1 {on('M1')}\nY0 {on('Y0')}  Y1 {on('Y1')}\n"
-                   f"T0 {fl.get('T0', 0) / 10:4.1f}s T1 {fl.get('T1', 0) / 10:4.1f}s\n"
-                   f"C0 {fl.get('C0', 0)}  C1 {fl.get('C1', 0)}\nuntriggered X0: {svc.untriggered}\n"
-                   f"{svc.client.transport.description}")
-        else:
-            txt = f"link    {st}\nno PLC data\n{svc.client.transport.description}"
-        self.plc_lbl.configure(text=txt, text_color=INK if snap else BAD)
-        self.sim_btn.configure(state="normal" if svc.simulator_mode and snap else "disabled")
+        f = self.facts()
+        self._show_state(f)
+        self._monitor(f)
+        real = not svc.simulator_mode
+        self.plc_mode_lbl.configure(text="REAL PLC" if real else "SIMULATOR", fg_color=BAD if real else ACC)
+        self.sim_btn.configure(state="normal" if svc.simulator_mode and f["plc_run"] else "disabled")
+        self.msg_lbl.configure(text=self.msg[0], text_color=self.msg[1])
 
         # cameras
         now = time.monotonic()
-        show_img = self._tick_n % 2 == 0
-        for slot in self.SLOTS:
-            src = getattr(self, "_slot_src", {}).get(slot) if self.running else None
+        cfg = MC.line_settings(self.app.settings)
+        stations = TR.stations(cfg, self.chosen())
+        want = tuple(cfg["line_capture_wh"]) if cfg["line_capture_wh"] else None
+        showing = self.running or self._cam_test or self._warming is not None
+        for i, slot in enumerate(self.SLOTS):
+            src = getattr(self, "_slot_src", {}).get(slot) if showing else None
             cam = self.app.cams.get(src) if src is not None else None
+            pick_src = self._srcmap.get(self.cam_pick[slot].get())
+            stn = stations.get(str(pick_src)) if pick_src is not None else None
+            title = f"CAMERA {i + 1}" + (f"  -  {stn.name}, {stn.role}, +{stn.offset_mm:g} mm"
+                                         + (f", {stn.side}" if stn.side else "") if stn else "  -  not used")
+            self.cam_title[slot].configure(text=title.upper())
             if cam is None or not cam.armed:
-                pick = self.cam_pick[slot].get()
-                self.cam_lbl[slot].configure(text="STOPPED" if pick != "- not used -" else "not used", text_color=DIM)
+                self.cam_lbl[slot].configure(text="OFF" if pick_src is not None else "not used", text_color=DIM)
+                if not showing:
+                    self.cam_img[slot].configure(image="", text="camera off")
                 continue
+            self._camera_watch(slot, cam, src)
             age = None if cam.frame_ts is None else now - cam.frame_ts
+            bandwidth = False
             if cam.error:
                 state, col = f"FAULT: {cam.error}"[:60], BAD
-                if "stopped returning" in cam.error and len(self.app.cams.running()) >= 1:
+                if "stopped returning" in cam.error and len(self.app.cams.running()) >= 2:
                     # measured 2026-10-03: two EMEET Nova 4K on one USB 2.0 hub -> only one high-res stream
-                    state += "\nanother camera is streaming: USB bandwidth?\nuse separate USB ports or 640x480"
+                    state += "\nUSB BANDWIDTH? use separate USB 3 root ports"
+                    bandwidth = True
             elif not cam.alive:
                 state, col = "DISCONNECTED", BAD
             elif age is None:
-                state, col = "CONNECTING…", WARN
+                state, col = "CONNECTING...", WARN
             elif age > infer.MAX_RESULT_AGE_S:
-                state, col = f"FAULT: frame timeout ({age:.1f} s)", BAD
+                state, col = f"STALE: last frame {age:.1f} s ago", BAD
             else:
                 state, col = "CONNECTED", GOOD
+            if want and cam.frame_wh and tuple(cam.frame_wh) != want and cam.alive and not cam.error:
+                state += f"\nrequested {want[0]}x{want[1]}, camera gives {cam.frame_wh[0]}x{cam.frame_wh[1]}"
+                col = WARN if col == GOOD else col
+                bandwidth = bandwidth or len(self.app.cams.running()) >= 2
+            run = self.running
+            self.app.alarms.set_condition("CAMERA_DISCONNECTED", run and (bool(cam.error) or not cam.alive),
+                                          state, key=slot)
+            self.app.alarms.set_condition("CAMERA_STALE", run and age is not None and age > infer.MAX_RESULT_AGE_S,
+                                          state, key=slot)
+            self.app.alarms.set_condition("CAMERA_BANDWIDTH_PROBLEM", bandwidth, state, key=slot)
             wh = "x".join(map(str, cam.frame_wh)) if cam.frame_wh else "--"
             ts = "--" if age is None else f"#{cam.frame_seq}  {age * 1000:.0f} ms ago"
-            self.cam_lbl[slot].configure(text=f"{state}\n{wh}  {cam.fps:.1f} fps\nframe {ts}", text_color=col)
+            q = ""
+            if self._cam_test and now - self._quality_at > 1.0:
+                fr = cam.latest_frame()
+                if fr is not None:
+                    self._quality[slot] = bench.frame_quality(fr.image)
+            if self._cam_test and slot in self._quality:
+                qq = self._quality[slot]
+                q = (f"\nbright {qq['brightness']:.0f}  contrast {qq['contrast']:.0f}  sharp {qq['sharpness']:.0f}  "
+                     f"clipped {qq['clipped']:.1f}%")
+            cur = ""
+            if self.line is not None and self.running:
+                for b in self.line.snapshot()["fifo"]:
+                    if b.status == MC.INSPECTING:
+                        cur = f"   bottle {b.inspection_id}"
+                        break
+            rc = f"  reconnects {self._reopens[slot]}" if self._reopens.get(slot) else ""
+            self.cam_lbl[slot].configure(text=f"{state}\n{wh}  {cam.fps:.1f} fps  frame {ts}{cur}{rc}{q}", text_color=col)
+        if self._cam_test and now - self._quality_at > 1.0:
+            self._quality_at = now
 
         line = self.line
         if line is None:
-            self.line_lbl.configure(text="LOADING MODELS…" if self._loading else "LINE STOPPED",
-                                    text_color=WARN if self._loading else DIM)
+            self.models_lbl.configure(text=f"task {self.task.get()}   recipe "
+                                           f"{production_store.recipe_id(D.load_config().get('inspection'))}   "
+                                           f"{TR.position_source(cfg).describe()}")
             return
         s = line.snapshot()
         models = line.inspector.models()
-        task = line.inspector.task
         self.models_lbl.configure(
-            text=f"task {task}   classifier {models['classification'] or '-'}   detector {models['detection'] or '-'}   "
-                 f"segmenter {models['segmentation'] or '-'}   frames/camera {line.inspector.frames}   "
-                 f"log {D.PROJECT_DIR.name}/production/", text_color=DIM)
-        if s["error"]:
-            self.line_lbl.configure(text="LINE ERROR", text_color=BAD)
-        elif s.get("halted") and s["running"]:
-            self.line_lbl.configure(text="LINE HALTED", text_color=BAD)
-            self.models_lbl.configure(text=f"HALTED: {s['halted']}   (no PLC command is sent; press Reset halt)",
-                                      text_color=BAD)
-        else:
-            self.line_lbl.configure(text="LINE RUNNING" if s["running"] else "LINE STOPPED",
-                                    text_color=GOOD if s["running"] else DIM)
+            text=f"task {line.inspector.task}   classifier {models['classification'] or '-'}   detector "
+                 f"{models['detection'] or '-'}   run {getattr(line.store, 'run_id', None) or '-'}   "
+                 f"{s['position']}", text_color=DIM)
         c = s["counts"]
         for k, w in self.cnt.items():
             w.configure(text=str(s["queue"] if k == "queue" else c.get(k, 0)))
+        p50, p95 = s["cycle_p50_ms"], s["cycle_p95_ms"]
         self.travel_lbl.configure(text=f"travel {s['travel_s']:.2f} s "
-                                       + ("(measured distance/speed)" if s["travel_measured"]
-                                          else "(= T0: distance/speed not set)"))
+                                       + ("(measured)" if s["travel_measured"] else "(= T0: not measured)")
+                                       + (f"\ntrigger->decision p50 {p50:.0f} ms  p95 {p95:.0f} ms" if p50 else ""))
         b = s["last"]
         if b is not None:
-            col = {infer.PASS: GOOD, infer.REJECT: BAD}.get(b.final or b.decision, WARN)
             shown = b.final or b.decision or "--"
-            self.res_lbl.configure(text=shown + ("" if b.final else " …"), text_color=col)
+            col = {infer.PASS: GOOD, infer.REJECT: BAD}.get(shown, WARN)
+            self.res_lbl.configure(text=shown + ("" if b.final else " ..."), text_color=col)
+            self.res_box.configure(fg_color={infer.PASS: PASS_SOFT, infer.REJECT: REJECT_SOFT}.get(shown, FAULT_SOFT))
             conf = "--" if b.confidence is None else f"{b.confidence:.2f}"
-            ms = "--" if b.infer_ms is None else f"{b.infer_ms:.0f} ms / {b.frames} frames"
+            percam = "  ".join(f"{k}:{v[0]}" for k, v in b.per_camera.items())
+            t = b.timings
+            tim = "  ".join(f"{k.replace('_ms', '')} {t[k]:.0f}" for k in ("capture_wait_ms", "classification_ms",
+                                                                            "detection_ms", "decision_ms", "plc_ms")
+                            if t.get(k) is not None)
             self.ins_lbl.configure(text=(f"Bottle    {b.inspection_id}   (trigger #{b.trigger_id})\n"
-                                         f"Defect    {', '.join(b.defects) or ('-' if b.decision == infer.PASS else b.reason)}\n"
-                                         f"Conf.     {conf}\nInference {ms}\n"
-                                         f"Sched.rej {MC._wall(b.scheduled_wall)}\nCommand   {b.command or '-'}\n"
-                                         f"PLC       {b.plc_status or b.status}\n{b.note}"))
+                                         f"Defect    {', '.join(b.defects) or ('-' if b.decision == infer.PASS else b.reason)[:120]}\n"
+                                         f"Conf.     {conf}\nCameras   {percam or '-'}\n"
+                                         f"Command   {b.command or '-'}   PLC {b.plc_status or b.status}\n"
+                                         f"ms        {tim or '-'}\n{b.note}"))
             if b.thumb is not None and getattr(self, "_thumb_for", None) is not b:
                 self._thumb_for = b
-                self._ev = bgr_to_ctk(b.thumb, (200, 230))
+                self._ev = bgr_to_ctk(b.thumb, (420, 260))
                 self.ev_img.configure(image=self._ev, text="")
-        # FIFO + history table
+        # recent bottles
         rows = list(s["fifo"]) + list(reversed(s["history"]))
         sig = tuple((r.inspection_id, r.status, r.final, r.plc_status) for r in rows[:40])
         if sig != self._table_sig:
@@ -1711,7 +2218,7 @@ class ProductionTab:
             lines = [head, "-" * len(head)]
             for r in rows[:200]:
                 conf = "" if r.confidence is None else f"{r.confidence:.2f}"
-                lines.append(f"{r.inspection_id:<7}{MC._wall(r.wall):<14}{(r.final or '…'):<8}{(r.decision or '…'):<8}"
+                lines.append(f"{r.inspection_id:<7}{MC._wall(r.wall):<14}{(r.final or '...'):<8}{(r.decision or '...'):<8}"
                              f"{(', '.join(r.defects) or ('-' if r.decision == infer.PASS else r.reason))[:25]:<26}"
                              f"{conf:>5}  {MC._wall(r.scheduled_wall):<14}{(r.command or '-'):<7}{r.status:<14}"
                              f"{r.plc_status}")
@@ -1719,15 +2226,24 @@ class ProductionTab:
             self.table.delete("1.0", "end")
             self.table.insert("end", "\n".join(lines))
             self.table.configure(state="disabled")
-        if len(s["alarms"]) != self._alarm_n or (s["alarms"] and self._alarm_n == 20):
-            self._alarm_n = len(s["alarms"])
+        # alarms (coded, active first) + the line's own event lines
+        act = self.app.alarms.active()
+        asig = (tuple((a.code, a.key, a.state, a.count) for a in act), len(s["alarms"]))
+        if asig != self._alarm_sig:
+            self._alarm_sig = asig
+            txt = ["ACTIVE ALARMS" if act else "NO ACTIVE ALARM"]
+            for a in act[:12]:
+                txt.append(f"{time.strftime('%H:%M:%S', time.localtime(a.raised))} {a.severity[:4]} {a.code}"
+                           + (f" x{a.count}" if a.count > 1 else "") + (" (ack)" if a.state == AL.ACKNOWLEDGED else "")
+                           + f"\n    {a.message} -> {a.action}")
+            txt.append("\nEVENTS (newest first)")
+            txt += [f"{time.strftime('%H:%M:%S', time.localtime(t))}  {e}" for t, e in reversed(s["alarms"])]
             self.alarms.configure(state="normal")
             self.alarms.delete("1.0", "end")
-            self.alarms.insert("end", "ALARMS (newest first)\n" + "\n".join(
-                f"{time.strftime('%H:%M:%S', time.localtime(t))}  {a}" for t, a in reversed(s["alarms"])))
+            self.alarms.insert("end", "\n".join(txt))
             self.alarms.configure(state="disabled")
         # simulator auto-feed: one simulated bottle every N s while the line runs
-        if self.feed.get() and self.running and svc.simulator_mode and snap:
+        if self.feed.get() and self.running and svc.simulator_mode and f["plc_run"]:
             try:
                 every = max(0.5, float(self.feed_s.get()))
             except ValueError:
@@ -4213,11 +4729,40 @@ class SettingsTab:
                           ).pack(side="left", padx=(0, 6))
         self.restart_btn.pack(side="left", padx=(14, 8))
         self.restart_note.pack(side="left")
+        trow = ctk.CTkFrame(look, fg_color="transparent")
+        trow.pack(anchor="w", padx=14, pady=(0, 4))
+        ctk.CTkLabel(trow, text="Theme", width=120, anchor="w").pack(side="left")
+        self.theme = ctk.CTkSegmentedButton(trow, values=["light", "dark"], command=self.set_theme)
+        self.theme.set("dark" if app.settings.get("ui_theme") == "dark" else "light")
+        self.theme.pack(side="left")
         ctk.CTkLabel(look, text_color=DIM, justify="left", wraplength=700,
-                     text="Theme: dark industrial. Red, amber and green are kept only where they "
-                          "carry meaning - a reject an operator reads across a room, a warning, a "
-                          "passing recall - so the theme cannot make a reject look like a pass."
+                     text="Light industrial HMI by default (applied at the next start). Red, amber and green are kept "
+                          "only where they carry meaning - a reject an operator reads across a room, a warning, a "
+                          "passing recall - so the theme cannot make a reject look like a pass. Camera images "
+                          "always sit on a dark background."
                      ).pack(anchor="w", padx=14, pady=(0, 12))
+
+        prod = self._box(wrap, "PRODUCTION")
+        prow = ctk.CTkFrame(prod, fg_color="transparent")
+        prow.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(prow, text="Evidence images kept", width=330, anchor="w").pack(side="left")
+        self.evidence = ctk.CTkOptionMenu(prow, values=list(production_store.EVIDENCE_POLICIES), width=180)
+        self.evidence.set(str(app.settings.get("evidence_policy", "REJECT_AND_FAULT")))
+        self.evidence.pack(side="left")
+        ctk.CTkLabel(prod, text="Every bottle is always recorded (production.db); this decides which ones also keep "
+                                "an image. SAMPLE:10 = every 10th bottle plus every REJECT / FAULT.", text_color=DIM,
+                     font=("Segoe UI", 12), wraplength=700, justify="left").pack(anchor="w", padx=14, pady=(0, 8))
+        self.auto_act = ctk.CTkCheckBox(prod, text="Activate a newly trained classifier automatically (NOT recommended)")
+        if app.settings.get("auto_activate_trained_model"):
+            self.auto_act.select()
+        self.auto_act.pack(anchor="w", padx=14, pady=(0, 4))
+        ctk.CTkLabel(prod, text="Off: training registers a CANDIDATE; it reaches production only through Models "
+                                "(validate on the real camera, approve, activate) with a rollback record.",
+                     text_color=DIM, font=("Segoe UI", 12), wraplength=700, justify="left").pack(anchor="w", padx=14,
+                                                                                               pady=(0, 8))
+        self.pin = self._number(prod, "Engineer PIN (blank = none)", app.settings.get("engineer_pin", ""),
+                                "Asked when switching from OPERATOR to ENGINEER mode. A convenience lock, not "
+                                "security: settings.json is readable on this PC.")
 
         cam = self._box(wrap, "CAMERAS AND MONITORING")
         self.probe = self._number(cam, "Camera indices to probe when scanning",
@@ -4281,6 +4826,16 @@ class SettingsTab:
     def preview_font(self, v):
         self.font_val.configure(text=f"{float(v):.2f}x")
 
+    def set_theme(self, v):
+        if self.app.settings.get("ui_theme", "light") != v:
+            self.app.settings["ui_theme"] = v
+            D.save_settings(self.app.settings)
+        pending = v != theme.MODE
+        self.restart_note.configure(text="Saved. Press Restart now to apply." if pending else "In use now.",
+                                    text_color=WARN if pending else DIM)
+        self.restart_btn.configure(state="normal" if pending else "disabled", fg_color=ACC if pending else PANEL_2,
+                                   text_color=ACC_T if pending else DIM)
+
     def set_font(self, v):
         """Save the text size; it takes effect at the next start. Re-scaling every widget in a running window means
         redrawing ~3,000 of them (20+ s on this PC, during which the app looked frozen), so it is done once, at
@@ -4308,6 +4863,9 @@ class SettingsTab:
             except ValueError:
                 return messagebox.showerror("Settings", f"{key} must be a number.")
         s["font_scale"] = round(float(self.font.get()), 2)
+        s["evidence_policy"] = self.evidence.get()
+        s["auto_activate_trained_model"] = bool(self.auto_act.get())
+        s["engineer_pin"] = self.pin.get().strip()
         D.save_settings(s)
         self.saved.configure(text="Saved.")
         self.app.after(2500, lambda: self.saved.configure(text=""))
@@ -4468,7 +5026,13 @@ def selftest():
     constructs the real window against the real dataset, so a bad geometry call
     or a missing attribute fails here instead of in front of the user.
     """
+    import tempfile
     app = App()
+    # production history of the self-test goes to a temporary folder, never into the real project's record
+    _prod_tmp = tempfile.mkdtemp(prefix="selftest_production_")
+    app.production_dir = _prod_tmp
+    applog.setup(Path(_prod_tmp) / "logs")                    # ...and its log lines too
+    mode_before = app.ui_mode
     for _ in range(3):
         app.update()
     for tab in App.TABS:
@@ -4496,6 +5060,15 @@ def selftest():
     assert app.tabs.get() == App.TABS[-1] and set(app.tabs.pages) == set(App.TABS)
     app.update_lamps()
     assert app.lamps["PLC"].val.cget("text") and app.lamps["MODEL"].val.cget("text")
+    # operator mode: only the production pages in the rail; engineer mode: everything. Pages are never destroyed.
+    app.set_mode("operator", save=False)
+    app.update()
+    assert app.tabs.get() in App.OPERATOR_PAGES
+    assert app.tabs.buttons["Production"].winfo_ismapped() and not app.tabs.buttons["Label"].winfo_ismapped()
+    assert not app.tab_production.eng.winfo_ismapped(), "engineer controls shown to the operator"
+    app.set_mode("engineer", save=False)
+    app.update()
+    assert app.tabs.buttons["Label"].winfo_ismapped() and app.tab_production.eng.winfo_ismapped()
     _selftest_label(app)
 
     # Analysis must survive both having a model and having none, and must draw
@@ -4704,8 +5277,9 @@ def selftest():
         pt.tim["plc_t0_s"].delete(0, "end"); pt.tim["plc_t0_s"].insert(0, "15")    # the K150 ladder
         assert not pt.save_timing() and "will not start" in pt.tim_msg.cget("text")
         pt.tim["plc_t0_s"].delete(0, "end"); pt.tim["plc_t0_s"].insert(0, "0.75")
+        assert until(lambda: pt.mstate == MS.READY), (pt.mstate, pt.mreason)        # all start checks pass
         pt.start_line(models={"detection": detect.YoloDetector(model=detect.FakeYolo(_yolo), warmup=False)})
-        assert until(lambda: pt.line_lbl.cget("text") == "LINE RUNNING"), pt.line_lbl.cget("text")
+        assert until(lambda: pt.line_lbl.cget("text") in ("RUNNING", "INSPECTING")), pt.line_lbl.cget("text")
         assert until(lambda: pt.cam_lbl["Camera 0"].cget("text").startswith("CONNECTED")
                      and pt.cam_lbl["Camera 1"].cget("text").startswith("CONNECTED")), pt.cam_lbl["Camera 0"].cget("text")
         assert "200x300" in pt.cam_lbl["Camera 0"].cget("text")
@@ -4722,8 +5296,34 @@ def selftest():
         assert pt.res_lbl.cget("text") == infer.PASS and "000003" in pt.ins_lbl.cget("text")
         assert "Y0 pulse" in table, table
         assert app.plc.watch_x0 and app.plc.untriggered == 0
-        pt.halt_line()                                             # operator STOP: latched until reset
-        assert until(lambda: pt.line_lbl.cget("text") == "LINE HALTED"), pt.line_lbl.cget("text")
+        # a line camera that dies while running is reopened in the background (no app restart)
+        class _DeadCam:
+            error, alive, frame_wh, fps = "camera stopped returning frames", False, None, 0.0
+            def __init__(self):
+                self.calls = []
+            def stop(self):
+                self.calls.append("stop")
+            def start(self, src):
+                self.calls.append(("start", src))
+        dead = _DeadCam()
+        pt._camera_watch("Camera 9", dead, 7)
+        assert until(lambda: ("start", 7) in dead.calls, 3.0) and pt._reopens["Camera 9"] == 1, dead.calls
+        pt._camera_watch("Camera 9", dead, 7)                     # within RECONNECT_S: not hammered
+        assert pt._reopens["Camera 9"] == 1
+        assert any("Camera 9 (#7) reconnect attempt 1" in x for x in applog.search("camera", "Camera 9"))
+        # the recipe editor validates against the detector classes and refuses to save while the line runs
+        import hmi as hmi_mod                                      # "hmi" is the conveyor HMI window here
+        rd = hmi_mod.RecipeDialog(app, detect.CLASS_NAMES)
+        app.update()
+        assert rd.check(), rd.msg.cget("text")
+        rd.rows[0]["name"].delete(0, "end"); rd.rows[0]["name"].insert(0, "lid")
+        assert not rd.check() and "no class lid" in rd.msg.cget("text")
+        assert not rd.save() and "Stop the line" in rd.msg.cget("text")
+        rd.destroy()
+        assert app.lamps["LINE"].val.cget("text") in ("RUNNING", "INSPECTING")       # one state, everywhere
+        pt.halt_line()                                             # software HALT: latched until RESET FAULT
+        assert until(lambda: pt.line_lbl.cget("text") == "FAULT"), pt.line_lbl.cget("text")
+        assert any(a.code == "LINE_HALTED" for a in app.alarms.active())
         n_w = len(fake.writes)
         scene["kind"] = "good"
         n0 = pt.line.counts["total"]
@@ -4731,10 +5331,34 @@ def selftest():
         assert until(lambda: pt.line.counts["total"] > n0, 10.0)
         assert len(fake.writes) == n_w, "the halted line wrote to the PLC"
         pt.reset_halt()
-        assert until(lambda: pt.line_lbl.cget("text") == "LINE RUNNING")
+        assert until(lambda: pt.line_lbl.cget("text") in ("RUNNING", "INSPECTING"))
+        assert not any(a.code == "LINE_HALTED" for a in app.alarms.active()), "RESET FAULT did not acknowledge"
         pt.stop_line()
-        assert until(lambda: pt.line_lbl.cget("text") == "LINE STOPPED") and not app.cams.running()
+        assert until(lambda: pt.line_lbl.cget("text") in ("READY", "NOT READY")) and not app.cams.running()
         assert not app.plc.watch_x0
+        # every bottle is in the persistent record (temporary folder), with the run's model versions
+        st = app.store()
+        st.flush()
+        rows = st.recent(20)
+        assert len(rows) == pt.line.counts["total"] == 4 and str(st.folder) == _prod_tmp, (len(rows), st.folder)
+        assert {r["final"] for r in rows} == {infer.PASS, infer.REJECT, infer.FAULT}
+        assert any(r["evidence"] for r in rows if r["final"] == infer.REJECT)
+        app.tab_history.refresh()
+        assert app.tab_history.list.size() == 4 and app.tab_history.cnt["REJECT"].cget("text") == "1"
+        shift_now = next(n for n, a, b in app.tab_history.shifts()
+                         if production_store.shift_span(time.strftime("%Y-%m-%d"), (n, a, b))[0] <= time.time()
+                         < production_store.shift_span(time.strftime("%Y-%m-%d"), (n, a, b))[1])             if any(production_store.shift_span(time.strftime("%Y-%m-%d"), x)[0] <= time.time()
+                   < production_store.shift_span(time.strftime("%Y-%m-%d"), x)[1] for x in app.tab_history.shifts()) else None
+        if shift_now:                                              # the current shift holds today's 4 bottles
+            app.tab_history.shift.set(shift_now)
+            app.tab_history.refresh()
+            assert app.tab_history.cnt["total"].cget("text") == "4", app.tab_history.cnt["total"].cget("text")
+            app.tab_history.shift.set("Whole day")
+        app.tab_health.update()
+        app.tab_health.show_logs()
+        assert "line started" in app.tab_health.log_box.get("1.0", "end") or             any("line started" in x for x in applog.search("machine"))
+        app.tab_models.refresh()
+        assert app.tab_models.list.size() >= 1
         assert not any(w[0] in (PLC_AM.address_of("Y0"), PLC_AM.address_of("Y1")) for w in fake.writes)
     finally:
         pt.stop_line()
@@ -4761,7 +5385,13 @@ def selftest():
         assert len(e["boxes"]) == 2 and not e["proposals"] and not e["reviewed"], e
         assert A_ok(at.data)
     app.cams.stop()
+    app.ui_mode = mode_before
+    if app._store is not None:
+        app._store.close()
+        app._store = None
     app.destroy()
+    applog.setup()                                             # release the temp log files before removing them
+    shutil.rmtree(_prod_tmp, ignore_errors=True)
     print(f"ok  project {D.PROJECT!r}: {len(app.labels)} images, "
           f"{len(app.defects)} defects, all {len(App.TABS)} tabs built")
 

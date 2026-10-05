@@ -251,7 +251,12 @@ def evaluate_test(stamp: str, log=print, should_stop=None) -> dict:
 
 
 def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
-        log=print, on_epoch=None, patience=None) -> dict:
+        log=print, on_epoch=None, patience=None, activate=None) -> dict:
+    """Train one checkpoint. It is registered as a CANDIDATE and the production model is NOT replaced
+    unless activate=True (or settings.json "auto_activate_trained_model": true). Activation normally
+    goes through model_registry (validate -> approve -> activate), which keeps a rollback record."""
+    if activate is None:
+        activate = bool(D.load_settings().get("auto_activate_trained_model", False))
     cfg = D.load_config()
     defects, all_labels = D.load_labels()
     if not all_labels:
@@ -432,9 +437,14 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
                "per_defect": best_metrics, "mistakes": mistakes[:300]}
     (out / "metrics.json").write_text(json.dumps(summary, indent=2))
 
-    cfg["thresholds"] = {d: best_metrics[d]["threshold"] for d in defects}
-    cfg["active_model"] = stamp
-    D.save_config(cfg)
+    if activate:
+        cfg["thresholds"] = {d: best_metrics[d]["threshold"] for d in defects}
+        cfg["active_model"] = stamp
+        D.save_config(cfg)
+        log(f"activated {stamp} (auto-activate on): it is now the production classifier")
+    else:
+        log(f"{stamp} saved as a CANDIDATE: the production model was NOT changed "
+            f"(validate / approve / activate it under Models)")
 
     log("")
     log(f"{'defect':<18}{'val+':>5}{'thr':>6}{'prec':>7}{'recall':>8}{'F1':>7}   note")
@@ -516,4 +526,4 @@ if __name__ == "__main__":
         n = int(sys.argv[sys.argv.index("--epochs") + 1]) if "--epochs" in sys.argv else 25
         a = sys.argv[sys.argv.index("--arch") + 1] if "--arch" in sys.argv else DEFAULT_ARCH
         pat = int(sys.argv[sys.argv.index("--patience") + 1]) if "--patience" in sys.argv else None
-        run(epochs=n, arch=a, patience=pat)
+        run(epochs=n, arch=a, patience=pat, activate=True if "--activate" in sys.argv else None)

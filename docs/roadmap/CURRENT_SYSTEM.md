@@ -13,8 +13,13 @@ What actually exists in this repository today -- nothing more. For what is *plan
 | HARDWARE UNVERIFIED | Software exists but has never been run against the physical machine |
 | NOT IMPLEMENTED | Does not exist |
 
-> **Nothing in this repository has been tested on the physical machine.** Every "tested" below means a
-> software self-test.
+> **The full inspect -> M0/M1 -> reject cycle has never run on the physical machine.** The only physical
+> contact so far is a first read-only serial link to the real Delta PLC (2026-10-04, USER-STATED; see CLAUDE.md).
+> Every other "tested" below means a software self-test with fakes.
+>
+> Last reconciled against the code: **2026-10-05** (see `docs/audit/GAP_MATRIX_2026-10-05.md`). Older statements
+> that said there is no per-bottle logic, no trigger/timing model, or that the PLC layer is not integrated
+> were stale and have been corrected.
 
 ---
 
@@ -27,7 +32,21 @@ conveyor**. Entry point: `python gui.py` (or `run.bat` on Windows).
 Tested environment: Windows 11, Python 3.8.0, torch 2.4.1+cu124, ultralytics 8.1.0, NVIDIA RTX 3050 Laptop
 GPU (4 GB VRAM), 16 GB RAM.
 
-## 2. Current pipeline (what runs in the live tab)
+## 2a. Production pipeline (Production page -> `machine_cycle.py`)
+
+```
+X0 photo-eye -> ladder SET M2 -> PLCService trigger -> Bottle inspection_id (FIFO, time-stamped)
+  -> each line camera collects its frames in ITS window: trigger + offset_mm / speed   (tracking.py)
+     (non-blocking; bounded by the next bottle's window; CAMERA_ASSOCIATION_FAULT if not separable)
+  -> AI stages per camera (classification / detection / segmentation)  -> decision.decide()
+     (recipe, per-camera roles, frame vote, camera fusion FAULT > REJECT > PASS)
+  -> PASS: M0 at once; REJECT: M1 at trigger + travel - T0; late REJECT never fired (FAULT)
+  -> one final result per bottle -> production.db (SQLite) + evidence image + daily CSV; coded alarms
+```
+
+One machine state (`machine_state.py`) drives the Production banner and the status-bar LINE lamp.
+
+## 2b. Live-tab pipeline (development view)
 
 ```
 Camera thread (OpenCV, DirectShow, driver-default settings)
@@ -53,10 +72,11 @@ The default (`Classifier`) is exactly the previous behavior.
 
 | Component | Status | Notes |
 |---|---|---|
-| Desktop GUI (`gui.py`, 9 tabs) | IMPLEMENTED, TESTED SOFTWARE ONLY | `python gui.py --selftest` builds every tab against the real dataset with no device I/O |
+| Desktop GUI (`gui.py` + `hmi.py`, 14 pages) | IMPLEMENTED, TESTED SOFTWARE ONLY | Light industrial theme (dark optional), OPERATOR mode (Production / History / Health) and ENGINEER mode (all pages). `python gui.py --selftest` builds every page, runs the line against a fake PLC, writes its production record to a temp folder |
 | Multi-project structure (`projects/<slug>/`) | IMPLEMENTED | `dataset.py` rebinds module-level paths; labels in `labels.csv`, config in `config.json` |
-| Stage 1 dataset (`projects/om_bottle`) | IMPLEMENTED | 1,143 images, all reviewed, 8 defect columns, only 72 "good" images. Scene-based split. **No held-out test split** |
-| Stage 1 classifier training (`train.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY | 5 backbones, 9 checkpoints, active: `efficientnet_b0` `20260919-164511` |
+| Stage 1 dataset (`projects/om_bottle`) | IMPLEMENTED | 1,145 images (2 new skewed images imported 2026-10-05), all reviewed, 8 defect columns. Scene-based train/val/test split. **`missing_cap` = 0 positives**: the 12 user missing-cap images were imported, trained on, shown to teach a background shortcut, and removed again (undo batch `20261005-172406-105`) |
+| Stage 1 classifier training (`train.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY | 12 checkpoints on disk (`20261005-171833` REJECTED: white-background shortcut, see `shortcut_check.json`) (6 with held-out test results), active: `efficientnet_b0` `20260919-164511`. **Training no longer activates the new checkpoint** (`activate=False` default); it becomes a CANDIDATE |
+| Model registry (`model_registry.py`, Models page) | IMPLEMENTED, TESTED SOFTWARE ONLY | CANDIDATE -> VALIDATED (held-out test + real-camera note) -> APPROVED -> ACTIVE, ARCHIVED / REJECTED, `models/deployments.jsonl`, rollback, sha-checked detector activation, critical-class (`missing_cap`) warning |
 | Annotation Studio (`annotation_studio.py`, `annotate.py`) | IMPLEMENTED | Boxes and polygons, review flag, "next unannotated", YOLO detection and segmentation export. Segmentation export has never been used on real data (0 polygons) |
 | Camera benchmark tab (`bench.py`) | IMPLEMENTED | Measures achieved FPS / latency / sharpness per mode. **The result is not applied to the live camera** |
 
@@ -134,31 +154,53 @@ correctly and the process then hung at exit); I could not reproduce it in three 
 | PASS / REJECT / FAULT | IMPLEMENTED, TESTED SOFTWARE ONLY | PASS and REJECT only come from a fresh valid score. FAULT for: not started, thread dead, driver error, no model, failed inference, NaN scores, nothing scored yet, stale frame, stale score (>1.0 s). FAULT clears itself on the next good frame (no latching) |
 | Frame / session metadata | IMPLEMENTED, TESTED SOFTWARE ONLY | `camera_id`, `session`, per-session `seq`, `time.monotonic()` stamps, `latest_frame()`, `inspection()`. A restarted camera starts a new session; a stale thread cannot write into it |
 | Inspection record (`InspectionRecord`, `TraceStore`) | PARTIAL, TESTED SOFTWARE ONLY | In-memory only. See [TRACEABILITY_PLAN.md](TRACEABILITY_PLAN.md) |
-| Decision logic | PARTIAL | Per-frame, per-defect thresholds only. No rules, no temporal voting, no per-bottle decision |
+| Decision logic (`decision.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY | Per bottle: recipe-driven detection rules, classification thresholds, segmentation rules, frame vote (majority/any/all), camera fusion FAULT > REJECT > PASS, per-camera roles (`judge`, `station_x`). Thresholds are development defaults |
+| Alarms (`alarms.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY | 25 coded alarms with severity, operator message, action; condition vs event; acknowledge via RESET FAULT; persisted |
+| Production record (`production_store.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY | SQLite: runs (job, product, recipe hash, model ids, mode), one row per bottle, alarms; evidence images by policy; History page |
 | Diagnostics | IMPLEMENTED | FPS, read/inference/latency ms, dropped %, CPU/RAM/GPU (psutil/pynvml optional) |
 
 ### Machine side
 
 | Component | Status | Notes |
 |---|---|---|
-| Sensor trigger, bottle tracking, inspection window | NOT IMPLEMENTED | |
-| Timing model (distances, speed, actuator response) | NOT IMPLEMENTED | No physical values are recorded anywhere |
-| PLC simulator prototype (`plc file/delta_sim_test.py`) | IMPLEMENTED as a standalone script; **not integrated; HARDWARE UNVERIFIED** | Manual keypad sender over Modbus ASCII to a local simulator. Its address map is **unverified** |
-| ISPSoft project (`plc file/final_year/`) | EXISTS; ladder is an encrypted binary, unreadable here | Contract (X0 sensor, X1/X2 start/stop, Y1 conveyor, Y0 reject, M2 trigger, M0 PASS, M1 REJECT, T0/T1) is **user-stated**, tested by the user in the simulator. C0/C1 role unknown |
-| PLC communication layer (`plc/`) | IMPLEMENTED; FAKE-PLC tested; simulator reads/faults verified; simulator write handshake NOT yet run; HARDWARE UNVERIFIED | `PLCService` is the single owner of the link; only M0/M1 are writable, once per trigger, never retried; not integrated with the inspection pipeline or GUI |
-| Mock PLC, serial transport for the real PLC, reject controller | NOT IMPLEMENTED | |
+| Sensor trigger, per-bottle inspection (`machine_cycle.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY (FAKE ladder) | X0 -> M2 trigger = one inspection_id; frames strictly after the trigger; X0 without trigger -> NOT INSPECTED |
+| Time-based tracking (`tracking.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY | No encoder: `TimePositionSource` (measured speed + tolerance -> uncertainty); `EncoderPositionSource` placeholder refuses. Staggered camera stations, association fault. **No distance or speed measured on the machine yet** |
+| Speed calibration / line layout dialogs | IMPLEMENTED, TESTED SOFTWARE ONLY (logic self-tested) | Never used on the belt |
+| Machine state (`machine_state.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY | OFFLINE / NOT_READY / READY / INITIALIZING / RUNNING / INSPECTING / STOPPING / FAULT / E_STOP / COMMUNICATION_FAULT + start checklist |
+| ISPSoft project (`plc file/final_year/`) | DECODED (not encrypted) | 09:06 save: 7 nets, T0 K150 / T1 K50 vs stated K15 / K5. See PLC_COMMUNICATION.md section 0 |
+| PLC communication layer (`plc/`) | IMPLEMENTED, integrated (Machine + Production); FAKE + SIMULATOR tested; **real PLC: read-only link only** | `PLCService` single owner; only M0/M1 writable (+ opt-in operator test bits); serial transport exists; physical write handshake not yet run |
+| Mock PLC (`plc.test_simulation.FakePLC` / `FakeLadder`) | IMPLEMENTED | Scan emulation of the decoded ladder; used by every machine self-test |
+
+### Data finding: missing cap (2026-10-05)
+
+All 22 user missing-cap images are already in Stage 2 (10 neck close-ups = train scene 38; 12 full-bottle = test
+scene 22). The current detector misses all 12 full-bottle ones (tamper ring read as a cap at ~0.70). The v3 split
+moves scene 22 into train (`stage2_dataset/split_v3.py`). The v3 YOLOv8n candidate (`models/stage2_yolo/candidate_yolov8n_v3.json`): val missing cap 5/6, good 54/54 (val) and 50/50 (test), and it no longer reads the bare neck as a cap. It is a CANDIDATE, unvalidated on the machine.
+
+### Logs, recipe, shifts, ladder check (2026-10-05)
+
+| Component | Status |
+|---|---|
+| Structured logs (`applog.py`, `logs/*.log`, Health page viewer) | IMPLEMENTED, TESTED SOFTWARE ONLY |
+| Recipe editor (`hmi.RecipeDialog`) | IMPLEMENTED, TESTED SOFTWARE ONLY |
+| Shift reports (History) | IMPLEMENTED, TESTED SOFTWARE ONLY |
+| Camera auto-reconnect while running | IMPLEMENTED, TESTED SOFTWARE ONLY (fake camera) |
+| Ladder requirement check (`plc/ladder_check.py`) | IMPLEMENTED, run on the real project file (VERIFIED-FILE) |
 
 ## 4. Known limitations (summary)
 
-- No hardware validation of any kind; PLC addresses/I-O mapping not verified.
+- No end-to-end hardware validation; only a read-only real-PLC link. No distance, speed or actuator timing measured.
+- The ladder's one-bottle handshake (M2 held until answered, M1 masking triggers through T0 + T1) limits throughput;
+  a downstream camera adds its travel time to the minimum bottle gap. Short gaps are reported NOT INSPECTED.
+- Camera faults during a run make bottles FAULT; recovery is Stop -> Start (no automatic reopen mid-run).
 - YOLO runtime is opt-in and observational; it is unvalidated on live bottle frames (training images are Iriun-viewer screenshots, 16:9; development cameras default to 640x480, 4:3). The default live path is still the Stage 1 classifier.
-- Stage 1 validation scores are saturated (several checkpoints report macro-F1 1.0) and there is no test
-  split, so they are not evidence of production accuracy. `missing_cap` has **zero** positive examples and is
-  disabled; `missing_label` has 30 and scored 0 in the active model's validation.
+- Stage 1 validation scores are saturated (several checkpoints report macro-F1 1.0); judge models on the held-out
+  test results. `missing_cap` has **zero** positive examples and is disabled in every classifier; the detector
+  path (recipe: missing cap box) is the only missing-cap check and is unvalidated on EMEET frames.
 - Hand-tuned live thresholds in `projects/om_bottle/config.json` (some at 0.05-0.1) are unvalidated.
 - `time.monotonic()` on Windows ticks every ~15.6 ms; frame `seq` is the strict order.
-- No per-bottle logic: at ~15 Hz a single physical bottle yields many independent verdicts.
-- `gui.py` is large (~2.2k lines); `app.py` + `index.html` are an unused earlier web version.
+- The Live tab still shows per-frame verdicts (development view); the Production line decides once per bottle.
+- `gui.py` is large (~5k lines; new screens live in `hmi.py`); `legacy/web_dashboard/` is an unused earlier web version.
 
 ## 5. Repository contents that are *not* in Git
 

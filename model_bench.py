@@ -268,9 +268,10 @@ def cmd_yolo(a):
     from ultralytics import YOLO
     import yolo_stage2_train as Y
 
-    if a.data == "v2":
-        # cap = cap only (stage2_dataset/annotations_v2.py); same split and images as v1
-        Y.EXPORT = ROOT / "stage2_dataset" / "yolo_export_v2"
+    if a.data != "v1":
+        # v2: cap = cap only (stage2_dataset/annotations_v2.py), same split as v1.
+        # v3: v2 boxes + split_v3.json (the missing-cap scene in TRAIN; stage2_dataset/split_v3.py)
+        Y.EXPORT = ROOT / "stage2_dataset" / f"yolo_export_{a.data}"
         Y.DATA_YAML = Y.EXPORT / "data.yaml"
     sfx = "" if a.data == "v1" else f"_{a.data}"
     stem = Path(a.model).stem
@@ -318,11 +319,9 @@ def cmd_yolo(a):
         val=Y.metrics_of(val, m.names), test=Y.metrics_of(test, m.names),
         benchmark_gpu=bench, benchmark_cpu=bench_cpu,
         dataset=dict(version=a.data, yaml=str(Y.DATA_YAML.relative_to(ROOT)),
-                     annotations_file="stage2_dataset/annotations.json" if a.data == "v1"
-                     else f"stage2_dataset/annotations_{a.data}.json",
-                     split_json_sha256=sha256(ROOT / "stage2_dataset/split.json"),
-                     annotations_sha256=sha256(ROOT / ("stage2_dataset/annotations.json" if a.data == "v1"
-                                                       else f"stage2_dataset/annotations_{a.data}.json")),
+                     annotations_file=ANN_FILE[a.data], split_file=SPLIT_FILE[a.data],
+                     split_json_sha256=sha256(ROOT / SPLIT_FILE[a.data]),
+                     annotations_sha256=sha256(ROOT / ANN_FILE[a.data]),
                      export_tree_sha256=before, export_unchanged=before == after),
         removed_ultralytics_cache_files=removed, mem_before=mem,
         env=dict(ultralytics=ultralytics.__version__, torch=torch.__version__, cuda=torch.version.cuda,
@@ -346,7 +345,14 @@ def cmd_yolo_bench(a):
     print(json.dumps(out, indent=2))
 
 
-def det_defects(weights: str, ann: str = "v2", split: str = "test", device="cpu") -> dict:
+# Stage 2 data versions: which boxes and which split each uses
+ANN_FILE = {"v1": "stage2_dataset/annotations.json", "v2": "stage2_dataset/annotations_v2.json",
+            "v3": "stage2_dataset/annotations_v2.json"}
+SPLIT_FILE = {"v1": "stage2_dataset/split.json", "v2": "stage2_dataset/split.json",
+              "v3": "stage2_dataset/split_v3.json"}
+
+
+def det_defects(weights: str, ann: str = "v2", split: str = "test", device="cpu", split_version: str = "v1") -> dict:
     """Defect-level score of a detector through the PRODUCTION rule (decision.detection_findings):
     per image, the inspected bottle (nearest the station) -> missing_cap / missing_label /
     cap_misplaced / no bottle, against the same rule applied to the ground-truth boxes.
@@ -358,9 +364,9 @@ def det_defects(weights: str, ann: str = "v2", split: str = "test", device="cpu"
     import decision as DEC
     import detect
     import yolo_stage2_train as Y
-    af = ROOT / "stage2_dataset" / ("annotations.json" if ann == "v1" else f"annotations_{ann}.json")
+    af = ROOT / ANN_FILE.get(ann, f"stage2_dataset/annotations_{ann}.json")
     a = json.loads(af.read_text())["images"]
-    split_j = json.loads((ROOT / "stage2_dataset" / "split.json").read_text())
+    split_j = json.loads((ROOT / SPLIT_FILE[split_version]).read_text())
     files = sorted(f for sc, fs in split_j["splits"][split]["files_by_scene"].items() for f in fs)
     det = detect.YoloDetector(weights=weights, verify=False, device=device, warmup=False)
     rules = dict(DEC.RULES)
@@ -394,14 +400,15 @@ def det_defects(weights: str, ann: str = "v2", split: str = "test", device="cpu"
         c["support"] = c["tp"] + c["fn"]
     good = sum(1 for x in per_image if x["truth"] == ["ok"])
     good_ok = sum(1 for x in per_image if x["truth"] == ["ok"] and x["pred"] == ["ok"])
-    return {"weights": weights, "truth_from": af.name, "split": split, "n_images": len(files), "rules": rules,
+    return {"weights": weights, "truth_from": af.name, "split": split, "split_file": SPLIT_FILE[split_version],
+            "n_images": len(files), "rules": rules,
             "device": str(device), "latency_ms_mean": round(float(np.mean(lat)), 1),
             "good": {"support": good, "passed": good_ok, "pass_rate": round(good_ok / good, 4) if good else None},
             "defects": cm, "per_image": per_image}
 
 
 def cmd_det_defects(a):
-    r = det_defects(a.weights, a.ann, a.split, a.device)
+    r = det_defects(a.weights, a.ann, a.split, a.device, a.split_version)
     out = ROOT / "models" / "stage2_yolo" / f"defects_{a.tag}_{a.split}.json"
     out.write_text(json.dumps(r, indent=2))
     print(f"{a.tag} [{a.split}, truth {r['truth_from']}] GOOD {r['good']['passed']}/{r['good']['support']}")
@@ -480,11 +487,13 @@ def main():
     s.add_argument("--imgsz", type=int, default=640); s.add_argument("--batch", type=int, default=8)
     s.add_argument("--patience", type=int, default=20); s.add_argument("--workers", type=int, default=0)
     s.add_argument("--resume", action="store_true", help="continue an interrupted bench_<model> run")
-    s.add_argument("--data", choices=["v1", "v2"], default="v1", help="v2 = cap-only annotations (annotations_v2.py)")
+    s.add_argument("--data", choices=["v1", "v2", "v3"], default="v1",
+                   help="v2 = cap-only annotations (annotations_v2.py); v3 = v2 + missing-cap scene in train (split_v3.py)")
     sub.add_parser("yolo-bench")
     s = sub.add_parser("det-defects")
     s.add_argument("--weights", required=True); s.add_argument("--tag", required=True)
     s.add_argument("--ann", default="v2"); s.add_argument("--split", default="test"); s.add_argument("--device", default="cpu")
+    s.add_argument("--split-version", dest="split_version", choices=["v1", "v2", "v3"], default="v1")
     sub.add_parser("registry")
     a = ap.parse_args()
     {"cls-test": cmd_cls_test, "cls-report": cmd_cls_report, "cls-train": cmd_cls_train, "yolo": cmd_yolo,

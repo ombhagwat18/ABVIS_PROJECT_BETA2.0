@@ -8,6 +8,11 @@ Labels used: **VERIFIED** (observed on this machine, say where) - **USER-STATED*
 here) - **INFERRED** (reasoned or from general Delta knowledge, not tested) - **UNKNOWN** - **REQUIRES PHYSICAL TEST**.
 Test classes are never mixed: **FAKE PLC TEST** (in-process fake) / **SIMULATOR TEST** (ISPSoft) / **PHYSICAL PLC TEST** (none yet).
 
+> **2026-10-05:** `final_year.isp` (saved 2026-10-04 14:26) and every backup since 2026-10-03 20:24 decode to
+> the **same** 7 networks as 0.1 below (VERIFIED-FILE, `python -m plc.ladder_check`). What the ladder must do for
+> this software, what it already does, and the rungs to add: [`../hardware/PLC_LADDER_REQUIREMENTS.md`](../hardware/PLC_LADDER_REQUIREMENTS.md).
+> Note: the .isp header length varies between saves (0xAA in the 01:36 file, 264 bytes now); `ladder_check` searches for it.
+
 ## 0. The ladder as actually saved, and what the simulator does (2026-10-03) -- READ THIS FIRST
 
 ### 0.1 Current file: saved 2026-10-03 09:06 (VERIFIED from the file; simulator run PENDING)

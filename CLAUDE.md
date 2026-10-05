@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A bottle-inspection system for a QC conveyor (first target: 250 ml bottles), in two halves:
 
-- **Vision / data tooling** — a CustomTkinter desktop app (`gui.py`, ~3k lines) to label
+- **Vision / data tooling** — a CustomTkinter desktop app (`gui.py` ~5k lines + `hmi.py`) to label
   images, manage defect classes, train a multi-label classifier (Stage 1), annotate boxes and
   polygons, and run live multi-camera inspection with PASS / REJECT / FAULT verdicts. A
   YOLOv8n component detector (Stage 2) is trained and available as an opt-in runtime path.
@@ -67,6 +67,14 @@ python decision.py           # per-bottle decision rules, frame vote, camera fus
 python segment.py            # segmentation runtime interface (fake model; no weights exist yet)
 python autoannotate.py       # model box proposals: kept out of boxes/export until accepted
 python machine_cycle.py      # full cycle: FAKE PLC emulating the decoded ladder + fake cameras/detector
+                             #   (incl. staggered camera stations, association fault, SQLite record)
+python tracking.py           # time-based position source (no encoder), camera stations, association, calibration
+python machine_state.py      # the one machine state + start checklist
+python alarms.py             # coded alarms: dedup, condition vs event, acknowledge
+python production_store.py   # SQLite runs / bottles / alarms, evidence policy
+python model_registry.py --selftest   # CANDIDATE -> VALIDATED -> APPROVED -> ACTIVE gates, rollback (temp dir)
+python applog.py             # structured event logs: 7 channels, search
+python stage2_dataset/split_v3.py --selftest   # v3 split (missing-cap scene in train), input untouched
 python stage2_dataset/seg_pipeline.py --selftest
 python gui.py --selftest     # builds every real tab (incl. Machine against a fake PLC), no device I/O
 
@@ -75,6 +83,8 @@ python -m plc.test_simulation          # protocol, addressing, write policy, FAU
 python -m plc.test_service             # PLCService + FakeLadder contract
 python -m plc.commissioning --selftest
 python -m plc.handshake_test --fake
+python -m plc.ladder_check --selftest  # ISPSoft .isp decoder + 13 ladder requirement checks
+python -m plc.ladder_check             # READ-ONLY report on plc file/final_year/final_year.isp vs settings.json
 ```
 
 There is no single-test runner: each file runs all its checks; to run one, import the module
@@ -239,9 +249,15 @@ found 403 cross-folder same-scene pairs and builds a leak-free split, but existi
 checkpoints used the per-folder one. Validation F1 is saturated (~1.0) on every checkpoint —
 judge models on the test set (`FINAL_YEAR_BLACKBOOK/.../HELD_OUT_TEST_RESULTS.md`).
 
-`train.run()` ends by writing the new checkpoint's `thresholds` **and** `active_model` into the
-project's `config.json`, i.e. every run promotes itself. `model_bench.py` exists to train/score
-candidates without that side effect (it snapshots and restores `active.txt` and `config.json`).
+`train.run()` **no longer promotes itself** (since 2026-10-05): `activate=None` reads
+`settings.json` `auto_activate_trained_model` (default false), so a new checkpoint is a CANDIDATE and
+`config.json` is untouched. Activation goes through `model_registry.py` (Models page): CANDIDATE ->
+VALIDATED (needs a held-out test result + a written real-camera validation) -> APPROVED -> ACTIVE; the
+previous model is ARCHIVED, `models/deployments.jsonl` logs it, `rollback()` re-activates it. Classifier
+activation writes `active_model` + that checkpoint's thresholds; detector activation sets
+`detector_weights` after checking the candidate's sha256 (and writes a `MODEL_PROVENANCE.json` beside it,
+which `detect.verify_checkpoint` reads). `python train.py --activate` keeps the old CLI behaviour.
+`model_bench.py` trains/scores candidates (it snapshots and restores `active.txt` and `config.json`).
 
 A defect column with zero training positives gets an unreachable threshold
 (`1.01`, since sigmoid outputs are ∈ [0,1]) and is disabled outright rather
@@ -319,8 +335,8 @@ FAULT. (If cameras watch independent lines, use each camera's own result.)
 
 `inspection_trace.py` turns an `Inspection` into an `InspectionRecord` and
 holds a bounded, thread-safe in-memory `TraceStore`. It records what the
-camera decided; it never decides. Nothing calls it yet (not the GUI, not
-`machine_cycle.py`, which writes its own CSV log). In-memory
+camera decided; it never decides. Nothing calls it yet: the line's persistent record is
+`production_store.py` (below) plus the daily CSV `machine_cycle.py` writes. In-memory
 only: no persistence, no evidence images, no database. `job_id` and
 `evidence_path` are always `None`; `decision` currently equals `state`. Do not
 name a module `trace.py` -- it shadows the standard library (it was renamed for
@@ -345,6 +361,21 @@ evaluates test once. Result and the full chain back to the data are in
 that exhausted the paging file and hung runs. Always pass `workers=` to *both*
 `train()` and every `val()`. `legacy/yolo_train_smoke_test.py` is an older synthetic smoke test,
 not the real training script. Weights (`*.pt`) are never committed.
+
+**Missing cap (found 2026-10-05; read before adding data or retraining).** All 22 user missing-cap images
+(`All Datasets/Missing Cap/snap001-022`, white background, unlabelled bottles, Iriun-viewer screenshots) are
+ALREADY in Stage 2: snap013-022 = neck close-ups = train scene 38 (img_635-644); snap001-012 = full bottle =
+part of test scene 22 (img_328-341; scene 22 is the whole 35-frame white-background session). No detector
+ever trained on a full-bottle bare neck, so v1 n / v1 s / v2 n all call the green tamper ring a "cap" (conf
+~0.70) and score 0/12 on missing cap (`models/stage2_yolo/defects_*_test.json`). **v3**
+(`stage2_dataset/split_v3.py`, `split_v3.json`, `yolo_export_v3/`; `model_bench.py yolo --data v3`,
+`det-defects --split-version v3`) = v2 boxes + scene 22 moved test -> train (whole scene, audit rule):
+test drops to 52 images / 6 scenes and has NO missing-cap bottle, so a v3 model's missing-cap ability can
+only be validated on the real machine. The CLASSIFIER must not get these images: one bottle on a white
+background vs a black-background dataset -> candidate `20261005-171833` learned "white = missing cap"
+(25/25 capped white bottles flagged at 1.00, `shortcut_check.json`), so it is REJECTED in the registry and
+the 12 copies were removed from `om_bottle` with `dataset.delete_images` (undo batch `20261005-172406-105`).
+The classifier needs missing-cap bottles photographed in ITS setup (black enclosure, labelled Bisleri).
 
 Segmentation (label outline) is in progress and has **no trained model**:
 `stage2_dataset/seg_pipeline.py` (seed → annotate in Annotation Studio → export → validate →
@@ -395,7 +426,15 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   FAULT bottles (default 3), or a crashed cycle. `reset()` is refused while the E-stop input still reads pressed.
 - **`autoannotate.py`** — detector proposals live under `"proposals"` in `annotations.json`, never in `"boxes"`, so
   `annotate.export_yolo_*` cannot export them; accept moves them to `boxes` (`source: "auto"`), the image stays
-  `reviewed: false`. Annotate tab: Propose boxes / Accept / Reject / Next: least sure (active learning).
+  `reviewed: false`. Annotate tab: Propose boxes / Accept / Reject / Next: least sure / Next: missing part
+  (bottle found, cap or label not: likely real missing-component captures) / Next: doubtful part (cap or label
+  proposed at 0.25-0.80: hard-negative candidates such as a tamper ring). Queues only reorder unreviewed images.
+- **PLC ladder requirements** — `plc/ladder_check.py` decodes the user's ISPSoft `.isp` (binary header of
+  varying length, then raw deflate; header searched for) and checks 13 requirements (trigger, handshake,
+  reject cycle, T0/T1 == settings, M10/M11 operator bits, E-stop input, Y0 interlock, trigger masking, answer
+  timeout, heartbeat). `docs/hardware/PLC_LADDER_REQUIREMENTS.md` explains each and gives the rungs to add.
+  As of 2026-10-05 the file (and every backup since 2026-10-03 20:24) is the 7-network ladder; R8-R13 are
+  absent / mismatched. Read-only: never write the ladder.
 - **`machine_cycle.py`** — `Inspector` + `MachineCycle`: one deadline-driven thread. Every
   bottle ends with exactly one final result. FAULT is physically rejected by default
   (`fault_action: "REJECT"`). A REJECT that would miss its deadline is not fired late (answered
@@ -407,6 +446,29 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   Driven from the GUI's **Production** tab. Line cameras run capture-only; the Inspector runs
   the models per bottle on frames stamped strictly *after* the trigger (`>`, not `>=`: the
   coarse Windows clock otherwise lets in a frame of the previous bottle).
+- **Time-based tracking, no encoder (`tracking.py`)** — `PositionSource` is the seam (`TimePositionSource`
+  in use; `EncoderPositionSource` raises until an encoder exists). `settings.json` `camera_stations`
+  (`{"<source>": {name, role, offset_mm, side, rules: {station_x, judge}}}`) places each line camera
+  `offset_mm` downstream of the photo-eye; its frame window is `trigger + offset / conveyor_mm_s`. The
+  Inspector collects **non-blocking** (`begin` / `poll` / `evaluate`; the loop keeps serving triggers and
+  deadlines), bounds a camera's frames by the next bottle's window, and refuses a downstream camera's
+  evidence as `CAMERA_ASSOCIATION_FAULT` when another bottle was sensed closer than window + 2 x uncertainty
+  (`speed_tolerance_pct`). Per-camera `rules` reach `decision.decide(per_camera=...)` (`judge` = recipe
+  parts that camera judges). `machine_cycle.line_problems(cfg, cameras)` = `timing_problem` + saved speed
+  calibration + `tracking.station_problems`; any problem blocks Start. No distance/speed is hardcoded:
+  0 = not measured. The speed calibration wizard (`hmi.SpeedCalibrationDialog`) saves `conveyor_mm_s` and a
+  timestamped `speed_calibration` record.
+- **One machine state (`machine_state.py`)** — `state(facts)` -> OFFLINE / NOT_READY / READY / INITIALIZING /
+  RUNNING / INSPECTING / STOPPING / FAULT / E_STOP / COMMUNICATION_FAULT, `readiness(facts)` the start
+  checklist. `ProductionTab.facts()` gathers cached facts; the banner and the LINE lamp both show
+  `ProductionTab.mstate`. Never derive a machine state in a widget.
+- **Alarms and record** — `alarms.AlarmManager` (one per App, `app.alarms`): coded alarms (CATALOG: severity,
+  message, action), condition (`set_condition`) vs event (`raise_`), RESET FAULT = `acknowledge_all`.
+  `MachineCycle._alarm(text, code, key)` raises them. `production_store.ProductionStore` (`app.store()`, per
+  project, `projects/<slug>/production/production.db`): `runs` (job, product, recipe hash, model ids, mode,
+  settings), one `inspections` row per finished bottle, `alarms`; evidence images by `evidence_policy` on a
+  bounded background writer (never delays a PLC command). The full frame is dropped from memory after
+  recording. `stop()` finishes bottles still INSPECTING / SCHEDULED as FAULT (never silently dropped).
 - **Bottle accounting** — with `PLCService(watch_x0=True)` (the Production tab sets it) X0 is
   polled before M2; an X0 rise with no M2 rise since the previous X0 read is a
   `BOTTLE_UNTRIGGERED` event and becomes a FAULT "NOT INSPECTED" bottle. The REJECT ack is
@@ -423,12 +485,28 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   Read that before touching anything PLC-related, and keep its evidence labels (VERIFIED /
   USER-STATED / INFERRED; FAKE / SIMULATOR / PHYSICAL) honest.
 
-### GUI (`gui.py`, ~4k lines)
+**Logs (`applog.py`)** — `logs/<channel>.log` (app, camera, ai, plc, machine, alarm, production), rotating,
+one line per EVENT (never per frame). Hooks: `App._on_alarm` (alarm), `PLCService` listener (plc),
+`MachineCycle._alarm` / `_finish` / start / stop (machine, production, ai), `ProductionTab._camera_watch`
+(camera state changes + reconnect attempts). `applog.search()` feeds the Health page viewer. Self-tests point
+`applog.setup()` at their temp folder: never let a test write fake bottles into `logs/`.
 
-**Theme:** `theme.py` is the one palette (dark industrial HMI): grey surfaces, green/red/amber only
-for PASS/REJECT/FAULT, blue only for selection. `gui.py`, `annotation_studio.py`, `charts.py` and the
-OpenCV overlays in `infer.py` import from it; do not add hex colours elsewhere. `theme.apply_ctk()`
-also rewrites CustomTkinter's stock widget colours.
+### GUI (`gui.py`, ~5k lines, + `hmi.py`)
+
+**Theme:** `theme.py` is the one palette: a **light industrial HMI** by default, the older dark one with
+`settings.json` `"ui_theme": "dark"` (chosen once at import, applied at the next start, like the text size).
+Grey surfaces, green/red/amber only for PASS/REJECT/FAULT, blue only for selection; camera images always
+sit on the dark `VIDEO_BG`; text on a state-coloured button is `ACC_T`. `gui.py`, `hmi.py`,
+`annotation_studio.py`, `charts.py` and the OpenCV overlays in `infer.py` import from it; do not add hex
+colours elsewhere. `theme.apply_ctk()` also rewrites CustomTkinter's stock widget colours.
+
+**Operator / engineer:** `App.ui_mode` (`settings.json` `ui_mode`, header button, optional `engineer_pin`).
+OPERATOR shows only `App.OPERATOR_PAGES` (Production, History, Health) via `NavShell.show_only`; pages are
+never destroyed. The Production page's ENGINEER row (`ProductionTab.eng`: task, cameras, timing,
+calibration / layout dialogs, HALT latch, simulator feed) is hidden for the operator. New production screens
+(`HistoryTab`, `HealthTab`, `ModelsTab`, the two line dialogs) live in `hmi.py`, same `(app, parent)` +
+`refresh()` contract. The GUI self-test sets `app.production_dir` to a temp folder: never let a test write
+into a real project's production record.
 
 Single `App(ctk.CTk)` with a `NavShell` (left rail grouped DATA / MODEL / RUNTIME / SYSTEM, same
 `add/tab/get/set` API as the `CTkTabview` it replaced) and a status bar of PLC / LINE / CAMERAS /
@@ -443,11 +521,25 @@ widget costs ~4x as much to create/redraw. **Text size** (`settings.json` `font_
 at once and applied only at the next start (`App.restart`): rescaling a running window redraws
 every widget (20+ s, looked frozen), and with a scrollable page on screen it also recursed
 `CTkScrollbar.set` <-> `update_idletasks` (guarded in `theme._guard_scrollbar`). Don't call
-`ctk.set_widget_scaling` on a built window. On-screen order (`App.TABS`): Label, Defects,
-Train, Analysis, Live, **Machine**, **Production**, Camera, Data health, **Annotate**, Settings. That differs
-from the in-file class order (MachineTab, ProductionTab, LabelTab, DefectsTab, TrainTab, LiveTab, DataTab,
-AnalysisTab, BenchTab, SettingsTab; `AnnotationTab` lives in `annotation_studio.py`) — don't
-assume file position implies UI position.
+`ctk.set_widget_scaling` on a built window. `App.TABS` (14): **Production**, History, Health, Label,
+Defects, Train, Analysis, Models, Live, Machine, Camera, Data health, Annotate, Settings (`all_tabs()` must
+list the tab objects in exactly this order; Settings stays last for the self-test). The rail groups them
+(`App.GROUPS`: PRODUCTION / DATA / MODEL / ENGINEERING / SYSTEM). In-file class order differs (MachineTab,
+ProductionTab, LabelTab, ... in `gui.py`; HistoryTab, HealthTab, ModelsTab in `hmi.py`; `AnnotationTab` in
+`annotation_studio.py`) — don't assume file position implies UI position.
+
+**Production start sequence** (`ProductionTab`): `start_line` saves the timing row, requires
+`machine_state.state(facts) == READY`, loads models in the background, `_go` opens the line cameras
+(capture only), `_check_warm` keeps the state INITIALIZING until every camera delivered a frame
+(`WARMUP_S`, else CAMERA_DISCONNECTED and no start), `_launch` builds the `MachineCycle` with
+`app.alarms` + `app.store()`. STOP = `stop_line` (orderly); the software HALT latch is the engineer
+`halt_line`; RESET FAULT = `reset_halt` (clears the halt, acknowledges alarms). CAMERA TEST and TEST
+INSPECTION (`machine_cycle.bench_inspect`, no PLC) refuse while the line runs. While running,
+`_camera_watch` reopens a dead line camera in a background thread at most every `RECONNECT_S` (bottles in the
+gap are FAULT, nothing else pauses). Engineer row also opens `hmi.RecipeDialog` (edits `config.json`
+`"inspection"`, validated against `detect.CLASS_NAMES`, refused while the line runs). History has shift
+reports (`settings.json` `shifts`, default A 06-14 / B 14-22 / C 22-06; `production_store.shift_span`,
+`summary_range`).
 
 `App` owns one `PLCService` (`self.plc`), built from `settings.json` `plc_*` keys by
 `plc_link()`; it auto-connects only to the simulator, never to a serial port. `MachineTab`
