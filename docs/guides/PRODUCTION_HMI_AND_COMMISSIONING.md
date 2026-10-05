@@ -100,6 +100,14 @@ Engineer row -> **Recipe...**: the anchor class (bottle) and the parts that must
 to search (fractions of the bottle height from its top) and where each must sit (zone). It is checked against the
 detector's classes and refused while the line runs. Every run records the recipe hash.
 
+### Simulation check (ladder and code)
+
+**Simulation check...** (Production engineer row, or Machine page) answers "is it the ladder or the code?" without
+any hardware. **1** runs the saved ISPSoft program in a simulator against the software's handshake, timing and
+safety expectations (PASS / LIMIT / WARN / FAIL per scenario). **2** runs every module self-test. A FAIL in 1 means
+the ladder or the T0/T1 entered in the app is wrong; a FAIL in 2 means the code is wrong. Neither replaces the
+physical tests below. Details: `docs/hardware/PLC_LADDER_REQUIREMENTS.md` section 1b.
+
 ### Cameras that drop out
 
 While the line runs, a dead line camera is reopened in the background every 3 s. Bottles inspected in the gap are

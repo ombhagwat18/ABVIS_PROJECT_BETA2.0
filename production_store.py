@@ -294,6 +294,18 @@ class ProductionStore:
             rows = self._db.execute(q, args).fetchall()
         return [dict(zip(("wall", "code", "key", "severity", "state", "message", "cause", "count"), r)) for r in rows]
 
+    def alarms_range(self, span=None, n: int = 1000) -> list:
+        """Alarm changes in a wall-clock span (t_from, t_to), newest first."""
+        q, args = "SELECT wall, code, key, severity, state, message, cause, count FROM alarms", []
+        if span:
+            q += " WHERE wall >= ? AND wall < ?"
+            args += [float(span[0]), float(span[1])]
+        q += " ORDER BY rowid DESC LIMIT ?"
+        args.append(int(n))
+        with self._lock:
+            rows = self._db.execute(q, args).fetchall()
+        return [dict(zip(("wall", "code", "key", "severity", "state", "message", "cause", "count"), r)) for r in rows]
+
     def days(self, n: int = 60) -> list:
         with self._lock:
             return [r[0] for r in self._db.execute("SELECT DISTINCT day FROM inspections ORDER BY day DESC LIMIT ?",
