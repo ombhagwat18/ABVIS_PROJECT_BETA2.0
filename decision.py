@@ -161,7 +161,10 @@ def detection_findings(det, rules) -> tuple:
     b = min(anchors, key=lambda d: (abs(_centre(d)[0] - sx), -d.confidence))
     bh = b.y2 - b.y1
     found, scores = [], [b.confidence]
+    judge = rules.get("judge")                 # per-camera role: only these parts are judged by this camera
     for part in recipe.get("parts", ()):
+        if judge is not None and part["name"] not in judge:
+            continue
         top, bottom = part.get("search") or (0.0, 1.0)
         hits = [d for d in keep if d.class_name == part["name"] and b.x1 <= _centre(d)[0] <= b.x2
                 and b.y1 + top * bh <= _centre(d)[1] <= b.y1 + bottom * bh]
@@ -259,7 +262,9 @@ def decide(task: str, cameras: list, thresholds: dict | None = None, rules: dict
         return Decision(FAULT, [], f"unknown inspection task {task!r}", None, {}, task)
     if not cameras:
         return Decision(FAULT, [], "no camera assigned to the inspection", None, {}, task)
-    per = {c.camera: decide_camera(task, c, thresholds or {}, r) for c in cameras}
+    cam_rules = r.get("per_camera") or {}       # camera id -> overrides (station_x, judge, vote, ...)
+    per = {c.camera: decide_camera(task, c, thresholds or {}, {**r, **(cam_rules.get(c.camera) or {})})
+           for c in cameras}
     states = {v[0] for v in per.values()}
     state = FAULT if FAULT in states else REJECT if REJECT in states else PASS
     mine = {k: v for k, v in per.items() if v[0] == state}
@@ -388,6 +393,17 @@ def demo():
     assert d.state == REJECT and d.defects == ["missing_label"] and d.per_camera["cam0"][0] == PASS, d
     d = D("detection", c1, CameraEvidence("cam2", fault="frame timeout"))
     assert d.state == FAULT and "cam2: frame timeout" in d.reason, d                 # FAULT outranks REJECT
+    # per-camera roles: cam1 is the cap/neck camera (judges only the cap), so the label it cannot see
+    # from its side is not its finding; cam0 still judges everything
+    roles = {"per_camera": {"cam1": {"judge": ["cap"]}}}
+    assert D("detection", c0, c1, rules=roles).state == PASS
+    c1cap = cam({"det": nocap}, name="cam1")
+    d = D("detection", c0, c1cap, rules=roles)
+    assert d.state == REJECT and d.defects == ["missing_cap"] and d.per_camera["cam1"][0] == REJECT, d
+    # a per-camera station_x override picks that camera's bottle, not the neighbour
+    two_r = det(("bottle", 0.99, (0, 100, 90, 550)), BOT, CAP, LAB)
+    assert D("detection", cam({"det": two_r}, name="cam1"),
+             rules={"per_camera": {"cam1": {"station_x": 0.05}}}).defects == ["missing_cap", "missing_label"]
     print("ok  decision engine: classification / detection (recipe-driven) / segmentation rules, frame vote, "
           "camera fusion FAULT > REJECT > PASS, every failure -> FAULT")
 

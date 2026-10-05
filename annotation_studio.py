@@ -159,6 +159,10 @@ class AnnotationTab:
                       text_color=BAD, command=self.reject_proposals).pack(fill="x", padx=12, pady=3)
         ctk.CTkButton(right, text="Next: least sure", fg_color="transparent", border_width=1,
                       command=self.goto_least_sure).pack(fill="x", padx=12, pady=3)
+        ctk.CTkButton(right, text="Next: missing part", fg_color="transparent", border_width=1,
+                      command=lambda: self.goto_queue("missing")).pack(fill="x", padx=12, pady=3)
+        ctk.CTkButton(right, text="Next: doubtful part", fg_color="transparent", border_width=1,
+                      command=lambda: self.goto_queue("doubtful")).pack(fill="x", padx=12, pady=3)
 
         ctk.CTkLabel(right, text="EXPORT", text_color=DIM, font=("Segoe UI", 13, "bold")).pack(
             anchor="w", padx=12, pady=(16, 4))
@@ -703,6 +707,19 @@ class AnnotationTab:
             self.goto_image(order[0])
         else:
             messagebox.showinfo("Least sure", "Every image is reviewed.")
+
+    def goto_queue(self, kind: str):
+        """Active learning: next unreviewed image where the model saw a bottle but no cap/label ("missing"), or
+        proposed a cap/label at middling confidence ("doubtful": hard-negative candidates). Run Propose first."""
+        if self.data is None:
+            return
+        fn = AA.missing_part_queue if kind == "missing" else AA.doubtful_part_queue
+        order = [r for r in fn(self.data, self.images) if r != self.rel]
+        if order:
+            self.goto_image(order[0])
+        else:
+            messagebox.showinfo("Active learning", "No unreviewed image in this queue "
+                                                   "(propose boxes first; reviewed images are skipped).")
 
     # ---------------------------------------------------------- save/load
     def save(self):

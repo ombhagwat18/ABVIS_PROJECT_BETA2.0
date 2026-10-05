@@ -38,6 +38,21 @@ Ladder limits this code works around rather than hides (docs/roadmap/PLC_COMMUNI
     shorter X0 pulse cannot be seen, so this check can miss, never invent, a bottle.)
   * Only one REJECT can be in the PLC at a time (one T0). Throughput after a reject is limited to
     one bottle per T0 + T1.
+  * M2 stays ON until this program answers (M0 now, or M1 at the REJECT dispatch time), so a bottle
+    reaching X0 before the previous one is answered is NOT INSPECTED. A camera placed downstream delays
+    the answer by its travel time: the bottle gap must exceed it. This is the ladder's one-bottle
+    handshake, reported per bottle, not hidden.
+
+Cameras at different belt positions (tracking.py, settings "camera_stations"): each camera has an
+offset_mm downstream of the trigger photo-eye; with the measured belt speed that becomes the time its
+frames are taken (trigger + offset / speed). Collection is NON-blocking: the loop keeps serving
+triggers and deadlines while a downstream camera waits for the bottle, and each camera's AI runs as
+soon as its frames are in. Frames of one camera are bounded by the NEXT bottle's window at that camera,
+and a neighbour sensed too close in time to be separated makes that camera's evidence a
+CAMERA_ASSOCIATION_FAULT (the bottle becomes FAULT) instead of judging the wrong bottle.
+
+Alarms go to alarms.AlarmManager (coded, acknowledged), every finished bottle to
+production_store.ProductionStore (SQLite + evidence images) as well as the daily CSV.
 
     python machine_cycle.py     # self-test: FAKE PLC running the decoded ladder + fake cameras/models
 """
@@ -55,8 +70,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import alarms as AL
+import applog
 import dataset as D
 import decision as DEC
+import tracking as TR
 from infer import FAULT, PASS, REJECT
 
 # FIFO / PLC status of a bottle
@@ -81,6 +99,10 @@ LINE_DEFAULTS = {
     "estop_active_high": False,          # False: the contact is NC, so the bit reads 0 when the E-stop is pressed
     "fault_latch_after": 3,              # this many consecutive FAULT bottles halt the line until an operator reset
     "decision_rules": {},
+    "evidence_policy": "REJECT_AND_FAULT",   # production_store.EVIDENCE_POLICIES
+    "job_id": "",                        # production job / batch, recorded with every bottle
+    "product": "",
+    **TR.TRACKING_DEFAULTS,              # camera_stations, speed_tolerance_pct, timing_margin_s, speed_calibration
 }
 
 
@@ -88,6 +110,12 @@ def line_settings(settings: dict) -> dict:
     s = dict(LINE_DEFAULTS)
     s.update({k: settings[k] for k in LINE_DEFAULTS if k in settings})
     return s
+
+
+def line_problems(cfg: dict, cameras=()) -> list:
+    """Everything that blocks Start: line timing, camera-station layout, saved speed calibration."""
+    out = [p for p in (timing_problem(cfg), TR.calibration_problem(cfg)) if p]
+    return out + TR.station_problems(cfg, cameras)
 
 
 def travel_time(cfg: dict) -> tuple:
@@ -153,11 +181,19 @@ class Bottle:
     y0_off_mono: float | None = None
     y0_error_ms: float | None = None          # Y0 ON (as polled) - scheduled_reject_time
     note: str = ""
+    run_id: str = ""                          # production_store run: job, recipe and model versions
+    evidence_path: str = ""                   # relative to the production folder ('' = none kept)
+    timings: dict = field(default_factory=dict)   # measured ms per stage (capture wait, AI stages, PLC, totals)
+    assoc: dict = field(default_factory=dict)     # camera -> its frame window and the frame times used
     thumb: object = None                      # small evidence image (not logged)
+    evidence: object = None                   # first full frame used (written by the store, then dropped)
+
+    _NOT_LOGGED = ("thumb", "evidence", "per_camera", "timings", "assoc")
 
     def row(self) -> dict:
         """Flat, CSV/JSON-friendly copy (no image, wall times as text)."""
-        out = {f.name: getattr(self, f.name) for f in fields(self) if f.name not in ("thumb", "per_camera")}
+        out = {f.name: getattr(self, f.name) for f in fields(self) if f.name not in self._NOT_LOGGED}
+        out["timings"] = ";".join(f"{k}={v:.1f}" for k, v in self.timings.items() if v is not None)
         out["defects"] = ";".join(self.defects)
         out["wall"] = _wall(self.wall)
         out["scheduled_wall"] = _wall(self.scheduled_wall)
@@ -180,6 +216,33 @@ def _wall(t):
     return time.strftime("%H:%M:%S", time.localtime(t)) + f".{int((t % 1) * 1000):03d}"
 
 
+@dataclass
+class CamCollect:
+    """One camera's part of one bottle's inspection."""
+    cam: object                                   # infer.Camera
+    start: float                                  # monotonic window at this camera (trigger + offset)
+    end: float
+    offset_s: float
+    uncertainty_s: float
+    limit: float = float("inf")                   # the next bottle's window start at this camera
+    frames: dict = field(default_factory=dict)    # seq -> infer.Frame
+    fault: str | None = None
+    done: bool = False
+    evidence: object = None                       # decision.CameraEvidence once done
+    wait_ms: float = 0.0
+
+
+@dataclass
+class Collection:
+    t_trigger: float
+    cams: dict                                    # camera id -> CamCollect
+    sensed: object                                # callable -> bottle sensing times (association)
+    timing: dict = field(default_factory=dict)
+    ms: float = 0.0
+    n: int = 0
+    first: object = None
+
+
 # ------------------------------------------------------------------------------------- inspector
 class Inspector:
     """Collects the frames each line camera captured after a trigger and runs the AI stages on them.
@@ -198,6 +261,11 @@ class Inspector:
         self.recipe = recipe or (lambda: D.load_config().get("inspection"))
         self.frames, self.window_s = max(1, int(frames)), float(window_s)
         self._wake = threading.Event()
+        # camera stations (set by MachineCycle from tracking.py): seconds after the trigger each camera
+        # sees the bottle, the +- uncertainty of that, and per-camera decision overrides (roles)
+        self.offsets: dict = {}
+        self.uncertainty: dict = {}
+        self.camera_rules: dict = {}
 
     def models(self) -> dict:
         return {"classification": getattr(self.classifier, "stamp", None),
@@ -237,17 +305,27 @@ class Inspector:
             out[cid] = (frames, fault)
         return out
 
-    def frame_evidence(self, cid, seq, ts, image) -> DEC.FrameEvidence:
+    def frame_evidence(self, cid, seq, ts, image, timing: dict | None = None) -> DEC.FrameEvidence:
         """Run this task's AI stages on ONE frame. A stage that is missing or raises becomes that
-        stage's error on the evidence (decide() turns it into FAULT), never an exception."""
+        stage's error on the evidence (decide() turns it into FAULT), never an exception.
+        timing: optional dict; measured ms per stage are ADDED to it ("classification_ms", ...)."""
         stages = DEC.TASKS.get(self.task, ())
         fe = DEC.FrameEvidence(cid, seq, ts)
+
+        def timed(stage, fn):
+            t0 = time.perf_counter()
+            try:
+                return fn()
+            finally:
+                if timing is not None:
+                    k = f"{stage}_ms"
+                    timing[k] = timing.get(k, 0.0) + (time.perf_counter() - t0) * 1000
         if DEC.CLASSIFICATION in stages:
             if self.classifier is None:
                 fe.cls_error = self.missing.get(DEC.CLASSIFICATION, "no classifier loaded")
             else:
                 try:
-                    fe.probs = self.classifier.predict(image)
+                    fe.probs = timed(DEC.CLASSIFICATION, lambda: self.classifier.predict(image))
                 except Exception as e:                       # noqa: BLE001 - FAULT, not a crash
                     fe.cls_error = f"{type(e).__name__}: {e}"
         if DEC.DETECTION in stages:
@@ -255,7 +333,8 @@ class Inspector:
                 fe.det_error = self.missing.get(DEC.DETECTION, "no detector loaded")
             else:
                 try:
-                    fe.det = self.detector.detect(image, camera_id=cid, frame_seq=seq, frame_ts=ts)
+                    fe.det = timed(DEC.DETECTION, lambda: self.detector.detect(image, camera_id=cid, frame_seq=seq,
+                                                                               frame_ts=ts))
                 except Exception as e:                       # noqa: BLE001
                     fe.det_error = f"{type(e).__name__}: {e}"
         if DEC.SEGMENTATION in stages:
@@ -263,10 +342,83 @@ class Inspector:
                 fe.seg_error = self.missing.get(DEC.SEGMENTATION, "no segmentation model loaded")
             else:
                 try:
-                    fe.seg = self.segmenter.segment(image, camera_id=cid, frame_seq=seq, frame_ts=ts)
+                    fe.seg = timed(DEC.SEGMENTATION, lambda: self.segmenter.segment(image, camera_id=cid, frame_seq=seq,
+                                                                                    frame_ts=ts))
                 except Exception as e:                       # noqa: BLE001
                     fe.seg_error = f"{type(e).__name__}: {e}"
         return fe
+
+    # ---------------------------------------------------------------- non-blocking, per-bottle collection
+    def begin(self, t_trigger: float, delay_s: float = 0.0, sensed=None) -> "Collection":
+        """Start collecting this bottle's frames. Each camera gets its own window, offset by where it sits
+        on the belt. sensed: callable -> monotonic times bottles were sensed (association check)."""
+        cams = {}
+        for c in self.cams:
+            cid = c.camera_id
+            off = float(self.offsets.get(cid, 0.0))
+            start, end = TR.frame_window(t_trigger, off, self.window_s, delay_s)
+            cams[cid] = CamCollect(c, start, end, off, float(self.uncertainty.get(cid, 0.0)))
+        return Collection(t_trigger, cams, sensed or (lambda: ()))
+
+    def poll(self, coll: "Collection", now: float) -> bool:
+        """Take any new frames; run a camera's AI as soon as its frames are complete. True = all done."""
+        for cid, cc in coll.cams.items():
+            if cc.done:
+                continue
+            c = cc.cam
+            if c.error or not c.alive:
+                cc.fault = f"camera fault: {c.error or 'capture thread not running'}"
+            elif now >= cc.start:
+                for f in c.frames_since(cc.start):
+                    # strictly after: monotonic() ticks every ~15.6 ms on Windows, so a frame grabbed just
+                    # BEFORE the window can carry the same stamp -- and show the previous bottle. And never a
+                    # frame from the NEXT bottle's window at this camera (cc.limit).
+                    if cc.start < f.ts < cc.limit and len(cc.frames) < self.frames:
+                        cc.frames.setdefault(f.seq, f)
+                if len(cc.frames) < self.frames and now < cc.end:
+                    continue
+                if not cc.frames:
+                    cc.fault = f"frame timeout: no frame within {self.window_s:g}s of the bottle reaching this camera"
+                else:
+                    p = TR.association_problem(coll.t_trigger, cc.offset_s, self.window_s, cc.uncertainty_s,
+                                               coll.sensed())
+                    if p:
+                        cc.fault = f"CAMERA_ASSOCIATION_FAULT: {p}"
+            else:
+                continue
+            self._finish_camera(cid, cc, coll)
+        return all(cc.done for cc in coll.cams.values())
+
+    def _finish_camera(self, cid, cc, coll):
+        cc.done = True
+        cc.wait_ms = (time.monotonic() - cc.start) * 1000
+        ce = DEC.CameraEvidence(cid, fault=cc.fault)
+        if cc.fault is None:
+            for seq in sorted(cc.frames):
+                f = cc.frames[seq]
+                t0 = time.perf_counter()
+                fe = self.frame_evidence(cid, f.seq, f.ts, f.image, coll.timing)
+                coll.ms += (time.perf_counter() - t0) * 1000
+                coll.n += 1
+                ce.frames.append(fe)
+                if coll.first is None:
+                    coll.first = (f.image, fe)
+        cc.evidence = ce
+
+    def evaluate(self, coll: "Collection"):
+        """All cameras done -> (decision.Decision, overlay thumb, first full frame, inference ms, frames)."""
+        thr = self.thresholds()
+        rules = dict(self._rules)
+        recipe = self.recipe()
+        if recipe:
+            rules["recipe"] = recipe
+        if self.camera_rules:
+            rules["per_camera"] = {**(rules.get("per_camera") or {}), **self.camera_rules}
+        t0 = time.perf_counter()
+        dec = DEC.decide(self.task, [cc.evidence for cc in coll.cams.values()], thr, rules)
+        coll.timing["decision_ms"] = (time.perf_counter() - t0) * 1000
+        first = coll.first
+        return dec, (self._thumb(*first, dec) if first else None), (first[0] if first else None), coll.ms, coll.n
 
     def inspect(self, t_from: float):
         """(decision.Decision, evidence image or None, total inference ms, frames used)."""
@@ -317,10 +469,19 @@ class Inspector:
 class MachineCycle:
     """Owns the per-bottle loop and the FIFO. Talks to the PLC only through PLCService."""
 
-    def __init__(self, plc, inspector: Inspector, cfg: dict, log_dir: Path | None = None, clock=time.monotonic):
+    def __init__(self, plc, inspector: Inspector, cfg: dict, log_dir: Path | None = None, clock=time.monotonic,
+                 alarms: "AL.AlarmManager | None" = None, store=None, run_info: dict | None = None):
         self.plc, self.inspector, self.cfg = plc, inspector, dict(cfg)
         self.inspector._rules = dict(self.cfg.get("decision_rules") or {})
         self.travel_s, self.travel_measured = travel_time(self.cfg)
+        # where each camera sits on the belt (time-based: tracking.TimePositionSource, no encoder)
+        self.position = TR.position_source(self.cfg)
+        cam_ids = [c.camera_id for c in inspector.cams]
+        self.stations = TR.stations(self.cfg, cam_ids)
+        inspector.offsets = TR.station_offsets_s(self.cfg, cam_ids)     # ValueError: downstream camera, no speed
+        inspector.uncertainty = {cid: (self.position.uncertainty_s(s.offset_mm) if s.offset_mm > 0 else 0.0)
+                                 for cid, s in self.stations.items()}
+        inspector.camera_rules = {cid: s.rules for cid, s in self.stations.items() if s.rules}
         self.clock = clock
         self.log_dir = log_dir
         self._log_path: Path | None = None
@@ -329,8 +490,13 @@ class MachineCycle:
         self._history: "collections.deque[Bottle]" = collections.deque(maxlen=500)
         self._events: "queue.Queue" = queue.Queue()
         self._ids = itertools.count(1)
+        self._coll: dict = {}                    # inspection_id -> Collection while INSPECTING
+        self._sensed: "collections.deque" = collections.deque(maxlen=256)   # monotonic times bottles were sensed
         self.counts = {"total": 0, PASS: 0, REJECT: 0, FAULT: 0, "not_inspected": 0, "missed_reject": 0}
         self.alarms: "collections.deque" = collections.deque(maxlen=200)    # (wall, text)
+        self.alarm_mgr = alarms if alarms is not None else AL.AlarmManager()
+        self.store = store                       # production_store.ProductionStore (optional)
+        self.run_info = dict(run_info or {})
         self.last: Bottle | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -339,6 +505,7 @@ class MachineCycle:
         self.halted: str | None = None           # latched reason; set => no PLC command is sent until reset()
         self._fault_run = 0
         self._estop_next = 0.0
+        self.cycle_ms: "collections.deque" = collections.deque(maxlen=200)   # trigger -> final decision, measured
 
     # ------------------------------------------------------------------ lifecycle
     def start(self):
@@ -347,20 +514,39 @@ class MachineCycle:
         if not self._listening:
             self.plc.add_listener(self._on_plc_event)
             self._listening = True
+        if self.store is not None and self.store.run_id is None:
+            ri = self.run_info
+            self.store.start_run(ri.get("project", D.PROJECT), str(self.cfg.get("job_id") or ""),
+                                 str(self.cfg.get("product") or ""), ri.get("recipe"), self.inspector.models(),
+                                 {k: v for k, v in self.cfg.items() if k != "speed_calibration"},
+                                 ri.get("mode", ""))
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="machine-cycle", daemon=True)
         self._thread.start()
+        applog.log("machine", "line started", task=self.inspector.task, models=self.inspector.models(),
+                   travel_s=round(self.travel_s, 3), measured=self.travel_measured, position=self.position.describe(),
+                   run=getattr(self.store, "run_id", None) or "-")
 
     def stop(self):
+        """Stop taking triggers. Bottles still being inspected are finished as FAULT (never silently dropped);
+        bottles already answered are left to the PLC."""
         self._stop.set()
         if self._thread and self._thread is not threading.current_thread():
             self._thread.join(timeout=3.0)
+        with self._lock:
+            open_ = [b for b in self._fifo if b.status in (INSPECTING, SCHEDULED)]
+        for b in open_:
+            b.plc_status = "line stopped before this bottle was answered: remove by hand"
+            self._finish(b, FAULT)
         if self._listening:
             try:
                 self.plc._listeners.remove(self._on_plc_event)
             except ValueError:
                 pass
             self._listening = False
+        if self.store is not None:
+            self.store.stop_run()
+        applog.log("machine", "line stopped", counts=dict(self.counts))
 
     @property
     def running(self) -> bool:
@@ -369,26 +555,27 @@ class MachineCycle:
     # ------------------------------------------------------------------ safety latch
     # This is the SOFTWARE layer only. The hardware E-stop must cut the actuator power by itself;
     # software halt just stops this program from answering the PLC and tells the operator why.
-    def halt(self, reason: str):
+    def halt(self, reason: str, code: str = "LINE_HALTED"):
         """Latch a halt. Idempotent; the first reason wins. Scheduled REJECTs are cancelled, not fired."""
         with self._lock:
             if self.halted:
                 return
             self.halted = reason
-            pending = [b for b in self._fifo if b.status == SCHEDULED]
-        self._alarm(f"LINE HALTED: {reason}")
+            pending = [b for b in self._fifo if b.status in (SCHEDULED, INSPECTING)]
+        self._alarm(f"LINE HALTED: {reason}", code)
         for b in pending:
-            b.plc_status = "HALTED before the REJECT was sent: remove by hand"
+            b.plc_status = "HALTED before a command was sent: remove by hand"
             self._finish(b, FAULT)
 
     def reset(self) -> bool:
         """Operator reset. Refused while the hardware E-stop input still reads pressed."""
         if self._estop_pressed():
-            self._alarm("reset refused: hardware E-stop input is still active")
+            self._alarm("reset refused: hardware E-stop input is still active", "E_STOP")
             return False
         with self._lock:
             self.halted = None
             self._fault_run = 0
+        self.alarm_mgr.acknowledge_all()
         self._alarm("halt cleared by operator")
         return True
 
@@ -407,16 +594,24 @@ class MachineCycle:
             return
         self._estop_next = self.clock() + 0.25
         if self._estop_pressed():
-            self.halt(f"hardware E-stop input {self.cfg['estop_device']} active (or unreadable)")
+            self.halt(f"hardware E-stop input {self.cfg['estop_device']} active (or unreadable)", "E_STOP")
 
     # ------------------------------------------------------------------ views (any thread)
     def snapshot(self) -> dict:
         with self._lock:
             fifo = [b for b in self._fifo]
             hist = list(self._history)[-60:]
+            cyc = sorted(self.cycle_ms)
             return {"counts": dict(self.counts), "queue": len(fifo), "fifo": fifo, "history": hist,
                     "alarms": list(self.alarms)[-20:], "last": self.last, "running": self.running,
-                    "error": self.error, "halted": self.halted, "travel_s": self.travel_s, "travel_measured": self.travel_measured}
+                    "error": self.error, "halted": self.halted, "travel_s": self.travel_s,
+                    "travel_measured": self.travel_measured,
+                    "inspecting": sum(1 for b in fifo if b.status == INSPECTING),
+                    "position": self.position.describe(),
+                    "stations": {cid: (s.name, s.role, s.offset_mm) for cid, s in self.stations.items()},
+                    "cycle_p50_ms": cyc[len(cyc) // 2] if cyc else None,
+                    "cycle_p95_ms": cyc[min(len(cyc) - 1, int(len(cyc) * 0.95))] if cyc else None,
+                    "cycle_max_ms": cyc[-1] if cyc else None}
 
     # ------------------------------------------------------------------ PLC events (service thread)
     def _on_plc_event(self, ev):
@@ -428,17 +623,20 @@ class MachineCycle:
         try:
             while not self._stop.is_set():
                 wait = max(0.0, min(0.05, self._next_deadline() - self.clock()))
+                if self._coll:
+                    wait = min(wait, 0.005)                          # a bottle is collecting frames: stay close
                 self._watch_estop()
                 trig = self.plc.wait_for_trigger(wait)
                 if trig is not None:
                     self._on_trigger(trig)
                 self._drain_events()
+                self._collect()
                 self._due()
         except Exception as e:                                       # noqa: BLE001 - shown, not swallowed
             import traceback
             traceback.print_exc()
             self.error = f"machine cycle crashed: {type(e).__name__}: {e}"
-            self._alarm(self.error)
+            self._alarm(self.error, "MACHINE_CYCLE_CRASHED")
             self.halted = self.halted or self.error
 
     def _next_deadline(self) -> float:
@@ -457,8 +655,10 @@ class MachineCycle:
         b.travel_s = self.travel_s
         b.scheduled_mono = t + self.travel_s
         b.scheduled_wall = wall + self.travel_s
+        b.run_id = getattr(self.store, "run_id", None) or ""
         with self._lock:
             self._fifo.append(b)
+            self._sensed.append(t)
         return b
 
     def _on_trigger(self, trig):
@@ -466,22 +666,66 @@ class MachineCycle:
         if self.halted:                                              # never answer while halted
             b.decision, b.command, b.reason = FAULT, "", f"line halted: {self.halted}"
             b.plc_status = "NOT ANSWERED (halted): remove bottle by hand"
-            self._alarm(f"bottle {b.inspection_id}: {b.plc_status}")
+            self._alarm(f"bottle {b.inspection_id}: {b.plc_status}", "LINE_HALTED")
             self._finish(b, FAULT)
             return
         if trig.after_reconnect:
             b.note = "trigger seen right after (re)connect: M2 may be stale"
-        t_from = trig.seen_mono + float(self.cfg["capture_delay_s"])
-        try:
-            dec, thumb, ms, n = self.inspector.inspect(t_from)
-        except Exception as e:                                       # noqa: BLE001 - FAULT, never a crash
-            dec = DEC.Decision(FAULT, [], f"inspection crashed: {type(e).__name__}: {e}", task=self.inspector.task)
-            thumb, ms, n = None, None, 0
+        coll = self.inspector.begin(trig.seen_mono, float(self.cfg["capture_delay_s"]),
+                                    sensed=lambda: list(self._sensed))
+        # frames of a bottle still collecting must stop where THIS bottle's window starts at that camera
+        for other in self._coll.values():
+            for cid, cc in other.cams.items():
+                if cid in coll.cams:
+                    cc.limit = min(cc.limit, coll.cams[cid].start)
+        self._coll[b.inspection_id] = coll
+        self._collect()                                              # frames may already be there (offset 0)
+
+    def _collect(self):
+        """Advance every bottle that is still collecting frames; decide the ones that are complete."""
+        if not self._coll:
+            return
+        now = self.clock()
+        with self._lock:
+            waiting = [b for b in self._fifo if b.status == INSPECTING and b.inspection_id in self._coll]
+        for b in waiting:
+            coll = self._coll[b.inspection_id]
+            try:
+                if not self.inspector.poll(coll, now):
+                    continue
+                dec, thumb, first, ms, n = self.inspector.evaluate(coll)
+            except Exception as e:                                   # noqa: BLE001 - FAULT, never a crash
+                dec = DEC.Decision(FAULT, [], f"inspection crashed: {type(e).__name__}: {e}", task=self.inspector.task)
+                thumb, first, ms, n = None, None, None, 0
+            del self._coll[b.inspection_id]
+            b.timings.update(coll.timing)
+            b.timings["capture_wait_ms"] = max((cc.wait_ms for cc in coll.cams.values()), default=0.0)
+            b.assoc = {cid: {"window_s": [round(cc.start - b.t_trigger, 3), round(cc.end - b.t_trigger, 3)],
+                             "frames_s": [round(f.ts - b.t_trigger, 3) for _, f in sorted(cc.frames.items())],
+                             "fault": cc.fault} for cid, cc in coll.cams.items()}
+            if any(cc.fault and cc.fault.startswith("CAMERA_ASSOCIATION_FAULT") for cc in coll.cams.values()):
+                self._alarm(f"bottle {b.inspection_id}: camera evidence could not be associated", "CAMERA_ASSOCIATION_FAULT",
+                            b.inspection_id)
+            self._decided(b, dec, thumb, first, ms, n)
+
+    def _decided(self, b: Bottle, dec, thumb, first, ms, n):
         b.decision, b.defects, b.reason, b.confidence = dec.state, list(dec.defects), dec.reason, dec.confidence
-        b.per_camera, b.thumb, b.infer_ms, b.frames = dec.per_camera, thumb, ms, n
+        b.per_camera, b.thumb, b.evidence, b.infer_ms, b.frames = dec.per_camera, thumb, first, ms, n
         b.decided_mono = self.clock()
+        b.timings["trigger_to_decision_ms"] = (b.decided_mono - b.t_trigger) * 1000
         with self._lock:
             self.last = b
+            self.cycle_ms.append(b.timings["trigger_to_decision_ms"])
+        if dec.state == FAULT:
+            code = ("NO_BOTTLE" if "no bottle" in dec.reason else
+                    "CAMERA_DISCONNECTED" if "camera fault" in dec.reason or "frame timeout" in dec.reason else
+                    "MODEL_RUNTIME_ERROR" if "failed" in dec.reason or "crashed" in dec.reason else None)
+            if code:
+                self._alarm(f"bottle {b.inspection_id}: {dec.reason}"[:200], code, code)
+        if self.halted:                                              # halted while this bottle was being inspected
+            b.plc_status = "NOT ANSWERED (halted): remove bottle by hand"
+            self._finish(b, FAULT)
+            return
         cmd = {PASS: PASS, REJECT: REJECT}.get(dec.state, str(self.cfg["fault_action"]).upper())
         b.command = cmd if cmd in (PASS, REJECT) else REJECT
         if b.command == REJECT:
@@ -502,13 +746,15 @@ class MachineCycle:
                 b.note = (f"REJECT deadline missed by {b.lateness_ms:.0f} ms: NOT ejected, remove bottle "
                           f"{b.inspection_id} by hand")
                 self.counts["missed_reject"] += 1
-                self._alarm(f"bottle {b.inspection_id}: {b.note}")
+                self._alarm(f"bottle {b.inspection_id}: {b.note}", "REJECT_DEADLINE_MISSED", b.inspection_id)
         elif cmd == REJECT:
             b.lateness_ms = (now - b.dispatch_mono) * 1000          # informational: travel not measured
         b.sent_mono = now
         b.status = SENT
         res = self.plc.submit_result(b.trigger_id, cmd)
         b.ack_ms = res.ack_ms
+        b.timings["plc_ms"] = (self.clock() - now) * 1000
+        b.timings["trigger_to_command_ms"] = (now - b.t_trigger) * 1000
         if res.ok:
             if cmd == REJECT:
                 b.status, b.plc_status = REJECTING, "M1 ACKED, T0 running"
@@ -517,7 +763,8 @@ class MachineCycle:
         else:
             b.status = DONE
             b.plc_status = f"{cmd} {res.status}: {res.detail}"[:160]
-            self._alarm(f"bottle {b.inspection_id}: PLC {cmd} {res.status} - {res.detail}"[:200])
+            code = "PLC_ACK_TIMEOUT" if "ACK" in str(res.status) else "PLC_COMMAND_FAILED"
+            self._alarm(f"bottle {b.inspection_id}: PLC {cmd} {res.status} - {res.detail}"[:200], code, b.inspection_id)
         if b.note.startswith("REJECT deadline missed") or not res.ok:
             self._finish(b, FAULT)
         elif cmd == PASS:
@@ -538,7 +785,7 @@ class MachineCycle:
                     rej = [b for b in self._fifo if b.status == REJECTING]
                 if not rej:
                     if on:
-                        self._alarm("Y0 (reject) turned ON with no REJECT pending in the FIFO")
+                        self._alarm("Y0 (reject) turned ON with no REJECT pending in the FIFO", "UNEXPECTED_REJECT")
                     continue
                 b = rej[0]                                           # one T0 in the ladder: the oldest reject
                 if on and b.y0_on_mono is None:
@@ -555,7 +802,8 @@ class MachineCycle:
                 if rej and rej[0].y0_on_mono is None:                # cycle ended and Y0 was never seen
                     b = rej[0]
                     b.plc_status = "M1 cleared but Y0 was never observed ON"
-                    self._alarm(f"bottle {b.inspection_id}: reject cycle ended without an observed Y0 pulse")
+                    self._alarm(f"bottle {b.inspection_id}: reject cycle ended without an observed Y0 pulse",
+                                "REJECT_NOT_OBSERVED", b.inspection_id)
                     self._finish(b, FAULT)
 
     def _not_inspected(self, ev):
@@ -565,7 +813,7 @@ class MachineCycle:
         b.reason = f"bottle sensed at X0 but no inspection trigger: {ev.error}"
         b.plc_status = "no trigger: not inspected, not rejected"
         self.counts["not_inspected"] += 1
-        self._alarm(f"bottle {b.inspection_id}: NOT INSPECTED - {ev.error}")
+        self._alarm(f"bottle {b.inspection_id}: NOT INSPECTED - {ev.error}", "BOTTLE_UNTRIGGERED", b.inspection_id)
         self._finish(b, FAULT)
 
     def _due(self):
@@ -581,7 +829,7 @@ class MachineCycle:
             self._finish(b, b.decision if b.decision == PASS else FAULT)
         for b in stuck:
             b.plc_status = "no Y0 / M1 change observed after the REJECT command"
-            self._alarm(f"bottle {b.inspection_id}: {b.plc_status}")
+            self._alarm(f"bottle {b.inspection_id}: {b.plc_status}", "REJECT_NOT_OBSERVED", b.inspection_id)
             self._finish(b, FAULT)
 
     # ------------------------------------------------------------------ completion
@@ -593,26 +841,47 @@ class MachineCycle:
                 self._fifo.remove(b)
             except ValueError:
                 return                                                # already finished
+            self._coll.pop(b.inspection_id, None)
             self._history.append(b)
             self.counts["total"] += 1
             self.counts[final] += 1
+        if self.store is not None:
+            try:
+                b.evidence_path = self.store.record(b)
+            except Exception as e:                                    # noqa: BLE001 - never stops the line
+                self._alarm(f"production record not written: {type(e).__name__}: {e}", "LOG_WRITE_FAILED")
+        b.evidence = None                                             # the full frame is not kept in memory
         self._log(b)
+        applog.log("production", f"bottle {b.inspection_id} {final}", "INFO" if final != FAULT else "WARNING",
+                   decision=b.decision, defects=";".join(b.defects) or "-", cmd=b.command or "-",
+                   plc=(b.plc_status or "-")[:80], decide_ms=round(b.timings.get("trigger_to_decision_ms") or 0),
+                   run=b.run_id or "-")
+        if b.decision == FAULT and ("failed" in b.reason or "crashed" in b.reason):
+            applog.log("ai", f"bottle {b.inspection_id}: {b.reason[:200]}", "ERROR")
         self._fault_run = self._fault_run + 1 if final == FAULT else 0
         limit = int(self.cfg.get("fault_latch_after") or 0)
         if limit and self._fault_run >= limit and not self.halted:
-            self.halt(f"{self._fault_run} consecutive FAULT bottles")
+            self.halt(f"{self._fault_run} consecutive FAULT bottles", "TOO_MANY_FAULTS")
 
-    def _alarm(self, text: str):
+    def _alarm(self, text: str, code: str | None = None, key: str = ""):
         with self._lock:
             self.alarms.append((time.time(), text))
+        applog.log("machine", text[:300], "WARNING" if code else "INFO", code=code or "-")
+        if code:
+            self.alarm_mgr.raise_(code, text, key, source="machine_cycle")
 
     def _log(self, b: Bottle):
         if self.log_dir is None:
             return
         try:
             self.log_dir.mkdir(parents=True, exist_ok=True)
-            path = self.log_dir / f"{time.strftime('%Y%m%d')}.csv"
             row = b.row()
+            path = self.log_dir / f"{time.strftime('%Y%m%d')}.csv"
+            if path.exists():
+                with path.open(encoding="utf-8") as fh:
+                    head = fh.readline().strip().split(",")
+                if head != list(row):                                 # columns changed (software update): new file
+                    path = self.log_dir / f"{time.strftime('%Y%m%d')}_v{len(row)}.csv"
             new = not path.exists()
             with path.open("a", newline="", encoding="utf-8") as fh:
                 w = csv.DictWriter(fh, fieldnames=list(row))
@@ -621,7 +890,7 @@ class MachineCycle:
                 w.writerow(row)
             self._log_path = path
         except OSError as e:
-            self._alarm(f"production log not written: {e}")
+            self._alarm(f"production log not written: {e}", "LOG_WRITE_FAILED")
 
 
 # ------------------------------------------------------------------------------------- self-test
@@ -698,6 +967,7 @@ def demo():
         cams.append(c)
     det = detect.YoloDetector(model=detect.FakeYolo(yolo), warmup=False)
     logdir = Path(tempfile.mkdtemp(prefix="mc_"))
+    applog.setup(logdir / "logs")                              # fake bottles never reach the real logs/
     cfg = line_settings({"plc_t0_s": t0_s, "plc_t1_s": t1_s, "inspect_frames": 2, "inspect_window_s": 0.5,
                          "fault_latch_after": 0})
     mc = MachineCycle(svc, Inspector(cams, "detection", detector=det, frames=2, window_s=0.5), cfg, logdir)
@@ -783,13 +1053,60 @@ def demo():
         assert abs((b.sent_mono - b.t_trigger) - (0.6 - t0_s)) < 0.06, b.sent_mono - b.t_trigger
         assert abs(b.y0_error_ms) < 120, b.y0_error_ms        # Y0 lands on the scheduled time, within polling
         # ---- a REJECT decided after its deadline is not fired late
-        slow = mc2.inspector.inspect
-        mc2.inspector.inspect = lambda t: (time.sleep(0.75), slow(t))[1]          # inspection slower than travel
+        slow = mc2.inspector.evaluate
+        mc2.inspector.evaluate = lambda c: (time.sleep(0.75), slow(c))[1]          # inspection slower than travel
         b = bottle("nocap")
         assert b.final == FAULT and "deadline missed" in b.note and b.command == REJECT, (b.final, b.note)
         assert b.y0_on_mono is None and mc2.counts["missed_reject"] == 1
-        mc2.inspector.inspect = slow
+        assert any(a.code == "REJECT_DEADLINE_MISSED" for a in mc2.alarm_mgr.active())
+        mc2.inspector.evaluate = slow
         mc2.stop()
+
+        # ---- staggered cameras (opposite walls): camera "1" sits 60 mm downstream of the photo-eye, so at
+        # 200 mm/s its frames must come ~0.3 s after the trigger, and it judges only the cap (its role).
+        # Same inspection_id, one decision, persisted with versions + evidence.
+        from production_store import ProductionStore
+        cfg5 = dict(cfg, inspection_to_reject_mm=300.0, conveyor_mm_s=200.0, inspect_window_s=0.3,
+                    camera_stations={"1": {"name": "Camera 2", "role": "cap / neck", "offset_mm": 60,
+                                           "side": "right wall", "rules": {"judge": ["cap"]}}})
+        assert line_problems(cfg5, ["0", "1"]) == [], line_problems(cfg5, ["0", "1"])
+        assert line_problems(dict(cfg5, conveyor_mm_s=0.0), ["0", "1"])           # downstream camera, no speed
+        try:
+            MachineCycle(svc, mc.inspector, dict(cfg5, conveyor_mm_s=0.0), None)
+            raise AssertionError("a downstream camera without a measured speed was accepted")
+        except ValueError:
+            pass
+        st = ProductionStore(logdir / "store")
+        am = AL.AlarmManager(on_change=st.log_alarm)
+        mc5 = MachineCycle(svc, mc.inspector, cfg5, logdir / "seq", alarms=am, store=st, run_info={"project": "demo"})
+        mc5._ids = itertools.count(500)
+        mc5.start()
+        mc = mc5
+        res5 = {k: bottle(k) for k in ("good", "nolabel", "nocap")}
+        b = res5["good"]
+        assert b.final == PASS and b.frames == 4, (b.final, b.reason)
+        assert min(b.assoc["1"]["frames_s"]) > 0.3 > max(b.assoc["0"]["frames_s"]), b.assoc
+        assert b.timings["trigger_to_decision_ms"] > 300 and b.timings["detection_ms"] > 0, b.timings
+        assert res5["nolabel"].final == REJECT and res5["nolabel"].per_camera["1"][0] == PASS     # cap camera: label n/a
+        assert res5["nocap"].final == REJECT and res5["nocap"].per_camera["1"][0] == REJECT
+        # a neighbour sensed 0.1 s after this bottle cannot be separated at the downstream camera
+        t = time.monotonic()
+        coll = mc5.inspector.begin(t, 0.0, sensed=lambda: [t, t + 0.1])
+        t_end = time.monotonic() + 3.0
+        while not mc5.inspector.poll(coll, time.monotonic()):
+            assert time.monotonic() < t_end, "association collection never finished"
+            time.sleep(0.01)
+        dec = mc5.inspector.evaluate(coll)[0]
+        assert dec.state == FAULT and "CAMERA_ASSOCIATION_FAULT" in dec.reason, dec
+        mc5.stop()
+        st.flush()
+        s5 = st.summary(time.strftime("%Y-%m-%d"))
+        assert (s5["total"], s5["PASS"], s5["REJECT"]) == (3, 1, 2), s5
+        rows5 = st.recent(5)
+        assert {r["run_id"] for r in rows5} == {st.run_id} and all(r["evidence"] for r in rows5 if r["final"] == REJECT)
+        assert (logdir / "store" / rows5[0]["evidence"]).exists()
+        assert json_models(st) == mc5.inspector.models()
+        st.close()
         # ---- safety latch: halted line never answers the PLC; reset clears it
         mc3 = MachineCycle(svc, mc.inspector, dict(cfg, fault_latch_after=2), logdir)
         mc3._ids = itertools.count(300)
@@ -833,14 +1150,22 @@ def demo():
         print(f"ok  machine cycle (FAKE PLC + decoded ladder emulation, fake cameras/detector): "
               f"PASS,REJECT,PASS,REJECT,REJECT,PASS with unique ids + one final each, M0/M1/C0/C1/Y0 checked, "
               f"masked bottle -> NOT INSPECTED, no-bottle/AI/camera failures -> FAULT (rejected), "
-              f"deadline scheduling + missed deadline not fired, {len(rows)} rows logged")
+              f"deadline scheduling + missed deadline not fired, staggered cameras on one inspection_id + "
+              f"association fault, coded alarms, SQLite record + evidence, {len(rows)} rows logged")
     finally:
         mc.stop()
         for c in cams:
             c.stop()
         svc.stop(); lad.stop(); fake.close()
         infer.open_capture = real_open
+        applog.setup()
         shutil.rmtree(logdir, ignore_errors=True)
+
+
+def json_models(store) -> dict:
+    """The model ids recorded for the store's current run (self-test helper)."""
+    import json
+    return json.loads(store.runs(1)[0]["models"])
 
 
 def bench_inspect(label: str, sources, task: str = "classification+detection", frames: int = 3,
@@ -947,6 +1272,7 @@ def bench_inspect(label: str, sources, task: str = "classification+detection", f
             cv2.imwrite(str(out / f"{ce.camera}_f{k}_overlay.jpg"), Inspector._thumb(img, fe, dec, width=960))
     rec["decision"] = {"state": dec.state, "defects": dec.defects, "reason": dec.reason,
                        "per_camera": {k: list(v) for k, v in dec.per_camera.items()}}
+    rec["out_dir"] = str(out)
     (out / "result.json").write_text(json.dumps(rec, indent=2, default=str))
     print(f"{label}: {dec.state} {dec.defects} -- {dec.reason}\n  -> {out}")
     return rec

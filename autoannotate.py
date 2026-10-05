@@ -10,7 +10,12 @@ This module is pure data (no Tk, no model import). `run()` takes any callable
 `detect_fn(bgr) -> iterable of (class_name, confidence, x1, y1, x2, y2)` in absolute pixels, so the
 Stage 2 YOLO, a future segmenter, or a fake in the self-test all plug in the same way.
 
-Active learning: `order_for_review` puts the images the model is least sure about first.
+Active learning (all three only reorder UNREVIEWED images; nothing is labelled by them):
+  * `order_for_review`   least sure first (lowest proposal confidence, or no proposal at all);
+  * `missing_part_queue` the model found the anchor (bottle) but not a required part (cap / label):
+                         the most likely real missing-cap / missing-label captures, rare and valuable;
+  * `doubtful_part_queue` a part proposed at middling confidence (default 0.25-0.80): hard-negative
+                         candidates, e.g. the green tamper ring of a bare neck proposed as "cap" at 0.69.
 
     python autoannotate.py        # self-test
 """
@@ -93,6 +98,37 @@ def order_for_review(data: dict, images: list) -> list:
     return sorted(todo, key=lambda r: -uncertainty(data["images"].get(r))) + done
 
 
+def _props(data, r):
+    return (data["images"].get(r) or {}).get("proposals") or []
+
+
+def _todo(data, images):
+    return [r for r in images if not (data["images"].get(r) or {}).get("reviewed")]
+
+
+def missing_part_queue(data: dict, images: list, anchor: str = "bottle", parts=("cap", "label")) -> list:
+    """Unreviewed images whose proposals contain the anchor but lack a part; most confident anchor first."""
+    out = []
+    for r in _todo(data, images):
+        ps = _props(data, r)
+        anc = [p.get("conf", 0.0) for p in ps if p.get("cls") == anchor]
+        have = {p.get("cls") for p in ps}
+        if anc and any(x not in have for x in parts):
+            out.append((max(anc), r))
+    return [r for _, r in sorted(out, key=lambda t: -t[0])]
+
+
+def doubtful_part_queue(data: dict, images: list, parts=("cap", "label"), lo: float = 0.25, hi: float = 0.80) -> list:
+    """Unreviewed images with a part proposed at lo <= conf < hi; closest to the middle of the band first."""
+    mid = (lo + hi) / 2
+    out = []
+    for r in _todo(data, images):
+        cs = [p.get("conf", 0.0) for p in _props(data, r) if p.get("cls") in parts and lo <= p.get("conf", 0.0) < hi]
+        if cs:
+            out.append((min(abs(c - mid) for c in cs), r))
+    return [r for _, r in sorted(out)]
+
+
 def run(data: dict, images: list, image_root: Path, detect_fn, imread, min_conf: float = 0.25,
         only_pending: bool = True, progress=None) -> dict:
     """Propose boxes for `images`. only_pending skips images that already have boxes or were reviewed."""
@@ -157,13 +193,25 @@ def demo():
     # active learning: image with no proposal first, then lowest confidence
     order = order_for_review(data, ["a.jpg", "b.jpg", "c.jpg", "d.jpg"])
     assert set(order[:2]) == {"a.jpg", "c.jpg"} and order[2:] == ["b.jpg", "d.jpg"], order   # a,c: no proposal left
+    # active-learning queues on fresh proposals
+    q = A.init_annotations("detection", classes)
+    for r, ps in (("full.jpg", [("bottle", 0.9, 10, 10, 90, 190), ("cap", 0.95, 30, 5, 70, 30), ("label", 0.9, 15, 80, 85, 140)]),
+                  ("nocap.jpg", [("bottle", 0.85, 10, 10, 90, 190), ("label", 0.9, 15, 80, 85, 140)]),
+                  ("neck.jpg", [("bottle", 0.82, 10, 10, 90, 190), ("cap", 0.69, 30, 5, 70, 30), ("label", 0.9, 15, 80, 85, 140)]),
+                  ("empty.jpg", [])):
+        propose(q, r, ps, (100, 200))
+    imgs2 = ["full.jpg", "nocap.jpg", "neck.jpg", "empty.jpg"]
+    assert missing_part_queue(q, imgs2) == ["nocap.jpg"], missing_part_queue(q, imgs2)
+    assert doubtful_part_queue(q, imgs2) == ["neck.jpg"], doubtful_part_queue(q, imgs2)
+    A.set_image_annotation(q, "nocap.jpg", boxes=[], reviewed=True)
+    assert missing_part_queue(q, imgs2) == []                                           # reviewed: out of the queue
     # clipping and normalisation
     p = to_proposals([("label", 0.8, -20, 50, 130, 120)], (100, 200), classes)[0]
     assert p["x"] == 0.5 and p["w"] == 1.0 and abs(p["h"] - 0.35) < 1e-6, p
     assert to_proposals([("cap", 0.1, 0, 0, 10, 10)], (100, 200), classes) == []         # below min_conf
     assert to_proposals([("cap", 0.9, 10, 10, 10, 50)], (100, 200), classes) == []       # zero width
     print("ok  autoannotate: proposals kept out of boxes/export, accept/reject, reviewed images untouched, "
-          "uncertainty ordering, clipping")
+          "uncertainty ordering, missing-part and doubtful-part queues, clipping")
 
 
 if __name__ == "__main__":
