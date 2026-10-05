@@ -213,6 +213,7 @@ class App(ctk.CTk):
         # The ONE owner of the PLC link (plc/service.py). The Machine tab only talks to this object.
         _tr, _st, _tg = plc_link(self.settings)
         self.plc = PLCService(PLCClient(_tr, station=_st, target=_tg), poll_s=0.02, status_period_s=0.15)
+        self.plc.operator_controls = bool(self.settings.get("plc_operator_controls", False))
         # Auto-connect only to the simulator. A physical COM port is opened only when the operator presses Connect.
         self.plc_autoconnect = (("--selftest" not in sys.argv and self.settings.get("plc_mode") != "serial")
                                 if plc_autoconnect is None else plc_autoconnect)
@@ -925,6 +926,22 @@ class MachineTab:
         self.btn_rej.pack(side="left", padx=4)
         self.cmd_lbl = ctk.CTkLabel(row, text="", font=MONO, anchor="w", justify="left")
         self.cmd_lbl.pack(side="left", padx=10)
+        # real-PLC operator test controls (commissioning only; settings.json "plc_operator_controls")
+        row = ctk.CTkFrame(ctl, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(0, 8))
+        ctk.CTkLabel(row, text="OPERATOR TEST", font=("Segoe UI", 13, "bold"), text_color=WARN, width=120,
+                     anchor="w").pack(side="left")
+        self.op_arm = ctk.CTkCheckBox(row, text="arm", width=60)
+        self.op_arm.pack(side="left", padx=(0, 6))
+        self.op_btns = {}
+        for action, label in (("START", "Conveyor START (M10)"), ("STOP", "Conveyor STOP (M11)"),
+                              ("TRIGGER", "Virtual bottle (M2)")):
+            b = ctk.CTkButton(row, text=label, width=150, state="disabled",
+                              command=lambda a=action: self.operator(a))
+            b.pack(side="left", padx=4)
+            self.op_btns[action] = b
+        self.op_note = ctk.CTkLabel(row, text="", text_color=DIM, font=("Segoe UI", 12), anchor="w")
+        self.op_note.pack(side="left", padx=10)
 
         self.log = ctk.CTkTextbox(parent, font=MONO, fg_color=PANEL, text_color=INK, height=170)
         self.log.pack(fill="both", expand=True)
@@ -1035,6 +1052,14 @@ class MachineTab:
             return
         self._hold[dev] = time.monotonic() + 0.7
         self._op(f"simulator {dev} <- {int(on)}", lambda: self.app.plc.simulator_test_write(dev, bool(on)))
+
+    def operator(self, action):
+        """Real-PLC operator test (START/STOP conveyor via M10/M11, virtual bottle via M2). One shot per press."""
+        if not self.op_arm.get():
+            return
+        self.op_arm.deselect()                       # one press -> one write; re-arm for the next
+        self._op(f"operator {action}", lambda: "operator {action}: {device} written in {write_ms:.0f} ms".format(
+            **self.app.plc.operator_write(action)))
 
     def pulse_x0(self):
         if not self.app.plc.simulator_mode:
@@ -1194,6 +1219,15 @@ class MachineTab:
                and bool(self.arm.get()) and not self.cmd_busy)
         for b in (self.btn_pass, self.btn_rej):
             b.configure(state="normal" if can else "disabled")
+        op_ok = (svc.operator_controls and st == PLC_CONNECTED and running and bool(self.op_arm.get())
+                 and not self._op_busy)
+        for a, b in self.op_btns.items():
+            idle = a != "TRIGGER" or trig is None
+            b.configure(state="normal" if op_ok and idle else "disabled")
+        self.op_note.configure(
+            text=("off - set \"plc_operator_controls\": true in settings.json" if not svc.operator_controls else
+                  "ladder needs M10 || X1 (start), M11 || X2 (stop).  REJECT fires the cylinder."),
+            text_color=DIM if not svc.operator_controls else WARN)
         if r is not None:
             tail = f"ack {r.ack_ms:.0f} ms" if r.status == "ACKED" else r.detail[:70]
             self.cmd_lbl.configure(text=f"{r.command} #{r.trigger_id}: {r.status}  {tail}",

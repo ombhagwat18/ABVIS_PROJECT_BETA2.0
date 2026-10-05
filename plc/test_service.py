@@ -196,6 +196,32 @@ def test_simulator_test_write_is_narrow():
         close(fake, lad, svc)
 
 
+def test_operator_write_is_opt_in_and_narrow():
+    fake, lad, svc = rig()
+    try:
+        svc.client.transport.host = "192.168.1.50"                  # works on a non-simulator link too
+        _expect(AM.AddressError, lambda: svc.operator_write("START"), "operator controls off by default")
+        assert not fake.writes
+        svc.operator_controls = True
+        _expect(AM.AddressError, lambda: svc.operator_write("Y1"), "unknown operator action")
+        svc.operator_write("START")
+        assert writes(fake, "M10") == [(M("M10"), 1), (M("M10"), 0)], fake.writes
+        svc.operator_write("STOP")
+        assert writes(fake, "M11") == [(M("M11"), 1), (M("M11"), 0)], fake.writes
+        assert not AM.is_writable("M10") and not AM.is_writable("M2"), "operator opening was not closed again"
+        svc.operator_write("TRIGGER")
+        assert writes(fake, "M2") == [(M("M2"), 1)]
+        t = svc.wait_for_trigger(1.0)
+        assert t is not None, "virtual bottle produced no trigger"
+        _expect(PLCError, lambda: svc.operator_write("TRIGGER"), "virtual bottle while M2 is ON")
+        assert len(writes(fake, "M2")) == 1
+        assert svc.send_pass(t.id).status == ACKED
+        assert not any(w[0] in (M("Y0"), M("Y1")) for w in fake.writes) and \
+            any(e.event == "OPERATOR_WRITE" for e in svc.events())
+    finally:
+        close(fake, lad, svc)
+
+
 def test_job_traffic_does_not_hide_triggers():
     """Regression (simulator, 2026-10-03): continuous sample() jobs starved polling, the service never saw
     M2 fall, and the next M2 = 1 produced no trigger."""

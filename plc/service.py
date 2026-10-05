@@ -143,6 +143,7 @@ class PLCService:
         self._x0_prev: Optional[bool] = None
         self._m2_rose = False                          # M2 rose since the last observation that read X0
         self.untriggered = 0
+        self.operator_controls = False                 # real-PLC operator test buttons (operator_write); opt-in
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -359,6 +360,40 @@ class PLCService:
             ms = (time.perf_counter() - t0) * 1000
             self._event("SIM_TEST_WRITTEN", device=dev, latency_ms=ms)
             return {"device": dev, "value": int(bool(value)), "write_ms": ms}
+        return self._call(job)
+
+    def operator_write(self, action: str) -> dict:
+        """OPERATOR TEST control on any link, including the real PLC (commissioning/testing; see
+        address_map.OPERATOR_BITS). Refused unless `operator_controls` is True (from settings.json
+        "plc_operator_controls"), the PLC is in RUN, and -- for TRIGGER -- M2 = M0 = M1 = 0 read fresh.
+          START / STOP : pulse M10 / M11 (1, ~0.3 s, 0); the ladder must OR them with X1 / X2.
+          TRIGGER      : M2 <- 1, the "virtual bottle" (what X0 does); the ladder clears it on M0/M1.
+        Never retried. On the real machine a REJECT answer to a virtual bottle still fires Y0."""
+        action = action.strip().upper()
+        if not self.operator_controls:
+            raise AM.AddressError("operator controls are off (settings.json \"plc_operator_controls\": true to enable)")
+        if action not in AM.OPERATOR_BITS:
+            raise AM.AddressError(f"unknown operator action {action!r} (only {sorted(AM.OPERATOR_BITS)})")
+        dev = AM.OPERATOR_BITS[action]
+
+        def job():
+            if not self._guard(self.client.heartbeat)["plc_run"]:
+                raise PLCError(f"operator {action} refused: PLC is not in RUN")
+            if action == "TRIGGER":
+                bits = self._guard(lambda: self.client.read_many([AM.TRIGGER_BIT, AM.PASS_BIT, AM.REJECT_BIT]))
+                busy = [n for n, v in bits.items() if v]
+                if busy:
+                    raise PLCError(f"virtual bottle refused: {', '.join(busy)} already ON (bottle still being handled)")
+            t0 = time.perf_counter()
+            self._event("OPERATOR_WRITE", device=dev, ack=f"operator test: {action} ({dev})")
+            with AM.sim_test_allow(dev):
+                self._guard(lambda: self.client.write_bit(dev, True))
+                if action != "TRIGGER":
+                    time.sleep(0.3)                    # long enough for any scan; the ladder sees the rising edge
+                    self._guard(lambda: self.client.write_bit(dev, False))
+            ms = (time.perf_counter() - t0) * 1000
+            self._event("OPERATOR_WRITTEN", device=dev, latency_ms=ms)
+            return {"action": action, "device": dev, "write_ms": ms}
         return self._call(job)
 
     def _guard(self, fn):

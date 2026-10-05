@@ -58,6 +58,13 @@ T0_CONTRACT_S, T1_CONTRACT_S = 1.5, 0.5
 WRITE_ALLOWLIST: frozenset = frozenset(COMMAND_BITS.values())
 
 
+# OPERATOR TEST controls for the REAL PLC (user request 2026-10-04, for commissioning/testing; to be removed
+# later). Off unless settings.json "plc_operator_controls" is true AND the operator ticks arm. X cannot be
+# written on a real PLC (the scan reloads it from the terminals) and Y stays never-writable, so the conveyor is
+# started/stopped through HMI bits the ladder must contain: M10 in parallel with X1 (START), M11 in parallel
+# with X2 (STOP). M2 = "virtual bottle" (what X0 does). Written only via PLCService.operator_* (one shot each).
+OPERATOR_BITS = {"START": "M10", "STOP": "M11", "TRIGGER": TRIGGER_BIT}
+
 # SIMULATOR-ONLY test stimulus. Never used by production code. Only these bits may ever be opened up,
 # only for the duration of one write, only on the service thread, and X/Y are never among them.
 SIM_TEST_BITS = frozenset({TRIGGER_BIT, PASS_BIT, REJECT_BIT, "X0", "X1", "X2"})
@@ -69,8 +76,9 @@ class sim_test_allow:
 
     def __init__(self, device: str):
         self.device = device.strip().upper()
-        if self.device not in SIM_TEST_BITS:
-            raise AddressError(f"{device!r} is not a simulator-test bit (allowed: {sorted(SIM_TEST_BITS)})")
+        allowed = SIM_TEST_BITS | set(OPERATOR_BITS.values())
+        if self.device not in allowed:
+            raise AddressError(f"{device!r} is not a test bit (allowed: {sorted(allowed)})")
 
     def __enter__(self):
         global _sim_open
