@@ -652,6 +652,7 @@ path,damaged_bottle,damaged_label,missing_cap,missing_label,skewed_bottle,skewed
 -ve/Skewed Bottle/snap_1198.jpg,0,0,0,0,1,0,0,0,1
 -ve/Skewed Bottle/snap_1199.jpg,0,0,0,0,1,0,0,0,1
 -ve/Skewed Bottle/snap_1200.jpg,0,0,0,0,1,0,0,0,1
+-ve/Skewed Bottle/snap_1201.jpg,0,0,0,0,1,0,0,0,1
 -ve/Skewed Bottle/snap_1202.jpg,0,0,0,0,1,0,0,0,1
 -ve/Skewed Bottle/snap_1203.jpg,0,0,0,0,1,0,0,0,1
 -ve/Skewed Bottle/snap_1204.jpg,0,0,0,0,1,0,0,0,1
@@ -817,6 +818,7 @@ path,damaged_bottle,damaged_label,missing_cap,missing_label,skewed_bottle,skewed
 -ve/Skewed Bottle/snap_1364.jpg,0,0,0,0,1,0,0,0,1
 -ve/Skewed Label/snap_073.jpg,0,0,0,0,0,1,0,0,1
 -ve/Skewed Label/snap_074.jpg,0,0,0,0,0,1,0,0,1
+-ve/Skewed Label/snap_075.jpg,0,0,0,0,0,1,0,0,1
 -ve/Skewed Label/snap_076.jpg,0,0,0,0,0,1,0,0,1
 -ve/Skewed Label/snap_077.jpg,0,0,0,0,0,1,0,0,1
 -ve/Skewed Label/snap_078.jpg,0,0,0,0,0,1,0,0,1

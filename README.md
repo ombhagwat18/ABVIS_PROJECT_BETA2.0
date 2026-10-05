@@ -1,355 +1,188 @@
 # Bottle Defect Detection System
 
-AI-based bottle defect inspection, being built toward a configurable industrial machine-vision platform. First
-application: **250 ml Bisleri bottle inspection on a conveyor**.
+AI-based bottle inspection for a QC conveyor, built as one Windows desktop application (Python, CustomTkinter,
+OpenCV, PyTorch, Ultralytics) that talks to a Delta DVP-SS2 PLC. First application: **250 ml Bisleri bottles**.
 
-> **Current state: a verified software baseline, now at first hardware integration.** The software talks to the
-> real Delta DVP-SS2 PLC over RS-232 (first read-only link 2026-10-04). **The complete inspect -> PASS/REJECT ->
-> physical reject cycle has not yet been run on the machine**, and no production deployment exists. See
-> [What works today](#what-works-today) and [What does NOT work yet](#what-does-not-work-yet).
+> **State (2026-10-05): software prototype ready for physical commissioning, NOT production-validated.**
+> Every part of the machine cycle exists in software and passes self-tests with a fake PLC, fake cameras and
+> fake models: trigger -> per-bottle inspection -> decision -> time-based FIFO -> PLC command -> history.
+> The real PLC has been connected **read-only** (2026-10-04). **No bottle has yet been inspected and rejected
+> on the physical machine.** The PLC program still needs changes ([PLC_LADDER_REQUIREMENTS](docs/hardware/PLC_LADDER_REQUIREMENTS.md)),
+> and **missing-cap detection is not reliable yet** (see [Missing cap](#missing-cap-the-open-problem)).
 
 | | |
 |---|---|
-| **Stage** | Software baseline; next milestone is the first complete machine cycle |
-| **Application** | Python desktop app (Tk / CustomTkinter, OpenCV, PyTorch) |
-| **Detector** | YOLOv8n: **training complete** (test-evaluated). **Runtime integration: current development** - opt-in in the Live tab, finds component boxes only |
-| **Hardware validation** | First PLC link only (COM5, RS-232, read-only); reject cycle, timing and cameras on the machine not yet validated |
-| **Docs** | [`docs/`](docs/README.md) |
+| **Operator screen** | Production page: one machine state, both cameras live, current bottle, counters, alarms, START / STOP / RESET FAULT |
+| **Decision** | `decision.py`: recipe-driven, frame vote, camera fusion, FAULT > REJECT > PASS; AI never commands the PLC |
+| **Tracking** | Time-based (no encoder): measured belt speed, camera stations, reject deadlines |
+| **PLC** | `plc/` Modbus ASCII; M0 = PASS, M1 = REJECT, M2 = trigger; Python never writes Y outputs |
+| **Record** | SQLite per project: every bottle, run versions, alarms, evidence images; event logs per subsystem |
+| **Models** | Stage 1 classifier (active EfficientNet-B0) + Stage 2 YOLOv8n component detector; registry with gated activation |
+| **Docs** | [docs/README.md](docs/README.md) |
 
-## Contents
-
-[Overview](#overview) - [Current state](#current-state) - [Architecture](#architecture) - [Stage 1](#stage-1-classification) -
-[Stage 2](#stage-2-detection) - [Safety model](#safety-model-pass--reject--fault) - [Traceability](#traceability) -
-[Hardware](#hardware) - [Roadmap](#roadmap) - [Repository](#repository-structure) - [Setup and run](#setup-and-run) -
-[Tests](#tests) - [Training](#training) - [Documentation](#documentation) - [Limitations](#known-limitations)
-
-## Overview
-
-**Industrial problem.** Bottles on a filling/packing conveyor must be checked for defects (damaged bottle or
-label, missing or tilted cap, skewed label, water level) and bad ones removed - consistently, at line speed,
-and without ever passing a bottle the system could not actually inspect.
-
-**System objective.** Camera -> AI inspection -> decision (PASS / REJECT / FAULT) -> PLC -> physical reject.
-The governing split: **AI decides *what* the object/defect is; the PLC decides *how* the machine responds.**
-
-**Scope discipline.** The aim is the *minimum reliable machine first*. A larger platform (recipes, database,
-dashboard, security, OCR, active learning, ...) is planned but **deliberately deferred** - see
-[FUTURE_ENHANCEMENTS](docs/roadmap/FUTURE_ENHANCEMENTS.md).
-
-## Current state
-
-| Area | Status |
-|---|---|
-| Desktop app, multi-project, labelling, training, annotation | Working (software-tested) |
-| Stage 1 multi-label classifier (live path) | Working in software; no held-out test split |
-| Stage 2 detection dataset (594 images) | Complete, validated (19/19 export checks) |
-| YOLOv8n detector - training | **COMPLETE** (test-evaluated) |
-| YOLOv8n detector - runtime | **Current development**: opt-in in the Live tab; bottle/cap/label boxes shown; software-tested; live-tested only on scenes with no bottle |
-| PASS / REJECT / FAULT, frame/session metadata | Implemented, software-tested |
-| Inspection record / trace store | In-memory foundation only |
-| Per-bottle decision (`decision.py`), PLC trigger -> decision -> M0/M1 cycle (`machine_cycle.py`), Production tab | Implemented, software-tested with a fake PLC emulating the decoded ladder |
-| PLC communication (`plc/`, Modbus ASCII) | Simulator-tested; **first real-PLC read-only link 2026-10-04** (COM5, 9600 7E1, station 1, PLC in RUN) |
-| Physical machine | **Not validated**: no inspected bottle has yet driven M0/M1 on the real machine; camera placement, timing (distance, speed, T0) and E-stop input not yet set |
-
-### What works today
-
-- Project-based dataset management, labelling GUI, classifier training/evaluation, multi-camera live scoring
-  with a PASS / REJECT / FAULT verdict, camera benchmarking and diagnostics.
-- Annotation Studio (boxes and polygons) with YOLO export; a reviewed, scene-split Stage 2 dataset.
-- A trained YOLOv8n detector with full training provenance
-  ([`models/stage2_yolo/MODEL_PROVENANCE.json`](models/stage2_yolo/MODEL_PROVENANCE.json)), and an
-  **opt-in runtime path** (`detect.py`; Live tab -> "Classifier + YOLO" / "YOLO only") that draws bottle, cap and
-  label boxes with confidences and a detector state, beside the unchanged Stage 1 classifier.
-- Fail-safe inspection results (stale/missing/failed -> FAULT) with per-session frame sequence numbers and
-  monotonic timestamps; an in-memory inspection record and store.
-
-### What does NOT work yet
-
-- YOLO finds **components, not defects**, and drives no verdict: a missing or low-confidence box is *not* treated
-  as a defect (it can be occlusion, angle, blur, lighting or a false negative). "YOLO only" mode reports FAULT by design.
-- The detector has not been validated on live bottle frames (the Stage 2 images are Iriun-viewer screenshots, and
-  on a bottle-free room it drew low-confidence false boxes at the 0.25 development threshold).
-- The conveyor distance and speed are unmeasured (`settings.json` 0 = not measured), and the saved ladder's T0/T1
-  (K150 / K50 = 15 s / 5 s) do not match the intended K15 / K5 (1.5 s / 0.5 s), so reject timing is not yet valid.
-- Camera locking (focus / exposure) is implemented but not yet configured on the mounted cameras; two EMEET
-  cameras need separate USB ports for two 1080p streams.
-- No hardware E-stop input is configured (`estop_device`); the software STOP latch is not a safety device.
-- No persistence beyond the daily production CSV, no evidence-image store, dashboard, login or reports.
-- The real PLC port is shared with Delta COMMGR/ISPSoft: only one program can hold the COM port, so close COMMGR
-  before connecting the app.
-
-### Next milestone
-
-**First complete machine cycle**: a bottle is sensed, inspected, given a PASS / REJECT / FAULT, the PLC receives
-the correct result in time, and the correct bottle is physically rejected. YOLO runtime integration is the
-**current development** step; the phase after it is **inspection window / per-bottle association** (not PLC).
-See [PROGRESS_PLAN](docs/roadmap/PROGRESS_PLAN.md).
-
-## Architecture
-
-### Current pipeline (what actually runs)
+## Machine cycle
 
 ```mermaid
 flowchart LR
-    CAM[Camera thread<br/>OpenCV / DirectShow] --> FR[Frame<br/>camera_id, monotonic ts, seq]
-    FR --> PRE[ROI crop + resize]
-    PRE --> CLS[Stage 1 classifier]
-    CLS --> DEC[Per-defect thresholds]
-    DEC --> ST{PASS / REJECT / FAULT}
-    ST --> GUI[GUI verdict]
-    ST -.-> TR[InspectionRecord<br/>in-memory, not wired to GUI]
-    FR -.->|opt-in| DET[YOLOv8n component detector<br/>whole frame, original-frame pixel boxes]
-    DET -.-> BOX[bottle / cap / label boxes<br/>display + trace only]
-    DET -.->|detector failure or stale| ST
+    X0[Photo-eye X0] --> M2[PLC sets M2]
+    M2 --> T[Trigger: inspection_id]
+    T --> C1[Camera 1 window<br/>trigger + 0]
+    T --> C2[Camera 2 window<br/>trigger + offset/speed]
+    C1 --> AI[AI stages<br/>classifier / detector]
+    C2 --> AI
+    AI --> D[decision.py<br/>recipe, vote, fusion]
+    D --> F[FIFO + deadlines]
+    F -->|PASS now| M0[M0]
+    F -->|REJECT at trigger + travel - T0| M1[M1]
+    M1 --> Y0[PLC: T0 -> Y0 -> T1]
+    F --> H[production.db + evidence + logs]
 ```
 
-The detector is **observational**: it never produces PASS or REJECT. If it is enabled and fails or goes stale, the
-result becomes FAULT. Details: [CURRENT_SYSTEM](docs/roadmap/CURRENT_SYSTEM.md).
+- One final result per bottle: PASS, REJECT or FAULT. FAULT is physically rejected by default. A REJECT that
+  would be late is never fired; the bottle is flagged for removal by hand.
+- A bottle sensed at X0 without a trigger (PLC busy) is recorded as NOT INSPECTED, not lost.
+- Camera images that cannot be matched to the right bottle by time give `CAMERA_ASSOCIATION_FAULT`.
+- Safety: the software HALT latch and an optional E-stop status input stop answering the PLC. **The hardware
+  E-stop must cut power on its own.**
 
-### Target architecture (not implemented)
+## The application (14 pages)
 
-```mermaid
-flowchart TB
-    JOB[Job / Recipe] --> CFG[Product configuration]
-    CFG --> CAM[Cameras + lighting]
-    SEN[Photoelectric sensor] --> TRG[Trigger]
-    CAM --> ACQ[Acquisition]
-    TRG --> ACQ
-    ACQ --> PRE[Preprocessing]
-    PRE --> AI[AI + traditional vision]
-    AI --> DEC[Inspection / decision engine]
-    DEC --> TRC[Traceability]
-    DEC --> PLCI[PLC interface]
-    PLCI --> PLC[PLC machine control]
-    PLC --> REJ[Reject actuator]
-```
+| Group | Pages | Who |
+|---|---|---|
+| PRODUCTION | **Production**, History (per day / per shift), Health (system status + searchable logs) | operator |
+| DATA | Label, Defects, Annotate (boxes, polygons, model proposals, active-learning queues), Data health | engineer |
+| MODEL | Train, Analysis, **Models** (CANDIDATE -> VALIDATED -> APPROVED -> ACTIVE, rollback) | engineer |
+| ENGINEERING | Live (tuning view), Machine (PLC connection + commissioning), Camera (benchmark + camera lock) | engineer |
+| SYSTEM | Settings (text size, light/dark theme, evidence policy, engineer PIN) | engineer |
 
-Details and the software/PLC responsibility split:
-[INDUSTRIAL_ARCHITECTURE](docs/roadmap/INDUSTRIAL_ARCHITECTURE.md).
+OPERATOR mode (default) shows only the PRODUCTION group. ENGINEER mode (header button) shows everything, plus the
+engineer row on Production: AI task, line cameras, timing, Speed calibration, Line layout / camera stations,
+Recipe, the HALT latch and the simulator bottle feed. Tests without the PLC are CAMERA TEST (live images +
+quality) and TEST INSPECTION (same models and decision as the line). Guide:
+[PRODUCTION_HMI_AND_COMMISSIONING](docs/guides/PRODUCTION_HMI_AND_COMMISSIONING.md).
 
-## Stage 1 (classification)
+## Status (honest)
 
-`projects/<slug>/` holds a project: `labels.csv` (one multi-label row per image), `config.json` (ROI, input size,
-thresholds, active model) and `models/<stamp>/` checkpoints. The active project `om_bottle` has 1,143 images and
-8 defect columns (damaged bottle/label, missing cap/label, skewed bottle/label, tilt cap, water level) with
-only 72 "good" examples. Five backbones are supported (EfficientNet-B0/B1, MobileNetV3-Small, ResNet18,
-ConvNeXt-Tiny); 9 checkpoints exist.
+| Area | Software | On the machine |
+|---|---|---|
+| Per-bottle cycle, FIFO, deadlines, alarms, history | self-tested (fake PLC emulating the decoded ladder) | never run |
+| PLC link | simulator-tested | read-only link only (COM5, 9600 7E1) |
+| PLC program | `python -m plc.ladder_check`: trigger / handshake / reject cycle present | **T0/T1 = 15 s / 5 s** (should be about 1.5 / 0.5); no E-stop input, M10/M11, interlock, timeout; triggers masked during a reject |
+| Time tracking (no encoder) | self-tested; calibration wizard | speed and distances **not measured** |
+| Two cameras | staggered stations, association, auto-reconnect | both on one USB 2.0 hub: one 1080p stream only |
+| Classifier | held-out test macro-F1 0.935 (active) | not validated on EMEET frames; **`missing_cap` impossible** (0 usable images) |
+| Detector | test mAP50 0.968 (v1) | not validated on EMEET frames; **misses full-bottle missing caps** |
 
-<details><summary>Caveats</summary>
+Per-feature truth: [FEATURE_STATUS](docs/roadmap/FEATURE_STATUS.md). What exists: [CURRENT_SYSTEM](docs/roadmap/CURRENT_SYSTEM.md).
 
-- Splits are by scene; there is **no held-out test split**.
-- Several checkpoints report validation macro-F1 = 1.0 (including a 1-epoch ResNet18), so these scores are
-  saturated and are not evidence of production accuracy.
-- `missing_cap` has **zero** positive examples and is disabled; `missing_label` has 30 and scored 0 in the
-  active model's validation.
-- Live thresholds in `projects/om_bottle/config.json` are hand-tuned (some 0.05-0.1) and unvalidated.
-</details>
+## Missing cap (the open problem)
 
-## Stage 2 (detection)
+All 22 missing-cap images in `All Datasets/Missing Cap` (one unlabelled bottle on a white background) were
+already in the detection dataset:
 
-**Dataset** (`stage2_dataset/`): 594 images, 39 scenes, split **by scene**:
+- 10 neck close-ups are in train.
+- 12 full-bottle frames were test-only.
 
-| Split | Images | Scenes | bottle | cap | label | Boxes |
-|---|---|---|---|---|---|---|
-| train | 418 | 25 | 446 | 435 | 350 | 1,231 |
-| val | 89 | 7 | 137 | 131 | 99 | 367 |
-| test | 87 | 7 | 156 | 143 | 97 | 396 |
-| **total** | **594** | **39** | **739** | **709** | **546** | **1,994** |
+Every existing detector reads the green tamper ring of a bare neck as a cap (confidence about 0.70) and misses
+all 12. On 2026-10-05:
 
-All images are reviewed; the scene-leakage check passed; the YOLO export passes 19/19 validation checks. The
-images and the generated export are not in Git (the scripts, `annotations.json`, `split.json` and manifests are).
-The images are 1780x1000 crops of desktop screenshots of the **Iriun Webcam** viewer, not direct OpenCV camera frames.
+- **Classifier:** a candidate trained with the 12 images learned "white background = missing cap". It flagged
+  25 of 25 *capped* white-background bottles. It is REJECTED, and the images were removed from the classifier
+  project (undoable).
+- **Detector:** a v3 split moves the full-bottle missing-cap scene into training
+  (`stage2_dataset/split_v3.py`), and a YOLOv8n v3 candidate was trained. No missing-cap bottle is left in its
+  test set, so it **must be validated on the machine** before activation.
+  Result: [models/stage2_yolo/candidate_yolov8n_v3.json](models/stage2_yolo/candidate_yolov8n_v3.json).
 
-**Annotation:** the Annotate tab (`annotation_studio.py`, data layer `annotate.py`) supports boxes and
-polygons, a reviewed flag and "next unannotated", with YOLO detection/segmentation export. Polygons/segmentation
-have not been used on real data.
+**v3 result (2026-10-05, `candidate_yolov8n_v3.json`, `defects_yolov8n_v3_*.json`):** 48 epochs (early stop),
+25 min. Box metrics: val mAP50 0.982 / mAP50-95 0.853, test (52 images) mAP50 0.971 / mAP50-95 0.803, cap
+test mAP50-95 0.983. Defect level through the production rule:
 
-**YOLOv8n** (`yolo_stage2_train.py`; trained on train only, selected on val, test evaluated once):
-
-| Split | mAP50 | mAP50-95 | Precision | Recall |
+| Detector | val missing cap (6, same val in v1/v2/v3) | val good pass | test good pass | 12 full-bottle bare necks |
 |---|---|---|---|---|
-| Validation (89) | 0.976 | 0.730 | 0.998 | 0.965 |
-| **Test (87, 7 scenes)** | **0.968** | **0.660** | 0.936 | 0.968 |
+| v1 (`stage2_best.pt`, active) | 0/6 | 54/54 | - | 0/12 (cap ~0.65) |
+| v2 | 6/6 | 54/54 | 50/50 (v1 split: 0/12 missing cap) | 0/12 |
+| **v3** | 5/6 | 54/54 | 50/50 | 12/12 **(trained on them: not evidence)** |
 
-Per-class test mAP50-95: **bottle 0.816, cap 0.593, label 0.571.** 53 epochs (best epoch 33), 640 px, batch 8,
-seed 0, ultralytics 8.1.0, 6.2 MB. GPU batch-1 latency ~29 ms end to end (~34 FPS) on the development laptop's
-RTX 3050; CPU ~248 ms.
+v3 is the only detector that has learned the full-bottle bare neck. It stays a CANDIDATE: validate it on the
+machine with real capped and uncapped bottles, then approve and activate it on the Models page.
 
-> **The test set is small** (7 scenes, 87 images, 396 boxes), so these numbers are indicative, not a production
-> guarantee. Cap and label are clearly weaker than bottle. The images are Iriun-viewer screenshots, so how the
-> detector behaves on live camera frames (the development cameras default to 640x480, 4:3) is unverified.
-
-The full chain *dataset -> annotations -> split -> export -> training configuration -> checkpoint (sha256) ->
-validation -> test* is in [`models/stage2_yolo/MODEL_PROVENANCE.json`](models/stage2_yolo/MODEL_PROVENANCE.json).
-The weights file is not committed (see below).
-
-## Safety model (PASS / REJECT / FAULT)
-
-`infer.py` produces a tri-state result. **PASS and REJECT only come from a fresh, valid score**; anything else
-is FAULT with a reason: camera not started, thread dead, driver error, no model, failed inference, non-finite
-scores, nothing scored yet, or a frame/score older than 1.0 s (monotonic clock). With several cameras the
-combined result is `FAULT > REJECT > PASS`, and no running camera at all is a FAULT. A FAULT currently clears
-itself on the next good frame (no latching yet).
-
-Every frame carries `camera_id`, a per-session sequence number and a `time.monotonic()` stamp; a restarted camera
-starts a new session, and a wedged old capture thread cannot write into it. **These are software tests with fake
-captures - not hardware tests.**
-
-## Traceability
-
-`inspection_trace.py` provides `InspectionRecord` (id, run id, timestamp, state, decision, camera, session,
-frame and result sequence/timestamps, reasons, hits, model id, inference time, project id, job id, evidence
-path) and a bounded, thread-safe in-memory `TraceStore`. **In-memory only; no persistence, database or evidence
-images; `job_id` and `evidence_path` are placeholders; `decision` currently equals `state`.** Which fields are
-populated, and the plan to evolve it: [TRACEABILITY_PLAN](docs/roadmap/TRACEABILITY_PLAN.md).
-
-## Hardware
-
-Intended hardware (as described by the project owner; **none verified from this repository**): conveyor, two
-EMEET NOVA 4K cameras, photoelectric bottle sensor, Delta DVP-series PLC programmed in ISPSoft, Festo DSNU
-cylinder with a 5/2 solenoid valve, controlled LED lighting, an inspection enclosure.
-
-- The repository contains the ISPSoft project (`plc file/final_year/`, decoded by `docs/roadmap/PLC_COMMUNICATION.md`)
-  and the `plc/` package. Addresses are verified against the simulator and by the 2026-10-04 real-PLC read:
-  X0 photo-eye, X1 start, X2 stop, M0 PASS, M1 REJECT, M2 trigger, Y0 reject solenoid, Y1 conveyor. Y outputs are
-  never written by the software; the ladder owns conveyor and reject timing.
-- Commissioning aids: Machine tab (live I/O, operator-armed PASS/REJECT, opt-in OPERATOR TEST buttons for
-  conveyor start/stop via M10/M11 and a virtual bottle via M2) and
-  [BENCH_TEST_DECISION_ENGINE](docs/guides/BENCH_TEST_DECISION_ENGINE.md).
-- The reject has to happen inside the time a bottle takes to travel from the sensor/camera to the reject
-  position (`distance / conveyor speed`); the whole capture-to-actuator chain must fit inside that. No physical
-  values or latencies are recorded yet. See [HARDWARE_INTEGRATION](docs/hardware/HARDWARE_INTEGRATION.md).
-
-## Roadmap
-
-| Phase | Objective |
-|---|---|
-| 0 | Git baseline + documentation (this baseline) |
-| 1 | **YOLO runtime integration (current development)** |
-| 1b | *(next)* Inspection window / per-bottle association = Phase 2 below |
-| 2 | Inspection window / per-bottle association |
-| 3 | Decision engine |
-| 4 | Mock PLC |
-| 5 | Camera / sensor timing |
-| 6 | Delta PLC |
-| 7 | Conveyor + reject |
-| 8 | Physical validation |
-| 9 | Industrial platform enhancements (recipes, database, dashboard, security, ...) |
-
-Details: [PROGRESS_PLAN](docs/roadmap/PROGRESS_PLAN.md). Deferred features (SQLite, dashboard,
-login, OCR/barcode, auto annotation, active learning, anomaly detection, reports, ...):
-[FUTURE_ENHANCEMENTS](docs/roadmap/FUTURE_ENHANCEMENTS.md). They are postponed, not abandoned.
-
-## Repository structure
-
-```
-gui.py                  desktop app (9 tabs); entry point
-dataset.py              project paths, labels.csv, crop pipeline, scene split
-train.py                Stage 1 classifier training
-infer.py                cameras, model, PASS/REJECT/FAULT, frame metadata, optional detector hook
-detect.py               YOLOv8n component detector runtime (Detection / DetectionResult contract)
-inspection_trace.py     InspectionRecord + TraceStore (in-memory)
-annotate.py             annotation data layer + YOLO export
-autoannotate.py         model box proposals (accept/reject, active-learning order)
-annotation_studio.py    Annotate tab (boxes/polygons)
-bench.py, calibrate.py, charts.py, migrate.py   benchmarking, ROI calibration, charts, layout migration
-yolo_stage2_train.py    Stage 2 YOLOv8 training / evaluation / benchmark
-legacy/yolo_train_smoke_test.py  older synthetic YOLO smoke test (not the real training)
-stage2_dataset/         Stage 2 scripts, annotations.json, split.json, manifests, reports, data.yaml
-                        (images + generated export are NOT in Git)
-models/stage2_yolo/     MODEL_PROVENANCE.json, training_metadata.json, results, curves (weights NOT in Git)
-projects/<slug>/        labels.csv, config.json, project.json (images and checkpoints NOT in Git)
-plc file/               PLC simulator script + ISPSoft project (ladder unreadable here)
-docs/roadmap/         project documentation
-FINAL_YEAR_BLACKBOOK/   project write-up
-docs/, docs/design/PLAN.md          original design docs (historical)
-legacy/web_dashboard/  earlier web version (app.py, index.html) - unused, kept for reference
-```
+- **What is really needed:** missing-cap bottles from several bottles and poses, captured on the machine in the
+  production setup (CAMERA TEST -> Capture test frame).
 
 ## Setup and run
 
-**Data and weights are not in this repository** - images, the generated YOLO export and `*.pt` files are
-excluded. A fresh clone cannot reproduce the trained models; it needs your own images (and the weights, whose
-checksum is in `MODEL_PROVENANCE.json`).
-
 ```bash
-# tested: Windows 11, Python 3.8.0
+# Windows 11, Python 3.8
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124   # or /cpu
 pip install -r requirements.txt
-pip install ultralytics==8.1.0        # only for the Stage 2 YOLO scripts
+pip install ultralytics==8.1.0 pyserial comtypes psutil
 
-python calibrate.py                   # first run only: measures the crop ROI for the active project
-python gui.py                         # the desktop application
+python calibrate.py        # first run: measures the classifier ROI for the active project
+python gui.py              # the application (run.bat does the setup and launch)
 ```
 
-`run.bat` does the above automatically on Windows (detects an NVIDIA GPU, picks the CUDA/CPU wheel).
+Images, YOLO exports and `*.pt` weights are not in Git; checksums and provenance are in
+`models/stage2_yolo/MODEL_PROVENANCE.json` and the candidate records.
 
-**YOLO in the Live tab** needs `models/stage2_yolo/stage2_best.pt` (not in Git). It is verified against the sha256 in
-`MODEL_PROVENANCE.json` and refused if missing or different - nothing is downloaded. The detector confidence is a
-*development threshold* (default 0.25, **not validated for production**); override it in `settings.json` with
-`"detector_conf"` (and optionally `"detector_weights"`).
+Real PLC: close Delta COMMGR first (it holds the COM port). Then Machine page -> Real PLC (serial) -> Connect.
+The real PLC is never connected automatically.
 
 ## Tests
 
-Each module is its own self-check (there is no separate suite). Software only - **none is a hardware test**.
+Every module is its own self-check. These are software tests only; **none is a hardware test**.
 
 ```bash
-python infer.py                 # tri-state result, freshness, frame metadata, restart safety
-python inspection_trace.py      # records, ids, store ordering/bounds/threads, live Camera -> record
-python detect.py                # detector parsing/validation (fakes) + real checkpoint sanity check if present
-python gui.py --selftest        # builds every tab against the real dataset, no device I/O
+python gui.py --selftest          # all 14 pages + the line against a fake PLC (temp record and logs)
+python machine_cycle.py           # full cycle, staggered cameras, association fault, record
+python decision.py  tracking.py  machine_state.py  alarms.py  production_store.py  applog.py
+python model_registry.py --selftest   autoannotate.py   dataset.py   infer.py   detect.py
 python train.py --demo
-python dataset.py               # CSV / crop / scene-split correctness
+python -m plc.test_simulation  ;  python -m plc.test_service  ;  python -m plc.ladder_check --selftest
+python stage2_dataset/split_v3.py --selftest
 ```
 
-Also: `python calibrate.py --demo`, `python charts.py`, `python annotate.py`, `python annotation_studio.py`,
-`python stage2_dataset/annotation_workflow.py --selftest`, `python bench.py`, `python migrate.py --demo`.
-`stage2_dataset/review_app.py --selftest` is **stale**: it assumes an unreviewed manifest, and the review is
-now complete (606 reviewed), so it fails by design.
-Stage 2 export validation: `stage2_dataset/validate_yolo_export.py` (19 checks; it writes
-`yolo_export/EXPORT_REPORT.md`).
+The full list is in [CLAUDE.md](CLAUDE.md).
 
-## Training
+## Training (never activates)
 
-- **Stage 1:** the Train tab, or `python train.py --epochs 25 [--arch efficientnet_b0]`.
-- **Stage 2 YOLO** (needs the Stage 2 images and export, not in Git):
-  `python yolo_stage2_train.py --candidates yolov8n.pt --workers 2 --name run`.
-  It trains on train only, selects on val, and evaluates test once. **Windows note:** pass `workers` to every
-  Ultralytics call (the script does); the default validation workers exhausted memory on a 16 GB machine.
-  The YOLOv8n training is complete - do not retrain unless the data or code changes.
-- **YOLO evaluation** is recorded in `models/stage2_yolo/training_metadata.json` and `MODEL_PROVENANCE.json`;
-  curves are `results.png`, `PR_curve.png` and `confusion_matrix_normalized.png` in `models/stage2_yolo/`.
-- Use the portable `stage2_dataset/data.yaml` (pass an absolute path to Ultralytics) on another machine.
+- **Classifier:** Train page, or `python train.py --epochs 25 [--arch efficientnet_b0]`. The result is a
+  CANDIDATE; `--activate` keeps the old behaviour. Held-out test: `python model_bench.py cls-test <stamp>`.
+- **Detector:** `python model_bench.py yolo --model yolov8n.pt --data v3 --workers 0` (v1 / v2 / v3 data).
+  Missing-cap score through the production rule: `python model_bench.py det-defects --weights <pt> --tag <t> --split-version v3`.
+- **Activation:** Models page. Validate (held-out test + a written real-camera check), then Approve, then
+  ACTIVATE. Every activation is logged in `models/deployments.jsonl` and can be rolled back.
+
+## Repository
+
+```
+gui.py, hmi.py           the application (Production, Machine, ... / History, Health, Models, dialogs)
+machine_cycle.py         trigger -> inspection -> decision -> FIFO -> PLC command
+decision.py              the only decision layer (recipe, vote, fusion)
+tracking.py              time-based position, camera stations, association, speed calibration
+machine_state.py         the one machine state + start checklist
+alarms.py, applog.py     coded alarms; structured event logs (logs/)
+production_store.py      SQLite record, evidence, shift spans
+model_registry.py        model lifecycle and deployment
+infer.py, detect.py, segment.py   cameras + classifier, YOLO detector, segmentation interface
+dataset.py, train.py, model_bench.py, vision_data.py   data, training, benchmarking
+annotate.py, autoannotate.py, annotation_studio.py      annotation + proposals + active learning
+plc/                     Modbus ASCII client, PLCService, address map, fake ladder, ladder_check
+plc file/final_year/     the user's ISPSoft project (read, never written)
+stage2_dataset/          detection dataset provenance (split.json, split_v3.json, annotations_v2.json, ...)
+projects/<slug>/         labels.csv, config.json (images, checkpoints, production.db not in Git)
+docs/                    roadmap, guides, hardware, audits
+```
 
 ## Documentation
 
 | | |
 |---|---|
-| [docs/README.md](docs/README.md) | Index |
-| [CURRENT_SYSTEM](docs/roadmap/CURRENT_SYSTEM.md) | What exists |
-| [CURRENT_SCOPE](docs/roadmap/CURRENT_SCOPE.md) | What is in scope now |
-| [FUTURE_ENHANCEMENTS](docs/roadmap/FUTURE_ENHANCEMENTS.md) | What is deferred |
-| [INDUSTRIAL_ARCHITECTURE](docs/roadmap/INDUSTRIAL_ARCHITECTURE.md) | Target architecture |
-| [PROGRESS_PLAN](docs/roadmap/PROGRESS_PLAN.md) | Phased plan |
-| [FEATURE_STATUS](docs/roadmap/FEATURE_STATUS.md) | Per-feature status |
-| [HARDWARE_INTEGRATION](docs/hardware/HARDWARE_INTEGRATION.md) | Hardware, timing, unknowns |
-| [BENCH_TEST_DECISION_ENGINE](docs/guides/BENCH_TEST_DECISION_ENGINE.md) | Which tab drives the decision engine; bench testing with the real PLC |
-| [TRACEABILITY_PLAN](docs/roadmap/TRACEABILITY_PLAN.md) | Records today and later |
-
-Original design doc (historical): [docs/design/PLAN.md](docs/design/PLAN.md). Latest audit: [docs/audit/SYSTEM_AUDIT_2026-10-03.md](docs/audit/SYSTEM_AUDIT_2026-10-03.md).
-Contributor/agent notes: [CLAUDE.md](CLAUDE.md).
-
-## Known limitations
-
-- No hardware testing; PLC addresses/I-O mapping unverified; no timing or physical values recorded.
-- YOLO runtime is in development (opt-in, observational); no tracking, inspection window or decision rules for detections.
-- Small, scene-based test set (7 scenes); Stage 1 has no test split and saturated validation scores.
-- Camera: driver-default settings, no exposure/focus control, no reconnect or trigger; `time.monotonic()` is
-  ~15.6 ms resolution on Windows.
-- Inspection records are in-memory only. `gui.py` is large; `app.py`/`index.html` are an unused old web UI.
-
-## Future work
-
-Persistence, dashboard, recipes/jobs, model and dataset registry, security, reports and alarms, traditional
-vision, OCR/barcode, annotation automation, active learning, anomaly detection - all
-[deferred](docs/roadmap/FUTURE_ENHANCEMENTS.md) until the physical machine is proven.
+| [PRODUCTION_HMI_AND_COMMISSIONING](docs/guides/PRODUCTION_HMI_AND_COMMISSIONING.md) | Operating the line; physical commissioning order |
+| [PLC_LADDER_REQUIREMENTS](docs/hardware/PLC_LADDER_REQUIREMENTS.md) | What the PLC program must do, what it already does, rungs to add |
+| [GAP_MATRIX_2026-10-05](docs/audit/GAP_MATRIX_2026-10-05.md) | Audit: what was missing, what was built, what remains |
+| [CURRENT_SYSTEM](docs/roadmap/CURRENT_SYSTEM.md) / [FEATURE_STATUS](docs/roadmap/FEATURE_STATUS.md) | What exists / per-feature truth |
+| [PLC_COMMUNICATION](docs/roadmap/PLC_COMMUNICATION.md) | PLC contract, decoded ladder, simulator measurements |
+| [VISION_DATASET](docs/roadmap/VISION_DATASET.md) | Datasets, including the missing-cap finding |
+| [TAB_GUIDE](docs/guides/TAB_GUIDE.md) | What every page is for |
+| [CLAUDE.md](CLAUDE.md) | Developer / agent notes and every rule the code relies on |
