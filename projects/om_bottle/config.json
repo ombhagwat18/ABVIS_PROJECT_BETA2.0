@@ -19,14 +19,28 @@
   ],
   "camera": 0,
   "thresholds": {
-    "damaged_bottle": 0.05,
-    "damaged_label": 0.1,
+    "damaged_bottle": 0.5,
+    "damaged_label": 0.35,
     "missing_cap": 1.01,
     "missing_label": 0.5,
-    "skewed_bottle": 0.05,
-    "skewed_label": 0.1,
-    "tilt_cap": 0.65,
-    "water_level": 0.1
+    "skewed_bottle": 0.5,
+    "skewed_label": 0.4,
+    "tilt_cap": 0.75,
+    "water_level": 0.55
   },
-  "active_model": "20260919-164511"
+  "active_model": "20260919-164511",
+  "thresholds_before_calibration": {
+    "time": "2026-10-05 22:51:31",
+    "stamp": "20260919-164511",
+    "thresholds": {
+      "damaged_bottle": 0.05,
+      "damaged_label": 0.1,
+      "missing_cap": 1.01,
+      "missing_label": 0.5,
+      "skewed_bottle": 0.05,
+      "skewed_label": 0.1,
+      "tilt_cap": 0.65,
+      "water_level": 0.1
+    }
+  }
 }

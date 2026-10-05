@@ -43,6 +43,7 @@ import production_store
 import segment
 import theme
 import tracking as TR
+import verdict as VD
 from plc import (CONNECTED as PLC_CONNECTED, DEGRADED as PLC_DEGRADED, FAULT as PLC_FAULT, SERIAL_FORMATS, PLCClient,
                  PLCService, SerialTransport, TcpTransport, serial_ports)
 from plc import address_map as PLC_AM
@@ -131,6 +132,60 @@ class StatusLamp(ctk.CTkFrame):
             self.val.configure(text=text)
 
 
+class ScrollHost(ctk.CTkFrame):
+    """A page that scrolls up/down AND left/right when its content is bigger than the window, so a panel full of text
+    can never push its buttons out of reach. `inner` is where the page builds its widgets (exactly like the plain
+    frame it replaces). The scrollbars appear only when needed; the content fills the window when it fits.
+
+    Mouse wheel: scrolls the page when the pointer is over the page itself; Shift + wheel scrolls sideways. Text boxes,
+    lists and other scrollable panels keep their own wheel (App installs one handler that skips them)."""
+
+    def __init__(self, master, min_size=(1000, 560)):
+        super().__init__(master, fg_color="transparent", corner_radius=0)
+        self.min_w, self.min_h = min_size
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self.canvas = tk.Canvas(self, bg=BG, highlightthickness=0, bd=0)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.vbar = ctk.CTkScrollbar(self, orientation="vertical", command=self.canvas.yview)
+        self.hbar = ctk.CTkScrollbar(self, orientation="horizontal", command=self.canvas.xview)
+        self.canvas.configure(yscrollcommand=self._vset, xscrollcommand=self._hset)
+        self.inner = ctk.CTkFrame(self.canvas, fg_color="transparent", corner_radius=0)
+        self._win = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
+        self._busy = False
+        self.canvas.bind("<Configure>", self._fit)
+        self.inner.bind("<Configure>", self._fit)
+
+    def _vset(self, a, b):
+        self.vbar.set(a, b)
+        (self.vbar.grid_remove if float(a) <= 0.0 and float(b) >= 1.0 else
+         lambda: self.vbar.grid(row=0, column=1, sticky="ns"))()
+
+    def _hset(self, a, b):
+        self.hbar.set(a, b)
+        (self.hbar.grid_remove if float(a) <= 0.0 and float(b) >= 1.0 else
+         lambda: self.hbar.grid(row=1, column=0, sticky="ew"))()
+
+    def _fit(self, _e=None):
+        if self._busy:
+            return
+        self._busy = True
+        try:
+            cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
+            w = max(cw, self.min_w, self.inner.winfo_reqwidth())
+            h = max(ch, self.min_h, self.inner.winfo_reqheight())
+            self.canvas.itemconfigure(self._win, width=w, height=h)
+            self.canvas.configure(scrollregion=(0, 0, w, h))
+        finally:
+            self._busy = False
+
+    def wheel(self, event):
+        if event.state & 0x1:                                   # Shift = sideways
+            self.canvas.xview_scroll(-1 if event.delta > 0 else 1, "units")
+        else:
+            self.canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+
 class NavShell(ctk.CTkFrame):
     """Left navigation rail + page area. A drop-in for the CTkTabview it replaced: add(), tab(), get() and set()
     behave the same, so every tab class and the selftest are unchanged. Pages are built once and swapped with
@@ -151,6 +206,7 @@ class NavShell(ctk.CTkFrame):
         self.area.grid_rowconfigure(0, weight=1)
         self.area.grid_columnconfigure(0, weight=1)
         self.pages: dict[str, ctk.CTkFrame] = {}
+        self.hosts: dict[str, ScrollHost] = {}
         self.buttons: dict[str, ctk.CTkButton] = {}
         self._group_of = {n: g for g, names in groups for n in names}
         self._group_frames: dict[str, ctk.CTkFrame] = {}
@@ -166,8 +222,13 @@ class NavShell(ctk.CTkFrame):
         self.current: str | None = None
         self.visible: set | None = None              # None = every page (engineer mode)
 
+    MIN_SIZE = {"Production": (1180, 880), "Live": (1180, 760), "Machine": (1180, 820), "Health": (1100, 760),
+                "History": (1100, 700), "Models": (1100, 620), "Annotate": (1180, 760), "Database": (1100, 700)}
+
     def add(self, name: str) -> ctk.CTkFrame:
-        page = ctk.CTkFrame(self.area, fg_color="transparent", corner_radius=0)
+        host = ScrollHost(self.area, self.MIN_SIZE.get(name, (1000, 560)))
+        page = host.inner
+        self.hosts[name] = host
         self.pages[name] = page
         holder = self._group_frames.get(self._group_of.get(name)) or self.rail
         b = ctk.CTkButton(holder, text="   " + name, anchor="w", height=34, corner_radius=4,
@@ -207,10 +268,10 @@ class NavShell(ctk.CTkFrame):
         if name not in self.pages or name == self.current:
             return
         if self.current is not None:
-            self.pages[self.current].grid_forget()
+            self.hosts[self.current].grid_forget()
             self.buttons[self.current].configure(fg_color="transparent", text_color=DIM)
         self.current = name
-        self.pages[name].grid(row=0, column=0, sticky="nsew")
+        self.hosts[name].grid(row=0, column=0, sticky="nsew")
         self.buttons[name].configure(fg_color=ACC_SOFT, text_color=INK)
         self.title.configure(text=name.upper())
         if self.on_show:
@@ -293,6 +354,7 @@ class App(ctk.CTk):
 
         self.tab_production = ProductionTab(self, self.tabs.tab("Production"))
         self.tab_history = hmi.HistoryTab(self, self.tabs.tab("History"))
+        self.tab_database = hmi.DatabaseTab(self, self.tabs.tab("Database"))
         self.tab_health = hmi.HealthTab(self, self.tabs.tab("Health"))
         self.tab_models = hmi.ModelsTab(self, self.tabs.tab("Models"))
         self.tab_label = LabelTab(self, self.tabs.tab("Label"))
@@ -306,24 +368,38 @@ class App(ctk.CTk):
         self.tab_annotate = annotation_studio.AnnotationTab(self, self.tabs.tab("Annotate"))
         self.tab_settings = SettingsTab(self, self.tabs.tab("Settings"))
 
+        self.bind_all("<MouseWheel>", self._page_wheel, add="+")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.set_mode(self.ui_mode, save=False)
         self.reload()
         self.after(60, self.pump)
 
-    TABS = ("Production", "History", "Health", "Label", "Defects", "Train", "Analysis", "Models", "Live",
+    TABS = ("Production", "History", "Database", "Health", "Label", "Defects", "Train", "Analysis", "Models", "Live",
             "Machine", "Camera", "Data health", "Annotate", "Settings")
     # The navigation rail: the same pages, grouped by what the person is doing. The operator sees
     # PRODUCTION only; ENGINEER mode shows everything (nothing is removed, only hidden).
-    GROUPS = (("PRODUCTION", ("Production", "History", "Health")),
+    GROUPS = (("PRODUCTION", ("Production", "History", "Database", "Health")),
               ("DATA", ("Label", "Defects", "Annotate", "Data health")),
               ("MODEL", ("Train", "Analysis", "Models")),
               ("ENGINEERING", ("Live", "Machine", "Camera")),
               ("SYSTEM", ("Settings",)))
-    OPERATOR_PAGES = ("Production", "History", "Health")
+    OPERATOR_PAGES = ("Production", "History", "Database", "Health")
+
+    def _page_wheel(self, event):
+        """Wheel over the page background scrolls the page. Anything with its own scrolling (text boxes, lists,
+        scrollable panels, canvases) keeps its own wheel: we only act when the nearest such widget IS the page."""
+        w = event.widget
+        while w is not None:
+            if isinstance(w, ScrollHost):
+                return w.wheel(event)
+            if isinstance(w, (tk.Text, tk.Listbox, ctk.CTkScrollableFrame, ctk.CTkTextbox)):
+                return None
+            if isinstance(w, tk.Canvas) and not isinstance(w.master, ScrollHost):
+                return None                                     # a chart / video canvas: not ours
+            w = getattr(w, "master", None)
 
     def all_tabs(self):
-        return (self.tab_production, self.tab_history, self.tab_health, self.tab_label, self.tab_defects,
+        return (self.tab_production, self.tab_history, self.tab_database, self.tab_health, self.tab_label, self.tab_defects,
                 self.tab_train, self.tab_analysis, self.tab_models, self.tab_live, self.tab_machine,
                 self.tab_bench, self.tab_data, self.tab_annotate, self.tab_settings)
 
@@ -925,6 +1001,8 @@ class MachineTab:
         ctk.CTkButton(head, text="Connect", width=90, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
                       command=self.connect).pack(side="right", padx=4)
         ctk.CTkButton(head, text="Conveyor HMI", width=120, command=self.open_hmi).pack(side="right", padx=4)
+        if app.settings.get("show_simulation_check", True):
+            ctk.CTkButton(head, text="Simulation check", width=130, command=self.open_simcheck).pack(side="right", padx=4)
 
         cfg = app.settings
         conn = ctk.CTkFrame(parent, fg_color=PANEL)
@@ -1139,6 +1217,12 @@ class MachineTab:
             return (f"link test: {r['replies']}/10 replies, median {r['median_ms']:.0f} ms, max {r['max_ms']:.0f} ms, "
                     f"PLC {'RUN' if r['plc_run'] else 'NOT RUN'}")
         self._op("link test", run)
+
+    def open_simcheck(self):
+        if self.app.ui_mode != "engineer":
+            return messagebox.showinfo("Engineer only", "The simulation check is an engineering tool.")
+        import hmi as hmi_mod                                          # "hmi" is also the conveyor window name below
+        hmi_mod.SimulationCheckDialog(self.app)
 
     def open_hmi(self):
         if self.hmi is None or not self.hmi._alive:
@@ -1487,6 +1571,9 @@ class ProductionTab:
                       command=lambda: hmi.SpeedCalibrationDialog(self.app, self._reload_timing)).pack(side="left", padx=4)
         ctk.CTkButton(eng3, text="Line layout / camera stations...", width=230,
                       command=self.open_layout).pack(side="left", padx=4)
+        if app.settings.get("show_simulation_check", True):            # engineer-only; switch off when the system is proven
+            ctk.CTkButton(eng3, text="Simulation check...", width=150, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
+                          command=lambda: hmi.SimulationCheckDialog(self.app)).pack(side="left", padx=4)
         ctk.CTkButton(eng3, text="Recipe...", width=90,
                       command=lambda: hmi.RecipeDialog(self.app, detect.CLASS_NAMES)).pack(side="left", padx=4)
         self.tim_msg = ctk.CTkLabel(eng3, text="", font=theme.SMALL, text_color=DIM, anchor="w")
@@ -1967,12 +2054,12 @@ class ProductionTab:
             self._test_rec = rec
             dec = rec["decision"]
             col = {infer.PASS: GOOD, infer.REJECT: BAD}.get(dec["state"], WARN)
-            self.res_lbl.configure(text=dec["state"], text_color=col)
+            self.res_lbl.configure(text=VD.shown_result(dec["state"]), text_color=col)
             self.res_box.configure(fg_color={infer.PASS: PASS_SOFT, infer.REJECT: REJECT_SOFT}.get(dec["state"],
                                                                                                   FAULT_SOFT))
             ms = [fr.get("ms", 0) for c in rec["cameras"].values() for fr in c.get("frames", [])]
             self.ins_lbl.configure(text=(f"TEST (no PLC)  {time.strftime('%H:%M:%S')}\n"
-                                         f"Defect    {', '.join(dec['defects']) or '-'}\nReason    {dec['reason'][:160]}\n"
+                                         f"Defect    {', '.join(VD.pretty(d) for d in dec['defects']) or '-'}\nReason    {dec['reason'][:160]}\n"
                                          f"AI time   {sum(ms):.0f} ms over {len(ms)} frame(s)\n"
                                          f"Saved     {rec.get('out_dir', '')}"))
             ov = sorted(Path(rec.get("out_dir", ".")).glob("*_overlay.jpg"))
@@ -2191,7 +2278,7 @@ class ProductionTab:
         if b is not None:
             shown = b.final or b.decision or "--"
             col = {infer.PASS: GOOD, infer.REJECT: BAD}.get(shown, WARN)
-            self.res_lbl.configure(text=shown + ("" if b.final else " ..."), text_color=col)
+            self.res_lbl.configure(text=VD.shown_result(shown) + ("" if b.final else " ..."), text_color=col)
             self.res_box.configure(fg_color={infer.PASS: PASS_SOFT, infer.REJECT: REJECT_SOFT}.get(shown, FAULT_SOFT))
             conf = "--" if b.confidence is None else f"{b.confidence:.2f}"
             percam = "  ".join(f"{k}:{v[0]}" for k, v in b.per_camera.items())
@@ -2200,7 +2287,7 @@ class ProductionTab:
                                                                             "detection_ms", "decision_ms", "plc_ms")
                             if t.get(k) is not None)
             self.ins_lbl.configure(text=(f"Bottle    {b.inspection_id}   (trigger #{b.trigger_id})\n"
-                                         f"Defect    {', '.join(b.defects) or ('-' if b.decision == infer.PASS else b.reason)[:120]}\n"
+                                         f"Defect    {', '.join(VD.pretty(d) for d in b.defects) or ('-' if b.decision == infer.PASS else b.reason)[:120]}\n"
                                          f"Conf.     {conf}\nCameras   {percam or '-'}\n"
                                          f"Command   {b.command or '-'}   PLC {b.plc_status or b.status}\n"
                                          f"ms        {tim or '-'}\n{b.note}"))
@@ -3628,12 +3715,15 @@ class LiveTab:
         # What runs on each frame. The YOLO detector finds bottle / cap / label boxes only: it
         # does not decide defects, so "YOLO only" is a test mode that reports FAULT by design.
         self.infer_mode = ctk.CTkOptionMenu(bar, values=list(self.MODES), width=170)
-        self.infer_mode.set(self.MODES[0])
+        self.infer_mode.set(self.MODES[1])      # classifier + detector: the detector says WHEN a bottle is in view
         self.infer_mode.pack(side="left", padx=6)
-        self.verdict = ctk.CTkLabel(bar, text="", font=("Segoe UI", 17, "bold"))
+        self.verdict = ctk.CTkLabel(bar, text="", font=("Segoe UI", 22, "bold"))
         self.verdict.pack(side="left", padx=20)
         self.detlabel = ctk.CTkLabel(bar, text="", text_color=DIM)
         self.detlabel.pack(side="left", padx=4)
+        # Operators see ONE verdict per bottle. Boxes, score bars and detector numbers are an engineer's tool.
+        self.details = ctk.CTkCheckBox(bar, text="Engineer details", width=130, command=self.on_details)
+        self.details.pack(side="right", padx=(0, 10))
         self.hint = ctk.CTkLabel(bar, text="", text_color=DIM)
         self.hint.pack(side="right", padx=10)
 
@@ -3846,6 +3936,7 @@ class LiveTab:
             self.app.cams.start([v for _, v in chosen], None, detector)
         self.build_panes([n for n, _ in chosen])
         self.running = True
+        self.app.cams.set_details(bool(self.details.get()))
         self._frames = {}
         self._render_gen = getattr(self, "_render_gen", 0) + 1
         threading.Thread(target=self._render_loop, args=(self._render_gen,), daemon=True).start()
@@ -3867,6 +3958,9 @@ class LiveTab:
                 except Exception:                           # noqa: BLE001 - one bad frame must not stop the view
                     pass
             time.sleep(max(0.005, 0.05 - (time.monotonic() - t0)))
+
+    def on_details(self):
+        self.app.cams.set_details(bool(self.details.get()))
 
     def build_detector(self):
         """The shared YOLO detector, loaded on first use. Raises detect.DetectorError if the
@@ -3946,13 +4040,10 @@ class LiveTab:
 
         # Always refresh, even with no live camera: a dead camera must show FAULT,
         # not keep whatever verdict was on screen when it died.
-        state, by_cam = self.app.cams.combined()
-        detail = "; ".join(f"{k}: {', '.join(v)}" for k, v in by_cam.items())
-        self.verdict.configure(
-            text=state if state == infer.PASS else f"{state} — {detail}",
-            text_color={infer.PASS: GOOD, infer.REJECT: BAD}.get(state, WARN))
+        v = self.app.cams.display_verdict()                 # ONE stable verdict, in words (verdict.py)
+        self.verdict.configure(text=v.text, text_color={VD.GOOD: GOOD, VD.DEFECT: BAD, VD.FAULT: WARN}.get(v.kind, DIM))
         parts = []
-        for cam in live:
+        for cam in (live if self.details.get() else ()):
             i = cam.inspection()
             if i.detector_state not in (None, infer.DET_OFF):
                 n = (" " + " ".join(f"{k[0]}{v}" for k, v in i.detector.counts().items())
@@ -4752,6 +4843,10 @@ class SettingsTab:
         ctk.CTkLabel(prod, text="Every bottle is always recorded (production.db); this decides which ones also keep "
                                 "an image. SAMPLE:10 = every 10th bottle plus every REJECT / FAULT.", text_color=DIM,
                      font=("Segoe UI", 12), wraplength=700, justify="left").pack(anchor="w", padx=14, pady=(0, 8))
+        self.sim_chk = ctk.CTkCheckBox(prod, text="Show the engineer 'Simulation check' (ladder + code checks; applies at next start)")
+        if app.settings.get("show_simulation_check", True):
+            self.sim_chk.select()
+        self.sim_chk.pack(anchor="w", padx=14, pady=(0, 4))
         self.auto_act = ctk.CTkCheckBox(prod, text="Activate a newly trained classifier automatically (NOT recommended)")
         if app.settings.get("auto_activate_trained_model"):
             self.auto_act.select()
@@ -4865,6 +4960,7 @@ class SettingsTab:
         s["font_scale"] = round(float(self.font.get()), 2)
         s["evidence_policy"] = self.evidence.get()
         s["auto_activate_trained_model"] = bool(self.auto_act.get())
+        s["show_simulation_check"] = bool(self.sim_chk.get())
         s["engineer_pin"] = self.pin.get().strip()
         D.save_settings(s)
         self.saved.configure(text="Saved.")
@@ -5062,12 +5158,14 @@ def selftest():
     assert app.lamps["PLC"].val.cget("text") and app.lamps["MODEL"].val.cget("text")
     # operator mode: only the production pages in the rail; engineer mode: everything. Pages are never destroyed.
     app.set_mode("operator", save=False)
-    app.update()
+    for _ in range(6):                                          # let Tk map / unmap the rail buttons
+        app.update(); time.sleep(0.05)
     assert app.tabs.get() in App.OPERATOR_PAGES
     assert app.tabs.buttons["Production"].winfo_ismapped() and not app.tabs.buttons["Label"].winfo_ismapped()
     assert not app.tab_production.eng.winfo_ismapped(), "engineer controls shown to the operator"
     app.set_mode("engineer", save=False)
-    app.update()
+    for _ in range(6):
+        app.update(); time.sleep(0.05)
     assert app.tabs.buttons["Label"].winfo_ismapped() and app.tab_production.eng.winfo_ismapped()
     _selftest_label(app)
 
@@ -5105,7 +5203,7 @@ def selftest():
     assert len(app.tab_live.panes) == 2, app.tab_live.panes
     # Detector wiring: default mode is the unchanged classifier path, and missing/foreign weights
     # are refused (raised, not swallowed) -- never silently downgraded to "no detector".
-    assert app.tab_live.infer_mode.get() == "Classifier" and "YOLO only" in app.tab_live.MODES
+    assert app.tab_live.infer_mode.get() == "Classifier + YOLO" and "YOLO only" in app.tab_live.MODES
     app.settings["detector_weights"] = "no/such/stage2_best.pt"
     try:
         app.tab_live.build_detector()
@@ -5293,7 +5391,7 @@ def selftest():
         assert until(lambda: pt.cnt["total"].cget("text") == "3" and pt.cnt[infer.REJECT].cget("text") == "1")
         table = pt.table.get("1.0", "end")
         assert "000001" in table and "000003" in table and "missing_cap" in table, table
-        assert pt.res_lbl.cget("text") == infer.PASS and "000003" in pt.ins_lbl.cget("text")
+        assert pt.res_lbl.cget("text") == "GOOD" and "000003" in pt.ins_lbl.cget("text")
         assert "Y0 pulse" in table, table
         assert app.plc.watch_x0 and app.plc.untriggered == 0
         # a line camera that dies while running is reopened in the background (no app restart)
@@ -5320,6 +5418,12 @@ def selftest():
         assert not rd.check() and "no class lid" in rd.msg.cget("text")
         assert not rd.save() and "Stop the line" in rd.msg.cget("text")
         rd.destroy()
+        sd = hmi_mod.SimulationCheckDialog(app)
+        app.update()
+        sd.check_ladder()
+        assert "SOFTWARE" in sd.verdict.cget("text").upper() or "LADDER" in sd.verdict.cget("text").upper(), sd.verdict.cget("text")
+        assert "S4" in sd.out.get("1.0", "end") and "FAIL" in sd.out.get("1.0", "end") or "PASS" in sd.out.get("1.0", "end")
+        sd.destroy()
         assert app.lamps["LINE"].val.cget("text") in ("RUNNING", "INSPECTING")       # one state, everywhere
         pt.halt_line()                                             # software HALT: latched until RESET FAULT
         assert until(lambda: pt.line_lbl.cget("text") == "FAULT"), pt.line_lbl.cget("text")
@@ -5354,6 +5458,14 @@ def selftest():
             app.tab_history.refresh()
             assert app.tab_history.cnt["total"].cget("text") == "4", app.tab_history.cnt["total"].cget("text")
             app.tab_history.shift.set("Whole day")
+        app.tabs.set("Database")
+        app.tab_database.refresh()
+        assert len(app.tab_database.rows) == 4 and app.tab_database.cols[2] == "result", app.tab_database.cols
+        assert {r[2] for r in app.tab_database.rows} == {"GOOD", "DEFECT", "FAULT"}
+        app.tab_database.table.set("Alarms"); app.tab_database.refresh()
+        app.tab_database.table.set("Runs"); app.tab_database.refresh()
+        assert len(app.tab_database.rows) == 1
+        app.tab_database.table.set("Bottles")
         app.tab_health.update()
         app.tab_health.show_logs()
         assert "line started" in app.tab_health.log_box.get("1.0", "end") or             any("line started" in x for x in applog.search("machine"))

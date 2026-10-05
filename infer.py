@@ -15,6 +15,7 @@ import torch
 import dataset as D
 import detect
 import theme
+import verdict as V
 
 _MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 _STD = np.array([0.229, 0.224, 0.225], np.float32)
@@ -382,6 +383,11 @@ class Camera:
         self.fourcc: str | None = None
         self.frame_wh: tuple | None = None
         self.rotate = 0                # degrees clockwise, from settings "camera_controls" at start()
+        # What the operator sees: ONE stable verdict per bottle (verdict.py), not the per-frame scores. `details`
+        # switches the engineer view (component boxes, score bars) back on; it is off for every operator screen.
+        self.tracker = V.VerdictTracker()
+        self.details = False
+        self.verdict_ts = 0.0          # monotonic time the tracker was last fed
         # The last few captured frames, oldest first, so a per-bottle inspection can pick the
         # frames taken AFTER its trigger instead of whatever happens to be newest.
         self.recent: collections.deque = collections.deque(maxlen=RECENT_FRAMES)
@@ -432,6 +438,8 @@ class Camera:
         self.source, self._stop = source, threading.Event()
         self.rotate = int(camera_controls(source).get("rotate") or 0)
         self.dropped = self.grabbed = self.scored = self.faults = self.det_faults = 0
+        self.tracker.reset()
+        self.verdict_ts = 0.0
         self.started_at = time.time()
         self._invalidate()
         with self.lock:                       # a new session starts with no frame at all
@@ -689,7 +697,46 @@ class Camera:
                 self.state, self.result_ts, self.fault = state, result_ts, fault
                 self.det_result, self.det_ts = det_result, det_ts
                 self.det_frame, self.det_fault = det_frame, det_fault
+            self._feed_tracker(state, hits, fault, model, detector, det_result, det_fault)
             self.latency_ms = (time.monotonic() - fts) * 1000    # capture -> result
+
+    def _feed_tracker(self, state, hits, fault, model, detector, det_result, det_fault):
+        """One call per scored frame: what this frame says about THIS bottle, for the stable verdict."""
+        defects = list(hits)
+        present = None
+        valid = model is not None and state in (PASS, REJECT) and not fault
+        if model is None and detector is not None:
+            valid = True                                      # detector-only view: no classifier defects
+        why = fault or ("no model loaded" if model is None and detector is None else "")
+        if detector is not None:
+            if det_fault or det_result is None:
+                valid, why = False, det_fault or "no detection yet"
+            else:
+                import decision as DEC                        # lazy: decision imports this module
+                cfg = D.load_config()
+                rules = dict(DEC.RULES)
+                if cfg.get("inspection"):
+                    rules["recipe"] = cfg["inspection"]
+                found, _ = DEC.detection_findings(det_result, rules)
+                present = found is not None                   # a bottle (the recipe's anchor) is in view
+                if found:
+                    defects += [d for d in found if d not in defects]
+        if present is False:
+            defects = []                                      # nothing to judge: scores on an empty belt are noise
+        self.tracker.update(valid, defects, present, why)
+        self.verdict_ts = time.monotonic()
+
+    def display_verdict(self) -> "V.Verdict":
+        """The stable verdict, or FAULT when this camera is not producing results (stopped, dead, stale)."""
+        if not self.armed:
+            return V.Verdict(V.FAULT, reason="camera off")
+        if self.error:
+            return V.Verdict(V.FAULT, reason=self.error)
+        if not self.alive:
+            return V.Verdict(V.FAULT, reason="camera not running")
+        if self.verdict_ts and time.monotonic() - self.verdict_ts > max(2.0, self.max_age * 2):
+            return V.Verdict(V.FAULT, reason="no new result")
+        return self.tracker.current()
 
     def snapshot(self) -> np.ndarray | None:
         with self.lock:
@@ -717,7 +764,11 @@ class Camera:
         h, w = frame.shape[:2]
         s = width / max(1, w)
         frame = cv2.resize(frame, (width, max(1, round(h * s))))
+        v = self.display_verdict()
+        if not self.details:
+            return self._industrial_overlay(frame, v)
 
+        # ---- engineer view: component boxes, score bars, detector line (Live tab "Engineer details")
         if self.model is not None and self.model.roi:
             rx, ry, rw, rh = self.model.roi
             rf = self.model.roi_frame
@@ -730,30 +781,22 @@ class Camera:
         if dres is not None:                   # component boxes: coordinates are original-frame pixels
             fh2, fw2 = frame.shape[:2]
             for d in dres.detections:
-                x1, y1, x2, y2 = (round(v) for v in
+                x1, y1, x2, y2 = (round(q) for q in
                                   detect.scale_box((d.x1, d.y1, d.x2, d.y2), dres.frame_wh, (fw2, fh2)))
                 col = C_BOX.get(d.class_name, C_MUTED)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
-                # text inside the box, one row per class, so bottle/cap labels never collide
                 cv2.putText(frame, f"{d.class_name} {d.confidence:.2f}",
                             (x1 + 4, max(y1 + 18 + 18 * d.class_id, 66)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 2)
-
-        colour = {PASS: C_PASS, REJECT: C_FAIL}.get(state, C_FAULT)
-        text = {PASS: "PASS", REJECT: f"REJECT ({len(hits)})"}.get(state, f"FAULT - {reason}")
-        cv2.rectangle(frame, (0, 0), (frame.shape[1], 46), colour, -1)
-        cv2.putText(frame, text, (14, 33), cv2.FONT_HERSHEY_SIMPLEX, 1.0 if state != FAULT else 0.7,
-                    C_TEXT, 2)
+        self._banner(frame, v, 54)
         if probs:
             cv2.putText(frame, f"{self.name}  {self.fps:.0f} fps  {self.infer_ms:.0f} ms",
-                        (frame.shape[1] - 260, 31), cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_TEXT, 1)
-            y0 = 62
-            for d, v in sorted(probs.items(), key=lambda kv: -kv[1]):
+                        (frame.shape[1] - 260, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_TEXT, 1)
+            y0 = 68
+            for d, p in sorted(probs.items(), key=lambda kv: -kv[1]):
                 on = d in hits
-                cv2.rectangle(frame, (12, y0), (12 + int(150 * v), y0 + 13),
-                              C_FAIL if on else C_MUTED, -1)
-                cv2.putText(frame, f"{d} {v:.2f}", (170, y0 + 12),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                cv2.rectangle(frame, (12, y0), (12 + int(150 * p), y0 + 13), C_FAIL if on else C_MUTED, -1)
+                cv2.putText(frame, f"{d} {p:.2f}", (170, y0 + 12), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                             C_FAIL if on else C_LIGHT, 1)
                 y0 += 19
         if insp.detector_state != DET_OFF:
@@ -765,6 +808,29 @@ class Camera:
             cv2.rectangle(frame, (0, bh - 26), (frame.shape[1], bh), (30, 30, 30), -1)
             cv2.putText(frame, dtxt, (10, bh - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                         C_FAULT if insp.detector_state == DET_FAULT else C_TEXT, 1)
+        return frame
+
+    # verdict colours (BGR): GOOD green, DEFECT red, FAULT amber, the rest neutral
+    _VCOL = {V.GOOD: C_PASS, V.DEFECT: C_FAIL, V.FAULT: C_FAULT, V.CHECKING: (170, 120, 60), V.EMPTY: (90, 90, 90)}
+
+    def _banner(self, frame, v, height):
+        col = self._VCOL.get(v.kind, C_FAULT)
+        cv2.rectangle(frame, (0, 0), (frame.shape[1], height), col, -1)
+        text = v.text
+        scale = height / 46.0
+        while scale > 0.5 and cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)[0][0] > frame.shape[1] - 24:
+            scale -= 0.1
+        cv2.putText(frame, text, (14, int(height * 0.7)), cv2.FONT_HERSHEY_SIMPLEX, scale, C_TEXT, 2)
+
+    def _industrial_overlay(self, frame, v):
+        """What an operator needs and nothing else: one verdict in words, a frame in its colour, the camera name.
+        No component boxes, no score bars, no detector line, no per-frame flicker (verdict.py latches)."""
+        h, w = frame.shape[:2]
+        col = self._VCOL.get(v.kind, C_FAULT)
+        if v.kind in (V.GOOD, V.DEFECT, V.FAULT):
+            cv2.rectangle(frame, (0, 0), (w - 1, h - 1), col, 6)
+        self._banner(frame, v, max(46, h // 9))
+        cv2.putText(frame, self.name, (14, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_TEXT, 1)
         return frame
 
 
@@ -849,6 +915,16 @@ class CameraSet:
 
     def stats(self) -> list[dict]:
         return [c.stats() for c in self.cams.values() if c.alive]
+
+    def set_details(self, on: bool):
+        """Engineer view (boxes, score bars) on every camera; off = the operator's one-verdict view."""
+        for c in self.cams.values():
+            c.details = bool(on)
+
+    def display_verdict(self) -> "V.Verdict":
+        """ONE verdict for the bottle in front of all armed cameras (verdict.combine)."""
+        armed = [c for c in self.cams.values() if c.armed]
+        return V.combine([c.display_verdict() for c in armed]) if armed else V.Verdict(V.FAULT, reason="no camera running")
 
     def combined(self, now: float | None = None) -> tuple[str, dict[str, list[str]]]:
         """(PASS | REJECT | FAULT, detail). PASS only if every armed camera has a fresh PASS.
@@ -1303,6 +1379,24 @@ def _selftest_controls():
         me.open_capture, D.load_settings = real_open, real_settings
 
 
+def _selftest_verdict_overlay():
+    """The operator overlay is ONE word in a colour: no boxes, no score bars, no per-class text."""
+    c = Camera("t")
+    base = np.zeros((300, 400, 3), np.uint8)
+    for kind, defects, col in ((V.GOOD, (), C_PASS), (V.DEFECT, ("missing_cap",), C_FAIL), (V.FAULT, (), C_FAULT)):
+        v = V.Verdict(kind, defects, "x" if kind == V.FAULT else "")
+        out = c._industrial_overlay(base.copy(), v)
+        assert tuple(int(x) for x in out[150, 2]) == tuple(col), (kind, out[150, 2])      # frame in the verdict colour
+        assert tuple(int(x) for x in out[2, 200]) == tuple(col), kind                      # banner in the verdict colour
+        assert not out[100:250, 40:360].any(), "the operator view drew something inside the picture"
+    # no bottle / checking: neutral, no coloured frame
+    out = c._industrial_overlay(base.copy(), V.Verdict(V.EMPTY))
+    assert not out[150, 2].any() and tuple(int(x) for x in out[2, 200]) == c._VCOL[V.EMPTY]
+    assert V.headline(V.DEFECT, ("missing_cap",)) == "DEFECT: Missing cap"
+    # a stopped camera is FAULT, never a stale GOOD
+    assert c.display_verdict().kind == V.FAULT
+
+
 def demo():
     """Self-check on the verdict rule -- the branch that decides pass/fail."""
     probs = {"a": 0.9, "b": 0.2, "c": 0.55}
@@ -1323,9 +1417,11 @@ def demo():
     _selftest_tri_state()
     _selftest_detector()
     _selftest_controls()
+    _selftest_verdict_overlay()
 
     print(f"ok  ({len(cams)} camera(s) found on indices 0-1; "
-          f"tri-state PASS/REJECT/FAULT + component-detector path + camera controls/rotation checked)")
+          f"tri-state PASS/REJECT/FAULT + component-detector path + camera controls/rotation + "
+          f"one-verdict operator overlay checked)")
 
 
 if __name__ == "__main__":
