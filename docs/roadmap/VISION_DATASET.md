@@ -50,6 +50,18 @@ data is the `om_bottle` project. `All Datasets/` is the pre-migration copy (1,14
   source). Frames are full 2537x1927; the bottle is the middle third. Train at imgsz >= 448, or use `--mode crop`
   (lossless PNG of the calibrated ROI, the same crop Stage 1 uses).
 
+## 2b. Missing cap (2026-10-05)
+
+| Source | Images | Where | Usable for |
+|---|---|---|---|
+| `All Datasets/Missing Cap/snap001-012` | 12 frames of ONE unlabelled bottle, white background, full view | Stage 2 test scene 22 (img_328-341); v3: train | detector (bare neck at full-bottle scale) |
+| `All Datasets/Missing Cap/snap013-022` | 10 neck close-ups | Stage 2 train scene 38 (img_635-644) | detector (already used) |
+| Classifier project | 0 | removed after a shortcut test | none until missing-cap bottles are captured in the classifier's black-enclosure setup |
+
+What is still needed: missing-cap bottles from **several** different bottles / poses, captured on the machine in
+the production setup (EMEET, enclosure, labelled bottles). Use CAMERA TEST -> Capture test frame, then label them
+(classifier: `-ve/Missing Cap/`; detector: Annotate, "Next: missing part" / "Next: doubtful part").
+
 ## 3. Detection: findings
 
 * 594 images, all reviewed, 1,994 boxes, classes `bottle/cap/label` = ids 0/1/2; split 418/89/87 over 25/7/7 scenes, no scene
