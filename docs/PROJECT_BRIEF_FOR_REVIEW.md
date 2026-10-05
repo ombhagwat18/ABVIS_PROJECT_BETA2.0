@@ -71,8 +71,13 @@ says what a complete product looks like. A new product needs data + a detector +
 **Operator view:** one steady word per bottle (GOOD / DEFECT: <name> / CHECKING / NO BOTTLE / FAULT), decided over
 several frames and latched until the bottle leaves (`verdict.py`). Boxes and score bars are an engineer-only view.
 
-**Model lifecycle:** training never activates a model. CANDIDATE -> VALIDATED (needs a held-out test and a written
-real-camera check) -> APPROVED -> ACTIVE, with a deployment log and rollback (`model_registry.py`).
+**Improvement loop (built, not yet used on the machine):** Live *Auto-collect* saves one frame per decided bottle to
+the review inbox with the model's prediction; corrections are stored as hard examples; training oversamples good
+bottles (x5) and hard examples (x3). Unsure bottles (score just under the threshold) show **CHECK** instead of GOOD.
+
+**Model lifecycle:** training never activates a model. CANDIDATE -> VALIDATED (needs a held-out test, real-camera numbers within limits: good called defective <= 2 %,
+defective passed <= 1 %, >= 30 + 30 real bottles, and, for a classifier, a background-shortcut check) -> APPROVED ->
+ACTIVE, with a deployment log and rollback (`model_registry.py`, `model_checks.py`).
 
 ## 5. Data
 
@@ -90,7 +95,7 @@ real-camera check) -> APPROVED -> ACTIVE, with a deployment log and rollback (`m
 | Detector v1 test mAP50 / mAP50-95 | 0.968 / 0.660 (87 images, 7 scenes) |
 | Detector v3 candidate test mAP50 / mAP50-95 | 0.971 / 0.803 (52 images; no missing-cap bottle left in its test set) |
 | Missing cap, detector (validation, 6 bottles) | v1 0/6, v2 6/6, v3 5/6; on the 12 full-bottle bare necks v1 0/12 (v3 trained on them, so not evidence) |
-| Self-tests | 24 pass (`python selfcheck.py --full`) |
+| Self-tests | 25 pass (`python selfcheck.py --full`) |
 
 ## 7. Known problems (honest list)
 

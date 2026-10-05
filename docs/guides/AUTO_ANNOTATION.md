@@ -10,6 +10,29 @@ model is least sure of) reaches good results with a fraction of the labels.
 image (`cache/suggestions.json` for defect labels, `"proposals"` in the annotation file for boxes) until a person
 accepts it. An image stays *not reviewed* and out of training until then.
 
+## 0. The loop that makes the model better (built 2026-10-06)
+
+```
+Live page (engineer): Auto-collect ON
+   -> each DECIDED bottle (one steady verdict, verdict.py) -> ONE frame into the Label inbox, NOT reviewed,
+      with the model's defect scores as a suggestion
+Label page: filter "AI suggested - not reviewed" -> accept (Enter) / correct (1-9, G) / bulk-accept confident ones
+   -> every disagreement with the model is stored as a HARD example (cache/hard_examples.json):
+      false_defect (model said defect, person said GOOD), missed_defect, wrong_defect
+Train: good bottles drawn more often (up to x5) + hard examples x3 more  -> a CANDIDATE
+Models: Validate = real-camera numbers within the limits + background-shortcut check -> Approve -> ACTIVATE
+```
+
+- Auto-collect needs the detector (Live mode *Classifier + YOLO*): the detector is what says a bottle arrived and
+  left, so exactly one frame is saved per bottle. A daily cap (`autocollect_daily_cap`, default 300) stops runaway
+  collection. Nothing collected is ever training data until a person reviews it.
+- Unsure bottles: a defect score just under its threshold shows **CHECK: <defect>?** on screen (`check_margin`,
+  default 0.10) instead of GOOD or a named defect. On the line the same band is available as
+  `decision_rules.check_margin` (off by default; when on, such a bottle is FAULT and rejected).
+- Activation limits (`settings.json` `activation_gates`): good bottles called defective <= 2 %, defective bottles
+  passed <= 1 %, at least 30 real good and 30 real defective bottles shown, and capped white-background bottles
+  called missing_cap <= 10 % (the shortcut check).
+
 ## 1. Defect labels (the classifier names the defect)
 
 For deciding GOOD / DEFECT and *which* defect (missing cap, tilted cap, damaged label ...):
@@ -30,7 +53,8 @@ low one, so a good bottle is not proposed as defective by noise.
 For training the YOLO detector (it finds parts; the decision engine turns a *missing* part into a defect):
 
 1. **Annotate** page -> **Propose boxes (model)** runs the detector on the unlabelled images.
-2. Boxes appear as dashed proposals. **Accept proposals** / **Reject proposals** per image; fix a box by hand.
+2. Boxes appear as dashed proposals, and the page shows **PREDICTED: GOOD / DEFECT: Missing cap / NO BOTTLE FOUND**
+   (the same rule the line uses), so you see what the boxes *mean*, not just where they are. **Accept proposals** / **Reject proposals** per image; fix a box by hand.
 3. Work the **active-learning queues** instead of going in file order:
    - **Next: least sure** - lowest confidence (or nothing found).
    - **Next: missing part** - a bottle was found but no cap or label: the likely *real* missing-cap / missing-label

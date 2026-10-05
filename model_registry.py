@@ -152,13 +152,35 @@ class Registry:
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self.status_path.write_text(json.dumps(st, indent=2), encoding="utf-8")
 
-    def validate(self, name: str, camera_note: str, by: str = "engineer"):
+    def validate(self, name: str, camera_note: str, by: str = "engineer", real: dict | None = None,
+                 shortcut: dict | None = None):
+        """VALIDATED needs: a held-out test result, a written real-camera note, real-camera NUMBERS within the gates
+        (model_checks.real_camera_gate: good bottles called defective, defective bottles passed, minimum sample
+        sizes) and, for a classifier, the background-shortcut check (model_checks.shortcut_check) passed or not
+        runnable on this PC. Every number is stored with the decision."""
+        import model_checks as MC
         e = self.get(name)
         if not e["has_test"]:
             raise RegistryError(f"{name}: no held-out test result on record (run the test evaluation first)")
         if not camera_note.strip():
             raise RegistryError("describe the real-camera validation (bottles, camera, result) to validate")
-        self._set(name, VALIDATED, by, f"real-camera validation: {camera_note.strip()}")
+        g = MC.gates(self.settings())
+        probs = MC.real_camera_gate(real or {}, g)
+        if probs:
+            raise RegistryError(f"{name}: real-camera check not passed: " + "; ".join(probs))
+        if e["kind"] == "classification":
+            if shortcut is None:
+                raise RegistryError(f"{name}: run the background-shortcut check first (model_checks.shortcut_check)")
+            if not shortcut.get("skipped") and not shortcut.get("passed"):
+                raise RegistryError(f"{name}: shortcut check failed: {shortcut.get('fired')}/{shortcut.get('n')} capped "
+                                    f"bottles called missing_cap ({shortcut.get('fire_pct')} %, limit "
+                                    f"{g['max_shortcut_fire_pct']:g} %)")
+        r = real
+        note = (f"real-camera validation: {camera_note.strip()} | good {r['good_called_defective']}/{r['good_n']} called "
+                f"defective, defective {r['defective_passed']}/{r['defective_n']} passed"
+                + (f" | shortcut {shortcut.get('fired')}/{shortcut.get('n')}" if shortcut and not shortcut.get("skipped")
+                   else " | shortcut check not runnable here" if shortcut else ""))
+        self._set(name, VALIDATED, by, note)
 
     def approve(self, name: str, by: str = "engineer", note: str = ""):
         if self.get(name)["status"] != VALIDATED:
@@ -273,15 +295,21 @@ def demo():
             assert names[a]["status"] == ACTIVE and names[b]["status"] == CANDIDATE
             assert any("missing_cap" in w for w in names[a]["warnings"]), names[a]["warnings"]
             assert names["det/stage2_best"]["status"] == ACTIVE and names["det/yolov8s"]["status"] == CANDIDATE
-            for bad in (lambda: reg.activate(b), lambda: reg.approve(b), lambda: reg.validate(b, "5 bottles ok"),
-                        lambda: reg.validate("det/yolov8s", "")):
+            real_ok = {"good_n": 40, "good_called_defective": 0, "defective_n": 35, "defective_passed": 0}
+            for bad in (lambda: reg.activate(b), lambda: reg.approve(b), lambda: reg.validate(b, "5 bottles ok", real=real_ok),
+                        lambda: reg.validate("det/yolov8s", "", real=real_ok),
+                        lambda: reg.validate("det/yolov8s", "20 frames", real=dict(real_ok, good_called_defective=5)),
+                        lambda: reg.validate("det/yolov8s", "20 frames"),
+                        lambda: reg.validate(a, "cam ok", real=real_ok),                       # classifier, no shortcut check
+                        lambda: reg.validate(a, "cam ok", real=real_ok, shortcut={"n": 25, "fired": 25, "fire_pct": 100.0,
+                                                                                 "passed": False})):
                 try:
                     bad()
                     raise AssertionError("gate not enforced")
                 except RegistryError:
                     pass
             # detector candidate: validate -> approve -> activate (provenance written, sha checked) -> rollback
-            reg.validate("det/yolov8s", "20 EMEET frames, 10 good / 10 no-cap, all correct")
+            reg.validate("det/yolov8s", "EMEET cam 2, line test", real=real_ok)
             reg.approve("det/yolov8s")
             rec = reg.activate("det/yolov8s")
             assert settings["detector_weights"] == str(cand) and rec["previous"] == "det/stage2_best"

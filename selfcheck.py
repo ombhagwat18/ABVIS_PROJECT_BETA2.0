@@ -36,6 +36,7 @@ QUICK = (
     ("Stable verdict", ["verdict.py"], "one GOOD / DEFECT per bottle: settle, vote, latch until the bottle leaves, FAULT never GOOD"),
     ("Production export", ["production_export.py"], "plain-word rows, CSV for Excel, printable report"),
     ("Threshold calibration", ["calibrate_thresholds.py", "--selftest"], "validation-chosen thresholds, recall guard"),
+    ("Model activation gates", ["model_checks.py", "--selftest"], "real-camera limits, background-shortcut check"),
 )
 FULL = (
     ("Dataset / split", ["dataset.py"], "labels, crop pipeline, scene split"),

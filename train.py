@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 import dataset as D
 
@@ -75,6 +75,29 @@ BACKBONES = {
 # at a family-specific index.
 _CLASSIFIER_INDEX = {"efficientnet_b0": 1, "efficientnet_b1": 1,
                      "mobilenet_v3_small": 3, "convnext_tiny": 2}
+
+
+def sample_weights(paths, labels, defects, hard=None, good_cap=5.0, hard_factor=3.0) -> tuple:
+    """(weights, summary) for a WeightedRandomSampler over the training paths.
+
+    GOOD bottles are rare here (72 of ~1,100), so a model sees a good bottle a few times per epoch and learns that
+    "everything is a little defective". Each GOOD image is drawn more often, up to `good_cap` x, so the model sees
+    about as many good bottles as defective ones. HARD examples (dataset.record_corrections: images where a person
+    corrected the model's pre-label) are drawn `hard_factor` x more on top, so the next model practises exactly
+    what the last one got wrong. Only the sampling changes: labels, split and validation are untouched."""
+    hard = hard or {}
+    good = [not any(labels[p].get(d, 0) for d in defects) for p in paths]
+    n_good, n_bad = sum(good), len(paths) - sum(good)
+    gw = float(np.clip(n_bad / max(1, n_good), 1.0, good_cap))
+    w, n_hard = [], 0
+    for p, g in zip(paths, good):
+        x = gw if g else 1.0
+        if p in hard:
+            x *= hard_factor
+            n_hard += 1
+        w.append(x)
+    return w, {"good": n_good, "defective": n_bad, "good_weight": round(gw, 2), "hard_examples": n_hard,
+               "hard_factor": hard_factor}
 
 
 def build(arch: str, n_out: int, pretrained: bool = True):
@@ -296,8 +319,20 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
         if i % 200 == 0 and i:
             log(f"  cached {i}/{len(labels)}")
 
-    tr = DataLoader(BottleDS(tr_paths, labels, defects, cfg, True), batch_size=batch,
-                    shuffle=True, num_workers=0, drop_last=len(tr_paths) > batch)
+    st = D.load_settings()
+    balance = bool(st.get("train_balance_good", True))
+    sampling = None
+    if balance:
+        w, sampling = sample_weights(tr_paths, labels, defects, D.load_hard_examples(),
+                                     float(st.get("train_good_cap", 5.0)), float(st.get("train_hard_factor", 3.0)))
+        log(f"balanced sampling: {sampling['good']} good drawn x{sampling['good_weight']}, "
+            f"{sampling['hard_examples']} corrected hard example(s) x{sampling['hard_factor']} more")
+        tr = DataLoader(BottleDS(tr_paths, labels, defects, cfg, True), batch_size=batch,
+                        sampler=WeightedRandomSampler(w, num_samples=len(tr_paths), replacement=True),
+                        num_workers=0, drop_last=len(tr_paths) > batch)
+    else:
+        tr = DataLoader(BottleDS(tr_paths, labels, defects, cfg, True), batch_size=batch,
+                        shuffle=True, num_workers=0, drop_last=len(tr_paths) > batch)
     va = DataLoader(BottleDS(va_paths, labels, defects, cfg, False), batch_size=batch)
 
     model = build(arch, len(defects)).to(dev)
@@ -434,7 +469,7 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
                # training or for picking the best epoch/threshold. Scored only
                # by evaluate_test(), on request, not as part of this run.
                "n_test": len(test_paths), "test_paths": test_paths,
-               "per_defect": best_metrics, "mistakes": mistakes[:300]}
+               "per_defect": best_metrics, "mistakes": mistakes[:300], "sampling": sampling}
     (out / "metrics.json").write_text(json.dumps(summary, indent=2))
 
     if activate:
@@ -463,6 +498,16 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
 
 def demo():
     """Self-check on the metric maths -- the part that is easy to get silently wrong."""
+    # balanced sampling: GOOD drawn up to the cap, corrected hard examples more on top, labels untouched
+    labs = {f"g{i}": {"a": 0} for i in range(10)}
+    labs.update({f"d{i}": {"a": 1} for i in range(90)})
+    paths = sorted(labs)
+    w, info = sample_weights(paths, labs, ["a"], {"g0": {"kind": "false_defect"}}, good_cap=5.0, hard_factor=3.0)
+    ww = dict(zip(paths, w))
+    assert ww["d1"] == 1.0 and ww["g1"] == 5.0 and ww["g0"] == 15.0, ww      # 90/10 = 9 -> capped at 5
+    assert info["good"] == 10 and info["hard_examples"] == 1 and info["good_weight"] == 5.0, info
+    w2, _ = sample_weights(paths, labs, ["a"], good_cap=20.0)
+    assert dict(zip(paths, w2))["g1"] == 9.0
     truth = np.array([[1], [1], [0], [0]], np.float32)
     prob = np.array([[0.9], [0.4], [0.6], [0.1]], np.float32)
     p, r, f, tp, fp, fn = _pr(prob[:, 0], truth[:, 0], 0.5)
