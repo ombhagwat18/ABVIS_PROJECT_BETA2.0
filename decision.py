@@ -53,6 +53,8 @@ RULES = {
     "cap_above_margin": 0.25,        # ...or up to this fraction of bottle height ABOVE the box
     "min_label_area_ratio": 0.15,    # segmentation: label area / bottle area
     "min_label_fill": 0.80,          # segmentation: label area / label bounding-box area
+    "check_margin": 0.0,             # >0: a classification score this close BELOW its threshold is "unsure"; a
+                                     # bottle whose vote is only unsure scores is FAULT ("check"), never PASS
 }
 
 
@@ -219,6 +221,12 @@ def decide_camera(task: str, cam: CameraEvidence, thresholds: dict, rules: dict)
             if st == FAULT:
                 return FAULT, [], "classification scores empty or not finite", None
             found.update(hits)
+            m = float(rules.get("check_margin") or 0.0)
+            if m > 0:
+                for d, p in f.probs.items():
+                    t = float(thresholds.get(d, 0.5))
+                    if d not in hits and t - m <= p < t <= 1.0:
+                        found.add("?" + d)               # unsure: close to the threshold
             hit_p = [f.probs[h] for h in hits]
             fconf.append(max(hit_p) if hits else 1.0 - max(f.probs.values()))
         saw_bottle = True
@@ -244,8 +252,13 @@ def decide_camera(task: str, cam: CameraEvidence, thresholds: dict, rules: dict)
     if not per_frame:
         return FAULT, [], f"no bottle found in {len(cam.frames)} frame(s): cannot inspect", None
     need = _vote_needed(len(per_frame), rules.get("vote", "majority"))
-    names = sorted({d for fr in per_frame for d in fr})
+    names = sorted({d for fr in per_frame for d in fr if not d.startswith("?")})
     defects = [d for d in names if sum(d in fr for fr in per_frame) >= need]
+    if not defects:
+        near = sorted({d.lstrip("?") for fr in per_frame for d in fr})
+        unsure = [d for d in near if sum(d in fr or "?" + d in fr for fr in per_frame) >= need]
+        if unsure:
+            return FAULT, [], f"unsure: {', '.join(unsure)} scored just under the threshold (check the bottle)", None
     valid = [c for c in confs if c is not None]
     conf = sum(valid) / len(valid) if valid else None
     if defects:
@@ -361,6 +374,12 @@ def demo():
     assert D("classification", cam({"probs": {"tilt_cap": float("nan")}}), thr=thr).state == FAULT
     assert D("classification", cam({"probs": {}}), thr=thr).state == FAULT
     assert D("classification", cam({"cls_error": "boom"}), thr=thr).state == FAULT
+    # check band: a score just under its threshold in most frames is FAULT (unsure), never PASS; off by default
+    near_p = {"tilt_cap": 0.45, "missing_label": 0.1}
+    assert D("classification", cam({"probs": near_p}, {"probs": near_p}), thr=thr).state == PASS
+    d = D("classification", cam({"probs": near_p}, {"probs": near_p}), thr=thr, rules={"check_margin": 0.1})
+    assert d.state == FAULT and "unsure: tilt_cap" in d.reason, d
+    assert D("classification", cam({"probs": bad_p}, {"probs": bad_p}), thr=thr, rules={"check_margin": 0.1}).defects == ["tilt_cap"]
     # classification + detection: either stage can reject; a failure in either is FAULT
     d = D("classification+detection", cam({"probs": ok_p, "det": nocap}), thr=thr)
     assert d.state == REJECT and d.defects == ["missing_cap"], d

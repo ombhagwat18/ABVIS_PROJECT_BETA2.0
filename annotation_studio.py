@@ -25,6 +25,7 @@ import annotate as A
 import autoannotate as AA
 import dataset as D
 import theme
+import verdict as VD
 
 # The shared palette (theme.py). Imported from theme, not gui, to avoid a
 # gui.py <-> annotation_studio.py import cycle.
@@ -147,6 +148,11 @@ class AnnotationTab:
         ctk.CTkButton(right, text="Reload", fg_color="transparent", border_width=1,
                       command=self.reload_annotations).pack(fill="x", padx=12, pady=3)
 
+        # What the production rule says about this picture, in words (from the model's proposals, or the person's
+        # boxes): the boxes alone do not say whether the bottle is good.
+        self.pred_lbl = ctk.CTkLabel(right, text="", font=("Segoe UI", 15, "bold"), wraplength=205, justify="left",
+                                     anchor="w")
+        self.pred_lbl.pack(fill="x", padx=12, pady=(4, 0))
         ctk.CTkLabel(right, text="AUTO-ANNOTATE", text_color=DIM, font=("Segoe UI", 13, "bold")).pack(
             anchor="w", padx=12, pady=(16, 4))
         self.auto_btn = ctk.CTkButton(right, text="Propose boxes (model)", fg_color="transparent",
@@ -395,6 +401,25 @@ class AnnotationTab:
         self._highlight_row(rel)
         self._redraw()
 
+    def _show_prediction(self, entry):
+        """'PREDICTED: GOOD / DEFECT: Missing cap / NO BOTTLE' for detection projects, never a label by itself."""
+        if self.task != "detection" or self.img_bgr is None:
+            self.pred_lbl.configure(text="")
+            return
+        try:
+            kind, defects, src = AA.predict(entry, (self.img_w, self.img_h), D.load_config().get("inspection"))
+        except Exception as e:                                   # noqa: BLE001 - a display line must not break drawing
+            self.pred_lbl.configure(text=f"prediction unavailable: {type(e).__name__}", text_color=DIM)
+            return
+        if not kind:
+            self.pred_lbl.configure(text="no boxes yet: Propose boxes to get a prediction", text_color=DIM)
+            return
+        words = {"GOOD": "GOOD", "NO BOTTLE": "NO BOTTLE FOUND"}.get(kind) or \
+            "DEFECT: " + ", ".join(VD.pretty(d) for d in defects)
+        who = "model proposal - not reviewed" if src == "proposals" else "from your boxes"
+        self.pred_lbl.configure(text=f"PREDICTED: {words}\n({who})",
+                                text_color={"GOOD": GOOD, "DEFECT": BAD}.get(kind, WARN))
+
     def goto_next_unannotated(self):
         if self.data is None:
             return
@@ -436,6 +461,7 @@ class AnnotationTab:
         self.canvas.create_image(self.off_x, self.off_y, anchor="nw", image=self.photo)
 
         entry = self.data["images"].get(self.rel, {}) if self.data else {}
+        self._show_prediction(entry)
         for i, box in enumerate(entry.get("boxes", [])):
             sel = self.selected == ("box", i)
             x0, y0 = self.n2c(box["x"] - box["w"] / 2, box["y"] - box["h"] / 2)

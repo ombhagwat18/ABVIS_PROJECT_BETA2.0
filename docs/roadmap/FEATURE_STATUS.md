@@ -53,6 +53,9 @@ success. Nothing in this repository has been validated on the physical machine e
 | Geometry measurement | FUTURE | FUTURE | No measurement in the code; shape defects are learned, not measured |
 | Lighting configuration | HARDWARE REQUIRED | FUTURE | Not represented in software |
 | Auto annotation | SOFTWARE ONLY | NOW | `autoannotate.py`: detector proposals kept out of `boxes` until accepted; least-sure-first ordering. FAKE-tested |
+| Auto-collect + hard examples | SOFTWARE ONLY | NOW | Live "Auto-collect for labelling": one frame per decided bottle into the inbox with the model's suggestion; corrections stored as hard examples (`dataset.record_corrections`); training oversamples good bottles (x5 cap) and hard examples (x3) (`train.sample_weights`). Not yet run on the machine |
+| CHECK band (unsure bottles) | SOFTWARE ONLY | NOW | screen: CHECK: <defect>? (`check_margin` 0.10); line: `decision_rules.check_margin` (off by default) -> FAULT |
+| Activation gates | SOFTWARE ONLY | NOW | `model_checks.py`: real-camera limits + background-shortcut check enforced by `model_registry.validate`; Models -> Validate form |
 | Active learning | SOFTWARE ONLY | NOW | Annotate tab queues: least sure, missing part (bottle without cap/label = likely real defect captures), doubtful part (cap/label at 0.25-0.80 = hard-negative candidates). Reorders unreviewed images only |
 | Anomaly detection | DEFERRED | FUTURE | |
 | OCR | DEFERRED | FUTURE | |

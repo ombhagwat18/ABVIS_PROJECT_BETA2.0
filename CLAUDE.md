@@ -91,6 +91,7 @@ python selfcheck.py [--full]           # every module self-test in its own proce
 python verdict.py                      # stable one-verdict-per-bottle tracker
 python production_export.py            # database rows in words, CSV, printable report
 python calibrate_thresholds.py [--apply|--restore]   # thresholds from validation, checked on test
+python model_checks.py                 # activation gates + background-shortcut check
 ```
 
 There is no single-test runner: each file runs all its checks; to run one, import the module
@@ -504,6 +505,18 @@ defect only if it is in >= `vote` of them, then LATCHES GOOD / DEFECT until the 
 (Live "Engineer details") is on. Display words: PASS -> GOOD, REJECT -> DEFECT (`verdict.shown_result`), defect
 names via `verdict.pretty`; the PLC / DB / code keep PASS / REJECT / FAULT. The line's decision is still
 `decision.py`; the tracker only DISPLAYS.
+
+**Improvement loop.** `LiveTab._auto_collect` saves ONE frame per latched bottle (`Verdict.bottle` increments on
+each latch) via `dataset.save_capture(reviewed=False)` + a suggestion in `cache/suggestions.json` (plus an `"auto"`
+section with the verdict); daily cap `autocollect_daily_cap`. `dataset.set_labels` / `apply_labels` call
+`record_corrections`: model suggestion (judged with the project thresholds) vs the person's label -> `cache/
+hard_examples.json` (false_defect / missed_defect / wrong_defect; agreement removes the entry). `train.run` uses
+`sample_weights` (settings `train_balance_good`, `train_good_cap` 5, `train_hard_factor` 3) via a
+`WeightedRandomSampler`; sampling is recorded in metrics.json. Unsure band: `Camera.check_margin` (settings
+`check_margin`, 0.10) marks "?defect" frames -> verdict `UNSURE` ("CHECK: x?"); the line has the same rule as
+`decision_rules.check_margin` (default 0 = off) -> FAULT. `model_registry.validate(name, note, real=, shortcut=)`
+enforces `model_checks.gates` (settings `activation_gates`); the Models page uses `hmi.ValidateDialog`.
+`autoannotate.predict` gives the Annotate page's PREDICTED line with `decision.detection_findings`.
 
 **Thresholds** come from `calibrate_thresholds.py` (validation F1, middle of the perfect band, floor 0.30, recall
 guard; test only reported). `--apply` keeps the old ones in `config.json` `thresholds_before_calibration`;

@@ -681,13 +681,8 @@ class ModelsTab:
 
     def validate(self):
         e = self.selected()
-        if not e:
-            return
-        note = ctk.CTkInputDialog(title="Real-camera validation",
-                                  text=f"{e['name']}\nDescribe the real-camera validation\n"
-                                       f"(camera, bottles shown, results):").get_input()
-        if note is not None:
-            self._do(lambda: self.reg.validate(e["name"], note), "")
+        if e:
+            ValidateDialog(self.app, self.reg, e, on_done=self.refresh)
 
     def approve(self):
         e = self.selected()
@@ -1207,3 +1202,92 @@ class DatabaseTab:
             os.startfile(str(self.app.store().folder))                     # noqa: S606
         except (AttributeError, OSError) as e:
             messagebox.showinfo("Folder", f"{self.app.store().folder}\n({e})")
+
+
+# =============================================================================== validation form
+class ValidateDialog(ctk.CTkToplevel):
+    """The form behind Models -> Validate: what was shown to the REAL camera and what the model said, plus (for a
+    classifier) the background-shortcut check. model_registry.validate refuses the model unless the numbers are
+    within the gates in settings.json "activation_gates" (model_checks.DEFAULT_GATES)."""
+
+    FIELDS = (("good_n", "Real GOOD bottles shown"), ("good_called_defective", "...of them called defective"),
+              ("defective_n", "Real DEFECTIVE bottles shown"), ("defective_passed", "...of them passed as good"))
+
+    def __init__(self, app, reg, entry, on_done=None):
+        super().__init__(app)
+        import model_checks as MCH
+        self.app, self.reg, self.e, self.on_done, self.MCH = app, reg, entry, on_done, MCH
+        self.shortcut = None
+        g = MCH.gates(app.settings)
+        self.title(f"Validate {entry['name']}")
+        self.geometry("720x560")
+        self.transient(app)
+        f = box(self, "WHAT THE MODEL DID ON THE REAL CAMERA (count bottles, not frames)", fill="x", padx=12, pady=(12, 6))
+        self.ent = {}
+        for k, label in self.FIELDS:
+            row = ctk.CTkFrame(f, fg_color="transparent")
+            row.pack(fill="x", padx=12, pady=2)
+            ctk.CTkLabel(row, text=label, width=260, anchor="w").pack(side="left")
+            e = ctk.CTkEntry(row, width=90)
+            e.pack(side="left")
+            self.ent[k] = e
+        ctk.CTkLabel(f, text=f"Limits: good called defective <= {g['max_good_called_defective_pct']:g} %, defective "
+                             f"passed <= {g['max_defective_passed_pct']:g} %, at least {g['min_real_good']} good and "
+                             f"{g['min_real_defective']} defective bottles (settings.json activation_gates).",
+                     text_color=DIM, wraplength=660, justify="left").pack(anchor="w", padx=12, pady=(4, 8))
+        ctk.CTkLabel(f, text="How the bottles were shown (camera, enclosure, lighting, which defects):",
+                     anchor="w").pack(anchor="w", padx=12)
+        self.note = ctk.CTkEntry(f, width=660)
+        self.note.pack(padx=12, pady=(2, 10))
+        if entry["kind"] == "classification":
+            f2 = box(self, "BACKGROUND-SHORTCUT CHECK (classifier only)", fill="x", padx=12, pady=6)
+            row = ctk.CTkFrame(f2, fg_color="transparent")
+            row.pack(fill="x", padx=12, pady=(0, 10))
+            self.b_sc = ctk.CTkButton(row, text="Run the check", width=140, command=self.run_shortcut)
+            self.b_sc.pack(side="left")
+            self.sc_lbl = ctk.CTkLabel(row, text="capped white-background bottles must NOT be called missing_cap",
+                                       text_color=DIM)
+            self.sc_lbl.pack(side="left", padx=10)
+        self.msg = ctk.CTkLabel(self, text="", wraplength=680, justify="left", anchor="w")
+        self.msg.pack(fill="x", padx=14, pady=6)
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", padx=12, pady=(0, 12))
+        ctk.CTkButton(row, text="VALIDATE", width=120, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
+                      command=self.submit).pack(side="left")
+        ctk.CTkButton(row, text="Close", width=80, command=self.destroy).pack(side="right")
+        self.after(100, self.lift)
+
+    def run_shortcut(self):
+        self.b_sc.configure(state="disabled", text="running...")
+        stamp = self.e["id"]
+
+        def done(r):
+            self.shortcut = r
+            self.b_sc.configure(state="normal", text="Run again")
+            if r.get("skipped"):
+                self.sc_lbl.configure(text=f"not runnable here: {r['skipped']}", text_color=WARN)
+            else:
+                self.sc_lbl.configure(text=f"{r['fired']}/{r['n']} capped bottles called missing_cap ({r['fire_pct']} %) - "
+                                           + ("PASSED" if r["passed"] else "FAILED: the model learned the background"),
+                                      text_color=GOOD if r["passed"] else BAD)
+        self.app.run_bg(lambda: self.MCH.shortcut_check(stamp), done)
+
+    def numbers(self) -> dict:
+        out = {}
+        for k, label in self.FIELDS:
+            try:
+                out[k] = int(self.ent[k].get())
+            except ValueError:
+                raise ValueError(f"'{label}' must be a whole number") from None
+        return out
+
+    def submit(self):
+        try:
+            real = self.numbers()
+            self.reg.validate(self.e["name"], self.note.get(), real=real, shortcut=self.shortcut)
+        except (ValueError, MR.RegistryError) as e:
+            self.msg.configure(text=str(e), text_color=BAD)
+            return
+        self.msg.configure(text="VALIDATED. Next: Approve, then ACTIVATE (with the line stopped).", text_color=GOOD)
+        if self.on_done:
+            self.on_done()

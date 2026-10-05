@@ -129,6 +129,34 @@ def doubtful_part_queue(data: dict, images: list, parts=("cap", "label"), lo: fl
     return [r for _, r in sorted(out)]
 
 
+def predict(entry: dict | None, img_wh, recipe=None, use: str = "auto") -> tuple:
+    """What the production rule would say about this image, in words, from its boxes:
+    ('GOOD' | 'DEFECT' | 'NO BOTTLE' | '', [defects], source). source: 'proposals' (the model's, unreviewed) or
+    'boxes' (the person's). use='auto' prefers proposals when there are any. Uses decision.detection_findings with
+    the project's recipe, so the Annotate page and the line judge a picture the same way."""
+    import decision as DEC
+    import detect
+    e = entry or {}
+    props, boxes = e.get("proposals") or [], e.get("boxes") or []
+    if use == "proposals" or (use == "auto" and props):
+        items, source = props, "proposals"
+    else:
+        items, source = boxes, "boxes"
+    if not items:
+        return "", [], source
+    w, h = img_wh
+    dets = tuple(detect.Detection(-1, b["cls"], float(b.get("conf", 1.0)),
+                                  (b["x"] - b["w"] / 2) * w, (b["y"] - b["h"] / 2) * h,
+                                  (b["x"] + b["w"] / 2) * w, (b["y"] + b["h"] / 2) * h) for b in items)
+    rules = dict(DEC.RULES)
+    if recipe:
+        rules["recipe"] = recipe
+    found, _ = DEC.detection_findings(detect.DetectionResult("annotate", None, None, dets, (w, h), 0.0, "", 0.0), rules)
+    if found is None:
+        return "NO BOTTLE", [], source
+    return ("DEFECT" if found else "GOOD"), list(found), source
+
+
 def run(data: dict, images: list, image_root: Path, detect_fn, imread, min_conf: float = 0.25,
         only_pending: bool = True, progress=None) -> dict:
     """Propose boxes for `images`. only_pending skips images that already have boxes or were reviewed."""
@@ -205,13 +233,25 @@ def demo():
     assert doubtful_part_queue(q, imgs2) == ["neck.jpg"], doubtful_part_queue(q, imgs2)
     A.set_image_annotation(q, "nocap.jpg", boxes=[], reviewed=True)
     assert missing_part_queue(q, imgs2) == []                                           # reviewed: out of the queue
+    # the plain-words prediction the Annotate page shows (same rule as the line)
+    pr = A.init_annotations("detection", classes)
+    propose(pr, "ok.jpg", [("bottle", 0.9, 10, 10, 90, 190), ("cap", 0.9, 30, 5, 70, 30), ("label", 0.9, 15, 80, 85, 140)], (100, 200))
+    propose(pr, "nc.jpg", [("bottle", 0.9, 10, 10, 90, 190), ("label", 0.9, 15, 80, 85, 140)], (100, 200))
+    propose(pr, "nb.jpg", [("cap", 0.9, 30, 5, 70, 30)], (100, 200))
+    assert predict(pr["images"]["ok.jpg"], (100, 200))[:2] == ("GOOD", [])
+    assert predict(pr["images"]["nc.jpg"], (100, 200))[:2] == ("DEFECT", ["missing_cap"])
+    assert predict(pr["images"]["nb.jpg"], (100, 200))[0] == "NO BOTTLE"
+    assert predict({}, (100, 200))[0] == ""
+    # 'auto' prefers the model's proposals; once accepted they are the person's boxes
+    accept(pr, "nc.jpg")
+    assert predict(pr["images"]["nc.jpg"], (100, 200))[2] == "boxes"
     # clipping and normalisation
     p = to_proposals([("label", 0.8, -20, 50, 130, 120)], (100, 200), classes)[0]
     assert p["x"] == 0.5 and p["w"] == 1.0 and abs(p["h"] - 0.35) < 1e-6, p
     assert to_proposals([("cap", 0.1, 0, 0, 10, 10)], (100, 200), classes) == []         # below min_conf
     assert to_proposals([("cap", 0.9, 10, 10, 10, 50)], (100, 200), classes) == []       # zero width
     print("ok  autoannotate: proposals kept out of boxes/export, accept/reject, reviewed images untouched, "
-          "uncertainty ordering, missing-part and doubtful-part queues, clipping")
+          "uncertainty ordering, missing-part and doubtful-part queues, plain-words prediction, clipping")
 
 
 if __name__ == "__main__":

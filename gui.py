@@ -308,7 +308,8 @@ class App(ctk.CTk):
                                 if plc_autoconnect is None else plc_autoconnect)
         self.apply_font_scale(self.settings.get("font_scale", 1.0), save=False)
         # Coded machine alarms (alarms.py), persisted through the project's production store.
-        applog.setup()
+        if applog._folder is None:                         # the self-test points it at a temp folder first
+            applog.setup()
         applog.log("app", "application started", project=D.PROJECT, theme=theme.MODE)
         self.alarms = AL.AlarmManager(on_change=self._on_alarm)
         self.plc.add_listener(applog.plc_listener)
@@ -3724,6 +3725,14 @@ class LiveTab:
         # Operators see ONE verdict per bottle. Boxes, score bars and detector numbers are an engineer's tool.
         self.details = ctk.CTkCheckBox(bar, text="Engineer details", width=130, command=self.on_details)
         self.details.pack(side="right", padx=(0, 10))
+        # Auto-collect: one frame per DECIDED bottle goes to the Label inbox with the model's prediction as a
+        # suggestion (never as a label). The person reviews it in the Label tab; corrections become hard examples.
+        self.autocollect = ctk.CTkCheckBox(bar, text="Auto-collect for labelling", width=190)
+        self.autocollect.pack(side="right", padx=(0, 10))
+        self.ac_lbl = ctk.CTkLabel(bar, text="", text_color=DIM, font=theme.SMALL)
+        self.ac_lbl.pack(side="right", padx=(0, 6))
+        self._collected: set = set()
+        self._ac_day, self._ac_n = "", 0
         self.hint = ctk.CTkLabel(bar, text="", text_color=DIM)
         self.hint.pack(side="right", padx=10)
 
@@ -3937,6 +3946,8 @@ class LiveTab:
         self.build_panes([n for n, _ in chosen])
         self.running = True
         self.app.cams.set_details(bool(self.details.get()))
+        for c in self.app.cams.cams.values():                # unsure band (verdict CHECK); 0 = off
+            c.check_margin = float(self.app.settings.get("check_margin", 0.10))
         self._frames = {}
         self._render_gen = getattr(self, "_render_gen", 0) + 1
         threading.Thread(target=self._render_loop, args=(self._render_gen,), daemon=True).start()
@@ -3961,6 +3972,51 @@ class LiveTab:
 
     def on_details(self):
         self.app.cams.set_details(bool(self.details.get()))
+
+    def _auto_collect(self, live):
+        """One frame per decided bottle (the stable verdict's bottle number), into the Label inbox, reviewed=0, with
+        the classifier's scores as a suggestion. Needs the detector (it is what says a bottle came and went)."""
+        day = time.strftime("%Y-%m-%d")
+        if day != self._ac_day:
+            self._ac_day, self._ac_n = day, 0
+        cap = int(self.app.settings.get("autocollect_daily_cap", 300))
+        capped = False
+        for cam in live:
+            v = cam.display_verdict()
+            if not v.latched or v.kind not in (VD.GOOD, VD.DEFECT, VD.UNSURE):
+                continue
+            key = (cam.name, cam.session, v.bottle)
+            if key in self._collected:
+                continue
+            self._collected.add(key)
+            if self._ac_n >= cap:
+                capped = True
+                continue
+            f = cam.latest_frame()
+            if f is None:
+                continue
+            with cam.lock:
+                probs = dict(cam.probs)
+            model = getattr(cam.model, "stamp", None)
+            self._ac_n += 1
+            self._save_collected(f.image, probs, model, v, cam.name)
+        if capped:
+            self.ac_lbl.configure(text=f"auto-collect: daily cap {cap} reached", text_color=WARN)
+        elif self._ac_n:
+            self.ac_lbl.configure(text=f"auto-collected today: {self._ac_n} (Label -> AI suggested)", text_color=DIM)
+
+    def _save_collected(self, image, probs, model, v, cam_name):
+        rel = D.save_capture(image, reviewed=False)          # inbox, NOT reviewed: out of training until checked
+        if probs:
+            d = D.load_suggestions()
+            d["items"][rel] = {k: round(float(x), 4) for k, x in probs.items() if k in self.app.defects}
+            d.update(model=model or d.get("model"), time=time.strftime("%Y-%m-%d %H:%M:%S"))
+            d.setdefault("auto", {})[rel] = {"verdict": v.kind, "defects": list(v.defects), "camera": cam_name,
+                                             "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+            D.save_suggestions(d)
+        applog.log("ai", f"auto-collected {rel}", verdict=v.kind, defects=";".join(v.defects) or "-", camera=cam_name)
+        self.app.data_changed()
+        return rel
 
     def build_detector(self):
         """The shared YOLO detector, loaded on first use. Raises detect.DetectorError if the
@@ -4040,6 +4096,8 @@ class LiveTab:
 
         # Always refresh, even with no live camera: a dead camera must show FAULT,
         # not keep whatever verdict was on screen when it died.
+        if self.autocollect.get():
+            self._auto_collect(live)
         v = self.app.cams.display_verdict()                 # ONE stable verdict, in words (verdict.py)
         self.verdict.configure(text=v.text, text_color={VD.GOOD: GOOD, VD.DEFECT: BAD, VD.FAULT: WARN}.get(v.kind, DIM))
         parts = []
@@ -5123,11 +5181,11 @@ def selftest():
     or a missing attribute fails here instead of in front of the user.
     """
     import tempfile
-    app = App()
-    # production history of the self-test goes to a temporary folder, never into the real project's record
+    # production history and log lines of the self-test go to a temporary folder, never into the real ones
     _prod_tmp = tempfile.mkdtemp(prefix="selftest_production_")
+    applog.setup(Path(_prod_tmp) / "logs")
+    app = App()
     app.production_dir = _prod_tmp
-    applog.setup(Path(_prod_tmp) / "logs")                    # ...and its log lines too
     mode_before = app.ui_mode
     for _ in range(3):
         app.update()
@@ -5220,6 +5278,35 @@ def selftest():
     app.tab_live.stop()
     app.update()
     assert not app.tab_live.panes
+    # Auto-collect: exactly one save per decided bottle, nothing while undecided, daily cap respected
+    import verdict as VDm
+    lt_ = app.tab_live
+    saved = []
+    real_save = lt_._save_collected
+    lt_._save_collected = lambda img, probs, model, v, name: saved.append((v.bottle, v.kind))
+
+    class _FC:
+        name, session, lock, probs, model = "camX", 1, threading.Lock(), {"tilt_cap": 0.2}, None
+        def __init__(self):
+            self.v = VDm.Verdict(VDm.CHECKING)
+        def display_verdict(self):
+            return self.v
+        def latest_frame(self):
+            return infer.Frame("x", 0.0, 1, np.zeros((10, 10, 3), np.uint8))
+    fc = _FC()
+    lt_._auto_collect([fc])
+    fc.v = VDm.Verdict(VDm.GOOD, latched=True, bottle=1)
+    for _ in range(5):
+        lt_._auto_collect([fc])
+    fc.v = VDm.Verdict(VDm.DEFECT, ("missing_cap",), latched=True, bottle=2)
+    lt_._auto_collect([fc]); lt_._auto_collect([fc])
+    assert saved == [(1, VDm.GOOD), (2, VDm.DEFECT)], saved
+    app.settings["autocollect_daily_cap"] = 2
+    fc.v = VDm.Verdict(VDm.GOOD, latched=True, bottle=3)
+    lt_._auto_collect([fc])
+    assert len(saved) == 2 and "cap" in lt_.ac_lbl.cget("text"), lt_.ac_lbl.cget("text")
+    app.settings.pop("autocollect_daily_cap", None)
+    lt_._save_collected = real_save
 
     # Benchmark table must render rows it did not measure, including a failure.
     app.tab_bench.rows = [
@@ -5492,6 +5579,7 @@ def selftest():
         AA.propose(at.data, "a.jpg", [("bottle", 0.9, 5, 5, 70, 110), ("cap", 0.8, 20, 2, 50, 20)], (80, 120))
         at.load_image("a.jpg")
         assert not at.data["images"]["a.jpg"]["boxes"] and len(at.data["images"]["a.jpg"]["proposals"]) == 2
+        assert at.pred_lbl.cget("text").startswith("PREDICTED:") and "model proposal" in at.pred_lbl.cget("text"),             at.pred_lbl.cget("text")
         at.accept_proposals()
         e = at.data["images"]["a.jpg"]
         assert len(e["boxes"]) == 2 and not e["proposals"] and not e["reviewed"], e

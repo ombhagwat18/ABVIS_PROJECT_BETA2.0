@@ -387,6 +387,9 @@ class Camera:
         # switches the engineer view (component boxes, score bars) back on; it is off for every operator screen.
         self.tracker = V.VerdictTracker()
         self.details = False
+        # a defect score within this margin BELOW its threshold counts as "unsure" (verdict CHECK, never GOOD).
+        # 0 switches the band off. Set from settings.json "check_margin" by the app.
+        self.check_margin = 0.10
         self.verdict_ts = 0.0          # monotonic time the tracker was last fed
         # The last few captured frames, oldest first, so a per-bottle inspection can pick the
         # frames taken AFTER its trigger instead of whatever happens to be newest.
@@ -697,12 +700,19 @@ class Camera:
                 self.state, self.result_ts, self.fault = state, result_ts, fault
                 self.det_result, self.det_ts = det_result, det_ts
                 self.det_frame, self.det_fault = det_frame, det_fault
-            self._feed_tracker(state, hits, fault, model, detector, det_result, det_fault)
+            self._feed_tracker(state, hits, fault, model, detector, det_result, det_fault, probs,
+                               (D.load_config().get("thresholds", {}) if model is not None else None))
             self.latency_ms = (time.monotonic() - fts) * 1000    # capture -> result
 
-    def _feed_tracker(self, state, hits, fault, model, detector, det_result, det_fault):
+    def _feed_tracker(self, state, hits, fault, model, detector, det_result, det_fault, probs=None, thresholds=None):
         """One call per scored frame: what this frame says about THIS bottle, for the stable verdict."""
         defects = list(hits)
+        if probs and self.check_margin > 0:                   # close to a threshold: "unsure", marked "?name"
+            thr = thresholds or {}
+            for d, p in probs.items():
+                t = float(thr.get(d, 0.5))
+                if d not in defects and t - self.check_margin <= p < t <= 1.0:
+                    defects.append(V.UNSURE_MARK + d)
         present = None
         valid = model is not None and state in (PASS, REJECT) and not fault
         if model is None and detector is not None:
@@ -811,7 +821,8 @@ class Camera:
         return frame
 
     # verdict colours (BGR): GOOD green, DEFECT red, FAULT amber, the rest neutral
-    _VCOL = {V.GOOD: C_PASS, V.DEFECT: C_FAIL, V.FAULT: C_FAULT, V.CHECKING: (170, 120, 60), V.EMPTY: (90, 90, 90)}
+    _VCOL = {V.GOOD: C_PASS, V.DEFECT: C_FAIL, V.FAULT: C_FAULT, V.UNSURE: C_FAULT, V.CHECKING: (170, 120, 60),
+             V.EMPTY: (90, 90, 90)}
 
     def _banner(self, frame, v, height):
         col = self._VCOL.get(v.kind, C_FAULT)
@@ -827,7 +838,7 @@ class Camera:
         No component boxes, no score bars, no detector line, no per-frame flicker (verdict.py latches)."""
         h, w = frame.shape[:2]
         col = self._VCOL.get(v.kind, C_FAULT)
-        if v.kind in (V.GOOD, V.DEFECT, V.FAULT):
+        if v.kind in (V.GOOD, V.DEFECT, V.FAULT, V.UNSURE):
             cv2.rectangle(frame, (0, 0), (w - 1, h - 1), col, 6)
         self._banner(frame, v, max(46, h // 9))
         cv2.putText(frame, self.name, (14, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_TEXT, 1)
@@ -1395,6 +1406,18 @@ def _selftest_verdict_overlay():
     assert V.headline(V.DEFECT, ("missing_cap",)) == "DEFECT: Missing cap"
     # a stopped camera is FAULT, never a stale GOOD
     assert c.display_verdict().kind == V.FAULT
+    # scores just under a threshold become CHECK (unsure), clearly over it a named DEFECT, far below it GOOD
+    for probs, want in (({"tilt_cap": 0.45}, V.UNSURE), ({"tilt_cap": 0.9}, V.DEFECT), ({"tilt_cap": 0.1}, V.GOOD)):
+        c.tracker.reset()
+        hits = [d for d, p in probs.items() if p >= 0.5]
+        for _ in range(10):
+            c._feed_tracker(REJECT if hits else PASS, hits, None, object(), None, None, None, probs, {"tilt_cap": 0.5})
+        assert c.tracker.current().kind == want, (probs, c.tracker.current())
+    c.check_margin = 0.0                                          # band switched off: 0.45 is simply GOOD
+    c.tracker.reset()
+    for _ in range(10):
+        c._feed_tracker(PASS, [], None, object(), None, None, None, {"tilt_cap": 0.45}, {"tilt_cap": 0.5})
+    assert c.tracker.current().kind == V.GOOD
 
 
 def demo():

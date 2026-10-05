@@ -352,6 +352,7 @@ def apply_labels(paths, defect=None, value=1, clear_all=False) -> dict:
     """Set or clear a defect on many images. Always one CSV rewrite, whatever
     the edit -- 'mark good' must not cost one full rewrite per defect column.
     Every changed row is appended to label_log.csv."""
+    paths = list(paths)                                  # iterated twice (edit, then hard-example record)
     defects, labels = load_labels()
     if defect is not None and defect not in defects:
         raise KeyError(f"unknown defect {defect!r}")
@@ -371,6 +372,7 @@ def apply_labels(paths, defect=None, value=1, clear_all=False) -> dict:
             changes.append((p, before, after))
     save_labels(defects, labels)
     log_changes("good" if clear_all else (f"set {defect}" if value else f"clear {defect}"), changes)
+    record_corrections([p for p in paths if p in labels], labels, defects)
     return counts(defects, labels)
 
 
@@ -398,6 +400,7 @@ def set_labels(mapping: dict, action: str = "set") -> dict:
             changes.append((p, before, after))
     save_labels(defects, labels)
     log_changes(action, changes)
+    record_corrections([p for p in mapping if p in labels], labels, defects)
     return counts(defects, labels)
 
 
@@ -766,6 +769,57 @@ def drop_suggestions(paths) -> None:
     hit = [d["items"].pop(p, None) is not None for p in list(paths)]
     if any(hit):
         save_suggestions(d)
+
+
+# ------------------------------------------------------- hard examples (model corrected by a person)
+# When a person labels an image the model had pre-labelled, and the two disagree, the image is a HARD example:
+#   false_defect  the model said defect, the person said GOOD   (a good bottle the model rejects)
+#   missed_defect the model said GOOD, the person found a defect
+#   wrong_defect  both said defect, but not the same one
+# train.py samples hard examples more often, so the next model learns exactly what the last one got wrong. This is
+# a record of disagreements, not a label: labels.csv stays the only source of truth.
+
+def hard_examples_path() -> Path:
+    return CACHE / "hard_examples.json"
+
+
+def load_hard_examples() -> dict:
+    try:
+        return json.loads(hard_examples_path().read_text(encoding="utf-8"))
+    except Exception:                                    # noqa: BLE001
+        return {}
+
+
+def record_corrections(paths, labels=None, defects=None) -> int:
+    """Compare each image's model suggestion (cache/suggestions.json, judged with the project thresholds) with the
+    label a person just gave it; store disagreements. Returns how many were recorded. Never raises."""
+    try:
+        sugg = load_suggestions().get("items", {})
+        if not any(p in sugg for p in paths):
+            return 0
+        if labels is None or defects is None:
+            defects, labels = load_labels()
+        thr = load_config().get("thresholds", {})
+        hard = load_hard_examples()
+        n = 0
+        for p in paths:
+            probs = sugg.get(p)
+            if not probs or p not in labels:
+                continue
+            said = sorted(d for d, v in probs.items() if d in defects and v >= float(thr.get(d, 0.5)))
+            final = sorted(d for d in defects if labels[p].get(d, 0))
+            if said == final:
+                hard.pop(p, None)                        # the person agreed: not (or no longer) a hard example
+                continue
+            kind = ("false_defect" if said and not final else "missed_defect" if final and not said else "wrong_defect")
+            hard[p] = {"kind": kind, "model_said": said, "person_said": final,
+                       "model": load_suggestions().get("model"), "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+            n += 1
+        hard_examples_path().parent.mkdir(parents=True, exist_ok=True)
+        hard_examples_path().write_text(json.dumps(hard, indent=1), encoding="utf-8")
+        return n
+    except Exception:                                    # noqa: BLE001 - a bookkeeping failure must not block labelling
+        return 0
 
 
 def save_capture(frame_bgr: np.ndarray, defects_on=(), reviewed=True) -> str:
@@ -1288,6 +1342,18 @@ def project_demo():
             assert load_suggestions()["items"]["x.jpg"]["scratch"] == 0.9
             drop_suggestions(["x.jpg"])
             assert load_suggestions()["items"] == {}
+            # ---- hard examples: where a person disagrees with the model's pre-label
+            defects, labels = load_labels()
+            g = next(p for p, r in labels.items() if r.get("reviewed", 1) and not any(r.get(d, 0) for d in defects))
+            sc = next(p for p, r in labels.items() if r.get("scratch"))
+            save_suggestions({"model": "m", "time": "t", "items": {g: {"scratch": 0.9, "cap_tilt": 0.1},
+                                                                     sc: {"scratch": 0.95, "cap_tilt": 0.0}}})
+            set_labels({g: []}, action="review")               # model said scratch, person said GOOD
+            set_labels({sc: ["scratch"]}, action="review")     # model and person agree
+            h = load_hard_examples()
+            assert set(h) == {g} and h[g]["kind"] == "false_defect" and h[g]["model_said"] == ["scratch"], h
+            apply_labels([g], "scratch", 1)                     # the person changes their mind: they now agree
+            assert g not in load_hard_examples()
             use_project(a)
     finally:
         PROJECTS, ACTIVE_TXT = was[0], was[1]

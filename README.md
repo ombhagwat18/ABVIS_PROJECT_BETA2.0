@@ -242,6 +242,33 @@ A *recipe* (`config.json` -> `inspection`, editable in the app) says what a comp
 detector and a recipe, not new code.
 </details>
 
+<details open>
+<summary><b>The improvement loop: collect, review, retrain (how the model gets accurate)</b></summary>
+
+```mermaid
+flowchart LR
+    L[Live: Auto-collect ON] -->|one frame per decided bottle<br/>+ the model's prediction| I[Label inbox<br/>not reviewed]
+    I --> R[Review: accept / correct]
+    R -->|corrections| H[(Hard examples)]
+    R --> T[Train candidate<br/>good bottles x5, hard examples x3]
+    H --> T
+    T --> V{Validate on the real camera<br/>+ shortcut check}
+    V -->|within limits| A[Approve -> ACTIVATE]
+    V -->|not good enough| L
+```
+
+1. **Live** page (engineer), mode *Classifier + YOLO*, tick **Auto-collect for labelling** and run bottles past
+   the camera. Each decided bottle saves **one** picture to the Label inbox with the model's guess.
+2. **Label** page -> *AI suggested - not reviewed*: accept or correct each one. Every time you correct the model,
+   that picture becomes a **hard example**.
+3. **Train**: good bottles and hard examples are shown to the model more often, so it learns what it got wrong.
+4. **Models** -> **Validate**: enter how it did on real bottles (at least 30 good and 30 defective), run the
+   background-shortcut check. It can only be activated if good bottles called defective <= 2 % and defective bottles
+   passed <= 1 %.
+
+Unsure bottles (a score just under the limit) are shown as **CHECK: Damaged bottle?**, never as GOOD.
+</details>
+
 <details>
 <summary><b>Why a good bottle can still be called defective (and what to do about it)</b></summary>
 
@@ -251,7 +278,7 @@ On the held-out test set the active classifier calls **10 of 19 good bottles def
 
 - **More good bottles**, photographed in the real enclosure (Live page -> *Capture frame*).
 - **One steady answer per bottle** instead of per-frame scores (done: `verdict.py`).
-- **Retraining** with those images, then validating on the real camera.
+- **Retraining** with those images (the loop above), then validating on the real camera.
 
 Undo the threshold change any time with `python calibrate_thresholds.py --restore`.
 </details>

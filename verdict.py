@@ -26,6 +26,10 @@ from collections import deque
 from dataclasses import dataclass, field
 
 EMPTY, CHECKING, GOOD, DEFECT, FAULT = "NO BOTTLE", "CHECKING", "GOOD", "DEFECT", "FAULT"
+# UNSURE: a defect score sat just below its threshold in most frames. Neither "GOOD" nor a named defect the model is
+# not sure of: the bottle is shown as CHECK and should be looked at (and rejected on a line: never a silent pass).
+UNSURE = "CHECK"
+UNSURE_MARK = "?"                    # a frame's defect list carries "?missing_cap" for "close to the threshold"
 
 DEFECT_NAMES = {
     "damaged_bottle": "Damaged bottle", "damaged_label": "Damaged label", "missing_cap": "Missing cap",
@@ -49,6 +53,9 @@ def headline(kind: str, defects=(), reason: str = "") -> str:
         return "DEFECT: " + (", ".join(names[:3]) + (f" +{len(names) - 3}" if len(names) > 3 else "") if names else "see details")
     if kind == CHECKING:
         return "CHECKING..."
+    if kind == UNSURE:
+        names = [pretty(d) + "?" for d in defects]
+        return "CHECK: " + (", ".join(names[:3]) if names else "unsure")
     if kind == FAULT:
         return "FAULT" + (f": {reason}" if reason else "")
     return "NO BOTTLE"
@@ -67,6 +74,7 @@ class Verdict:
     frames: int = 0                  # valid frames this verdict is based on
     since: float = 0.0               # monotonic time the verdict was reached
     latched: bool = False
+    bottle: int = 0                  # counts latched bottles (one per bottle): lets a consumer act once per bottle
 
     @property
     def text(self) -> str:
@@ -99,6 +107,7 @@ class VerdictTracker:
             self._absent = 0
             self._invalid = 0
             self._roll: deque = deque(maxlen=self.cfg.window)
+            self._bottle = 0
             self._v = Verdict(since=self.clock())
 
     def current(self) -> Verdict:
@@ -107,10 +116,12 @@ class VerdictTracker:
 
     def _set(self, kind, defects=(), reason="", frames=0, latched=False):
         v = self._v
+        if latched and not v.latched:
+            self._bottle += 1                                     # a new bottle has been decided
         if (v.kind, v.defects, v.reason, v.latched) != (kind, tuple(defects), reason, latched):
-            self._v = Verdict(kind, tuple(defects), reason, frames, self.clock(), latched)
+            self._v = Verdict(kind, tuple(defects), reason, frames, self.clock(), latched, self._bottle)
         else:
-            self._v = Verdict(kind, tuple(defects), reason, frames, v.since, latched)
+            self._v = Verdict(kind, tuple(defects), reason, frames, v.since, latched, self._bottle)
 
     def update(self, valid: bool, defects=(), present: bool | None = None, fault: str = "") -> Verdict:
         """valid: this frame was scored by a healthy model (never True for a failed / stale score).
@@ -132,8 +143,8 @@ class VerdictTracker:
                 if len(self._roll) < min(c.min_frames, c.window):
                     self._set(CHECKING, frames=len(self._roll))
                 else:
-                    names = self._vote(list(self._roll))
-                    self._set(DEFECT if names else GOOD, names, frames=len(self._roll))
+                    kind, names = self._decide(list(self._roll))
+                    self._set(kind, names, frames=len(self._roll))
                 return self._v
             if not present:
                 self._absent += 1
@@ -154,12 +165,23 @@ class VerdictTracker:
             if len(self._frames) < c.min_frames:
                 self._set(CHECKING, frames=len(self._frames))
                 return self._v
-            names = self._vote(self._frames)
-            self._set(DEFECT if names else GOOD, names, frames=len(self._frames), latched=True)
+            kind, names = self._decide(self._frames)
+            self._set(kind, names, frames=len(self._frames), latched=True)
             return self._v
 
-    def _vote(self, frames: list) -> tuple:
+    def _decide(self, frames: list) -> tuple:
+        """(kind, names): DEFECT if a defect is in >= vote of the frames; else CHECK if a defect was at or near its
+        threshold (sure or unsure) in >= vote of them; else GOOD."""
         n = len(frames)
+        sure = [{x for x in f if not x.startswith(UNSURE_MARK)} for f in frames]
+        near = [{x.lstrip(UNSURE_MARK) for x in f} for f in frames]
+        names = self._vote(sure, n)
+        if names:
+            return DEFECT, names
+        unsure = self._vote(near, n)
+        return (UNSURE, unsure) if unsure else (GOOD, ())
+
+    def _vote(self, frames: list, n: int) -> tuple:
         allnames = sorted({x for f in frames for x in f})
         return tuple(x for x in allnames if sum(x in f for f in frames) / n >= self.cfg.vote)
 
@@ -169,7 +191,7 @@ def combine(verdicts: list) -> Verdict:
     camera sees is still a defect; any camera that cannot vouch makes the answer FAULT; all must say GOOD)."""
     if not verdicts:
         return Verdict(FAULT, reason="no camera")
-    for k in (FAULT, DEFECT):
+    for k in (FAULT, DEFECT, UNSURE):
         hit = [v for v in verdicts if v.kind == k]
         if hit:
             names = tuple(sorted({d for v in hit for d in v.defects}))
@@ -232,13 +254,35 @@ def demo():
     assert combine([g, g]).kind == GOOD and combine([g, dfx]).kind == DEFECT and combine([g, ck]).kind == CHECKING
     assert combine([e, e]).kind == EMPTY and combine([g, Verdict(FAULT, reason="x"), dfx]).kind == FAULT
     assert combine([]).kind == FAULT
+    # one bottle number per latched bottle (Auto-collect saves exactly one frame per bottle)
+    tr5 = T()
+    for _ in range(10):
+        v1 = tr5.update(True, [], present=True)
+    assert v1.latched and v1.bottle == 1
+    for _ in range(8):
+        tr5.update(True, [], present=False)
+    for _ in range(10):
+        v2 = tr5.update(True, [], present=True)
+    assert v2.bottle == 2 and tr5.update(True, [], present=True).bottle == 2
+    # unsure: a score just under the threshold in most frames -> CHECK, never GOOD and never a named DEFECT
+    tr6 = T()
+    for _ in range(10):
+        v = tr6.update(True, ["?damaged_bottle"], present=True)
+    assert v.kind == UNSURE and v.defects == ("damaged_bottle",) and v.text == "CHECK: Damaged bottle?", (v, v.text)
+    tr7 = T()                                       # sure in some frames, unsure in the rest: still not a confident DEFECT
+    for i in range(10):
+        v = tr7.update(True, ["missing_cap"] if i % 3 == 0 else ["?missing_cap"], present=True)
+    assert v.kind == UNSURE, v
+    assert combine([Verdict(GOOD), Verdict(UNSURE, ("tilt_cap",))]).kind == UNSURE
+    assert combine([Verdict(UNSURE, ("tilt_cap",)), Verdict(DEFECT, ("missing_cap",))]).kind == DEFECT
     # words
     assert pretty("missing_cap") == "Missing cap" and pretty("new_thing") == "New thing"
     assert headline(DEFECT, ["missing_cap", "tilt_cap", "water_level", "skewed_label"]) == \
         "DEFECT: Missing cap, Tilted cap, Wrong water level +1"
     assert shown_result("PASS") == "GOOD" and shown_result("REJECT") == "DEFECT" and shown_result(None) == "--"
     print("ok  verdict: one stable GOOD / DEFECT per bottle (settle, vote, latch until the bottle leaves), "
-          "noise on an empty belt ignored, FAULT never GOOD, rolling mode without a detector, camera combine, plain words")
+          "noise on an empty belt ignored, FAULT never GOOD, CHECK for unsure bottles, one number per bottle, "
+          "rolling mode without a detector, camera combine, plain words")
 
 
 if __name__ == "__main__":
