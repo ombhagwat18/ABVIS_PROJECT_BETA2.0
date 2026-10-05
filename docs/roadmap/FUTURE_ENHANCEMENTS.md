@@ -1,66 +1,47 @@
 # Future Enhancements
 
-Everything here is **deliberately deferred** until the physical inspection machine is proven (one bottle sensed,
-inspected, decided, communicated to the PLC and correctly rejected -- see [CURRENT_SCOPE.md](CURRENT_SCOPE.md)).
+*Status 2026-10-06.* Items that are still **not built**, deferred until the physical machine is proven (one bottle sensed,
+inspected, decided, communicated to the PLC and correctly rejected -- see [CURRENT_SCOPE](CURRENT_SCOPE.md)). They are
+postponed, not abandoned.
 
-These items are **not abandoned**. They are the path from "one working machine" to an industrial platform. They
-are postponed because building them first would mean polishing software around a machine that does not yet
-work, and because several of them (history, reports, recipes) are only meaningful once real inspections exist.
+## Already built (no longer future)
 
-**None of this is implemented.** Where a small foundation exists it is named.
+SQLite production record, evidence pictures, History / Database pages and CSV / report export, shift reports, coded
+alarms, event logs, model registry with gated activation and rollback, recipe editor, auto-annotation proposals with
+active-learning queues, operator / engineer modes, engineer PIN. See [FEATURE_STATUS](FEATURE_STATUS.md).
 
-## Database and persistence
+## Still future
 
-- **SQLite / production persistence** for inspection records, counters and history.
-  Foundation: in-memory `InspectionRecord` / `TraceStore` with `to_dict()`/`from_dict()` ready for storage.
-  See [TRACEABILITY_PLAN.md](TRACEABILITY_PLAN.md).
+### Security
+- Login, named users, **roles and permissions** (today: an engineer PIN, a convenience lock only).
+- Audit trail of configuration changes (moving a threshold or editing a recipe rewrites a file with no change log
+  beyond the deployment log and the saved previous thresholds).
+- Recipe / configuration protection, change control.
 
-## User interface
+### Vision
+- **OCR** (batch / date codes) and **barcode / QR**.
+- **Anomaly detection** (defects not seen in training; useful for missing / rare defects).
+- **Traditional vision tools** (thresholding, edge, blob, pattern matching, colour) and **geometry measurement**
+  (fill level, cap / label position and skew as measured values).
+- Segmentation models (annotation and export code exist; no data, no model).
 
-- **Advanced industrial dashboard**: production counts, live reject statistics, alarm banner, operator workflow.
-  (The current Tk GUI is a development and labelling tool.)
+### AI workflow
+- A **retraining loop** from production data (evidence pictures already collected).
+- Foundation-model-assisted labelling.
+- Dataset versioning beyond the hashes in the provenance files.
 
-## Security
+### Platform
+- **Multi-job / product wizard** with one versioned object per product (classes, cameras, lighting, ROI, model, rules,
+  timing, PLC settings).
+- **Remote monitoring**, cloud or SaaS features.
+- Maintenance schedules, analytics beyond the current day / shift report.
 
-- Login, users, **roles and permissions**.
-- Configuration and recipe protection; audit trail of changes (today, moving a threshold slider rewrites
-  `config.json` immediately with no record).
-- Model deployment approval.
-
-## Vision
-
-- **OCR** (e.g. batch/date codes) and **barcode / QR**.
-- **Anomaly detection** (defects not seen in training).
-- **Traditional vision tools**: thresholding, edge, blob analysis, contours, pattern matching, color analysis.
-- **Geometry measurement** (fill level, cap/label position and skew as measured values, not only classified).
-
-## AI workflow
-
-- **Auto annotation** and **AI-assisted annotation**.
-- **Active learning** and a **human review queue** in the main GUI (a standalone reviewer exists in
-  `stage2_dataset/review_app.py`).
-- A **retraining loop** from production data.
-- Segmentation models (annotation and export code exist; no data or model).
-
-## Platform
-
-- **Multiple jobs / recipe management**: product, classes, cameras, lighting, ROI/calibration, model, rules,
-  timing, PLC and reject configuration as one versioned object. (Today: one project.)
-- **Model registry**, **dataset versioning**, **deployment approval and rollback**. (Today: timestamped
-  checkpoints with metrics, GUI rollback, hashes recorded in `models/stage2_yolo/MODEL_PROVENANCE.json`.)
-- **Remote monitoring**; cloud or SaaS features.
-
-## Production
-
-- Production history, **reports**, **alarms** management, maintenance information, **analytics**.
-
-## Hardware-side items that follow the first working cycle
-
-- Hardware camera trigger, cross-camera frame synchronization, lighting control, camera health with automatic
-  reconnect, fault latching and reset workflow.
+### Machine side (needs ladder AND software changes together)
+- **PLC protocol v2**: several bottles in flight, no trigger masking during a reject
+  ([PLC_LADDER_REQUIREMENTS](../hardware/PLC_LADDER_REQUIREMENTS.md) section 3.4).
+- **PC <-> PLC heartbeat watchdog** and PLC-side answer timeout.
+- **Encoder** (the `PositionSource` abstraction is ready; `EncoderPositionSource` refuses to exist until one is installed).
+- Hardware camera trigger, cross-camera frame synchronisation, lighting control.
 
 ## Why this order
-
-The same rule applies to every item: *prove the minimum machine first*. Each deferred feature is listed in
-[FEATURE_STATUS.md](FEATURE_STATUS.md) with status `DEFERRED` or `FUTURE`, and Phase 9 of
-[PROGRESS_PLAN.md](PROGRESS_PLAN.md) is where they re-enter.
+Prove the minimum machine first. Each item is listed in [FEATURE_STATUS](FEATURE_STATUS.md) with status `DEFERRED` or `FUTURE`.
