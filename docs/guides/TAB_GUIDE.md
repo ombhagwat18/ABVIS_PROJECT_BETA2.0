@@ -5,12 +5,20 @@ group; ENGINEER mode (header button) shows everything. This answers "what does i
 Sources: the `*Tab` classes in `gui.py`, `hmi.py`, `annotation_studio.py`, and `docs/roadmap/FEATURE_STATUS.md`.
 Operator and commissioning workflow: [PRODUCTION_HMI_AND_COMMISSIONING.md](PRODUCTION_HMI_AND_COMMISSIONING.md).
 
+Every page scrolls up/down and left/right when its content is bigger than the window (scroll bars appear only when
+needed; Shift + wheel scrolls sideways), so a full panel can never hide a button.
+
+**What an operator sees on a camera:** one word per bottle - GOOD, DEFECT: <defect name>, CHECKING, NO BOTTLE or
+FAULT - in a colour, held steady until the bottle leaves. Component boxes and score bars are an engineer's view
+(Live page -> "Engineer details").
+
 ## PRODUCTION -- run the line (the operator's pages)
 
 | Page | What it does |
 |---|---|
 | **Production** | The operator HMI: one machine state (READY / RUNNING / FAULT ...), start checklist, both cameras live, current bottle, counters, recent bottles, coded alarms; START INSPECTION / STOP / RESET FAULT; CAMERA TEST and TEST INSPECTION (no PLC). Engineer row: AI task, line cameras, timing, speed calibration, line layout / camera stations, HALT latch, simulator feed |
 | **History** | Persistent record (`production.db`): bottles per day or per shift with result, defects, PLC outcome, evidence; counts, yield, defect distribution, bottles per hour, alarms; CSV export |
+| **Database** | The production database as tables (bottles / alarms / runs) with range, result and text filters, a plain-words explanation of every column, and export: CSV for Excel or a printable production report. See `DATABASE.md` |
 | **Health** | Computer, PLC, cameras, models, storage and alarms as HEALTHY / WARNING / FAULT; searchable event logs (channel / level / text) |
 
 ## DATA -- build and clean the dataset (offline, any PC)

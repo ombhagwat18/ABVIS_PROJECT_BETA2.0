@@ -85,6 +85,12 @@ python -m plc.commissioning --selftest
 python -m plc.handshake_test --fake
 python -m plc.ladder_check --selftest  # ISPSoft .isp decoder + 13 ladder requirement checks
 python -m plc.ladder_check             # READ-ONLY report on plc file/final_year/final_year.isp vs settings.json
+python -m plc.ladder_sim               # runs that ladder in a scan simulator vs the software contract (S1-S14)
+python -m plc.ladder_sim --selftest
+python selfcheck.py [--full]           # every module self-test in its own process (the GUI "Simulation check" button)
+python verdict.py                      # stable one-verdict-per-bottle tracker
+python production_export.py            # database rows in words, CSV, printable report
+python calibrate_thresholds.py [--apply|--restore]   # thresholds from validation, checked on test
 ```
 
 There is no single-test runner: each file runs all its checks; to run one, import the module
@@ -434,7 +440,11 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   reject cycle, T0/T1 == settings, M10/M11 operator bits, E-stop input, Y0 interlock, trigger masking, answer
   timeout, heartbeat). `docs/hardware/PLC_LADDER_REQUIREMENTS.md` explains each and gives the rungs to add.
   As of 2026-10-05 the file (and every backup since 2026-10-03 20:24) is the 7-network ladder; R8-R13 are
-  absent / mismatched. Read-only: never write the ladder.
+  absent / mismatched. Read-only: never write the ladder. `plc/ladder_sim.py` interprets the decoded networks
+  in a virtual-time scan simulator (SET/RST/OUT/TMR/CNT, rising-edge contacts) and runs scenarios S1-S14 against
+  the software contract; it does NOT read series/parallel wiring (several contacts per network = AND, flagged,
+  OR-dependent scenarios SKIP). `hmi.SimulationCheckDialog` (Production engineer row + Machine page) runs it and
+  `selfcheck.run_all` (code check) side by side: ladder FAIL = ladder / settings wrong, self-test FAIL = code wrong.
 - **`machine_cycle.py`** — `Inspector` + `MachineCycle`: one deadline-driven thread. Every
   bottle ends with exactly one final result. FAULT is physically rejected by default
   (`fault_action: "REJECT"`). A REJECT that would miss its deadline is not fired late (answered
@@ -484,6 +494,27 @@ X0 photo-eye -> ladder SET M2 -> PLCService Trigger
   K15 / K5 contract) are in `docs/roadmap/PLC_COMMUNICATION.md` §0.
   Read that before touching anything PLC-related, and keep its evidence labels (VERIFIED /
   USER-STATED / INFERRED; FAKE / SIMULATOR / PHYSICAL) honest.
+
+**One verdict, in words (`verdict.py`).** Operators never see per-frame scores. `Camera._feed_tracker` feeds a
+`VerdictTracker` once per scored frame (classifier hits + the recipe's missing-part findings from the detector,
+presence = the recipe anchor box); the tracker ignores the first frames, needs `min_frames` valid frames, keeps a
+defect only if it is in >= `vote` of them, then LATCHES GOOD / DEFECT until the bottle has been absent
+`absent_frames` frames. No detector => presence unknown => rolling window, no latch. Invalid frames x `fault_frames`
+=> FAULT, never GOOD. `Camera.overlay_frame` draws only banner + coloured border unless `Camera.details`
+(Live "Engineer details") is on. Display words: PASS -> GOOD, REJECT -> DEFECT (`verdict.shown_result`), defect
+names via `verdict.pretty`; the PLC / DB / code keep PASS / REJECT / FAULT. The line's decision is still
+`decision.py`; the tracker only DISPLAYS.
+
+**Thresholds** come from `calibrate_thresholds.py` (validation F1, middle of the perfect band, floor 0.30, recall
+guard; test only reported). `--apply` keeps the old ones in `config.json` `thresholds_before_calibration`;
+`--restore` undoes it. 2026-10-05 on 20260919-164511: test false alarms 28 -> 22, 1/219 defective passed, 10/19 good
+test bottles still called defective: the model is limited by only 72 good training images, not by the thresholds.
+
+**Pages scroll.** Every `NavShell` page is a `ScrollHost` (canvas + both scroll bars, min size per page in
+`NavShell.MIN_SIZE`); `App._page_wheel` scrolls the page only when the nearest scrollable widget IS the page.
+New pages: build into `app.tabs.tab(name)` as before.
+
+**Database page** (`hmi.DatabaseTab`, `production_export.py`): see `docs/guides/DATABASE.md`.
 
 **Logs (`applog.py`)** — `logs/<channel>.log` (app, camera, ai, plc, machine, alarm, production), rotating,
 one line per EVENT (never per frame). Hooks: `App._on_alarm` (alarm), `PLCService` listener (plc),
