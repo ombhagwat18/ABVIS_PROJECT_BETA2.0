@@ -22,7 +22,12 @@ A bottle-inspection system for a QC conveyor (first target: 250 ml bottles), in 
   saved ladder still has T0 K150 / T1 K50 (15 s / 5 s) -- `plc_t0_s` must equal what is actually in the PLC.
   Net 1 is `X1 -> SET Y1` (latched), so the conveyor runs until X2; software cannot write Y1 by design.
 
-Git repo on `main`; `.gitignore` is whitelist-style (see below).
+Git repo on `main` (work goes on a branch + pull request); `.gitignore` is whitelist-style (see below).
+
+**Where to read first:** `README.md` (overview, status), `docs/TEAM_HANDBOOK.md` (everything about the system for a
+new team member or an AI assistant: stack, features, settings, operations), `docs/PROJECT_BRIEF_FOR_REVIEW.md` (status
++ review questions), `docs/roadmap/FEATURE_STATUS.md` (per-feature truth). When a feature's status changes, update
+FEATURE_STATUS first; the README, brief and handbook quote it.
 
 `legacy/web_dashboard/` (`app.py` FastAPI + `index.html`) are an earlier browser-based version of the app: dead
 code (nothing imports them, `run.bat` never launches them, and `app.py`'s write endpoints
@@ -49,8 +54,10 @@ labelled Stage 1 data is `om_bottle`; `bottle_detection` is a near-empty detecti
 
 ## Tests
 
-There is no separate test suite — every module is its own self-check, run
-directly:
+**One command:** `python selfcheck.py` (quick set, ~2 min, no window) or `python selfcheck.py --full` (adds dataset,
+training maths, inference, detector and the whole GUI; 25 checks). Each check runs in its own process; the GUI's
+engineer "Simulation check" button runs the same list. There is no separate test suite — every module is its own
+self-check, run directly:
 
 ```bash
 python dataset.py            # demo() + project_demo(): CSV/crop/scene-split correctness
@@ -93,6 +100,13 @@ python production_export.py            # database rows in words, CSV, printable 
 python calibrate_thresholds.py [--apply|--restore]   # thresholds from validation, checked on test
 python model_checks.py                 # activation gates + background-shortcut check
 ```
+
+Dev-environment gotchas that cost time before: (1) other jobs on this PC (e.g. a YOLO training in another project)
+can exhaust RAM / the Windows paging file ("The paging file is too small", Claude Code kills background shells) and
+hang CUDA work: run checks with `CUDA_VISIBLE_DEVICES=` (CPU) when the GPU is busy and check free RAM first;
+(2) in Git Bash do not pass Python containing backticks or triple quotes through a heredoc: write a script file
+and run it; (3) tests must never write into the real `projects/*/production`, `logs/` or `settings.json`
+(the GUI / machine_cycle self-tests redirect to temp folders: keep it that way).
 
 There is no single-test runner: each file runs all its checks; to run one, import the module
 and call that check function. `python -m plc.handshake_test --real` and
@@ -545,14 +559,14 @@ sit on the dark `VIDEO_BG`; text on a state-coloured button is `ACC_T`. `gui.py`
 colours elsewhere. `theme.apply_ctk()` also rewrites CustomTkinter's stock widget colours.
 
 **Operator / engineer:** `App.ui_mode` (`settings.json` `ui_mode`, header button, optional `engineer_pin`).
-OPERATOR shows only `App.OPERATOR_PAGES` (Production, History, Health) via `NavShell.show_only`; pages are
+OPERATOR shows only `App.OPERATOR_PAGES` (Production, History, Database, Health) via `NavShell.show_only`; pages are
 never destroyed. The Production page's ENGINEER row (`ProductionTab.eng`: task, cameras, timing,
 calibration / layout dialogs, HALT latch, simulator feed) is hidden for the operator. New production screens
 (`HistoryTab`, `HealthTab`, `ModelsTab`, the two line dialogs) live in `hmi.py`, same `(app, parent)` +
 `refresh()` contract. The GUI self-test sets `app.production_dir` to a temp folder: never let a test write
 into a real project's production record.
 
-Single `App(ctk.CTk)` with a `NavShell` (left rail grouped DATA / MODEL / RUNTIME / SYSTEM, same
+Single `App(ctk.CTk)` with a `NavShell` (left rail grouped PRODUCTION / DATA / MODEL / ENGINEERING / SYSTEM, same
 `add/tab/get/set` API as the `CTkTabview` it replaced) and a status bar of PLC / LINE / CAMERAS /
 MODEL lamps (`App.update_lamps`, cached state only, ~2 Hz from `pump`). A label edit calls
 `App.data_changed()` (re-read labels, mark Defects/Train/Data health stale, refreshed when shown)
@@ -565,7 +579,7 @@ widget costs ~4x as much to create/redraw. **Text size** (`settings.json` `font_
 at once and applied only at the next start (`App.restart`): rescaling a running window redraws
 every widget (20+ s, looked frozen), and with a scrollable page on screen it also recursed
 `CTkScrollbar.set` <-> `update_idletasks` (guarded in `theme._guard_scrollbar`). Don't call
-`ctk.set_widget_scaling` on a built window. `App.TABS` (14): **Production**, History, Health, Label,
+`ctk.set_widget_scaling` on a built window. `App.TABS` (15): **Production**, History, Database, Health, Label,
 Defects, Train, Analysis, Models, Live, Machine, Camera, Data health, Annotate, Settings (`all_tabs()` must
 list the tab objects in exactly this order; Settings stays last for the self-test). The rail groups them
 (`App.GROUPS`: PRODUCTION / DATA / MODEL / ENGINEERING / SYSTEM). In-file class order differs (MachineTab,
