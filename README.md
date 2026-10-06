@@ -31,7 +31,7 @@ talk to the PLC, and keep a production record.
 | **Commission the machine** (engineer) | [Commissioning order](docs/guides/PRODUCTION_HMI_AND_COMMISSIONING.md) - [PLC ladder requirements](docs/hardware/PLC_LADDER_REQUIREMENTS.md) |
 | **Train or improve the AI** | [Model lifecycle](#how-the-ai-gets-better-and-how-it-reaches-production) - [Auto-annotation](docs/guides/AUTO_ANNOTATION.md) |
 | **Read the production data** | [Database guide](docs/guides/DATABASE.md) |
-| **Hand the project to a reviewer / ChatGPT** | [PROJECT_BRIEF_FOR_REVIEW](docs/PROJECT_BRIEF_FOR_REVIEW.md) (one self-contained file) |
+| **Give the project to a teammate or ChatGPT** | [TEAM_HANDBOOK](docs/TEAM_HANDBOOK.md) (everything in one file) - [PROJECT_BRIEF_FOR_REVIEW](docs/PROJECT_BRIEF_FOR_REVIEW.md) (status + review questions) |
 | **Know what is done and what is not** | [Feature status](docs/roadmap/FEATURE_STATUS.md) - [Gap matrix](docs/audit/GAP_MATRIX_2026-10-05.md) |
 | **Work on the code** | [CLAUDE.md](CLAUDE.md) (every rule the code relies on) - [Repository map](#repository-map) |
 

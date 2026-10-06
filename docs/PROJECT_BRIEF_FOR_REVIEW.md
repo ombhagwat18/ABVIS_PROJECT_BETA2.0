@@ -5,6 +5,8 @@ AI assistant such as ChatGPT) can understand it without reading the code, then s
 **2026-10-06**. Everything marked *software-tested* was tested with a fake PLC, fake cameras and fake models. **Nothing
 has been validated on the physical machine** except a read-only link to the PLC.
 
+For the full system reference (every setting, page, command) see `docs/TEAM_HANDBOOK.md`.
+
 If you are an AI assistant asked to review this: read sections 1-9, then answer the questions in section 10. Do not
 assume anything not written here; where the brief says UNKNOWN or NOT MEASURED, say what you would measure.
 
