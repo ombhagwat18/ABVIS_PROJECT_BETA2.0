@@ -14,7 +14,7 @@ Built for **250 ml Bisleri water bottles** (missing cap, tilted cap, damaged or 
 water level). It is one Windows desktop application that does everything: label images, train the AI, run the line,
 talk to the PLC, and keep a production record.
 
-> **Honest status (2026-10-05).** The whole machine cycle exists in software and passes 24 self-tests using a *fake*
+> **Honest status (2026-10-06).** The whole machine cycle exists in software and passes 24 self-tests using a *fake*
 > PLC, *fake* cameras and *fake* models. The real PLC has only been connected **read-only**. **No bottle has yet been
 > inspected and rejected on the physical machine.** Missing-cap detection is **not reliable yet**, and the PLC
 > program still needs changes. Details: [What works](#what-works-and-what-does-not) - [Missing cap](#the-open-problem-missing-caps).
@@ -31,6 +31,7 @@ talk to the PLC, and keep a production record.
 | **Commission the machine** (engineer) | [Commissioning order](docs/guides/PRODUCTION_HMI_AND_COMMISSIONING.md) - [PLC ladder requirements](docs/hardware/PLC_LADDER_REQUIREMENTS.md) |
 | **Train or improve the AI** | [Model lifecycle](#how-the-ai-gets-better-and-how-it-reaches-production) - [Auto-annotation](docs/guides/AUTO_ANNOTATION.md) |
 | **Read the production data** | [Database guide](docs/guides/DATABASE.md) |
+| **Give the project to a teammate or ChatGPT** | [TEAM_HANDBOOK](docs/TEAM_HANDBOOK.md) (everything in one file) - [PROJECT_BRIEF_FOR_REVIEW](docs/PROJECT_BRIEF_FOR_REVIEW.md) (status + review questions) |
 | **Know what is done and what is not** | [Feature status](docs/roadmap/FEATURE_STATUS.md) - [Gap matrix](docs/audit/GAP_MATRIX_2026-10-05.md) |
 | **Work on the code** | [CLAUDE.md](CLAUDE.md) (every rule the code relies on) - [Repository map](#repository-map) |
 
@@ -137,7 +138,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
 pip install ultralytics==8.1.0 pyserial comtypes psutil
 
-python calibrate.py        # first run only: measures where the bottle is in the picture
+python -m vision.calibrate        # first run only: measures where the bottle is in the picture
 python gui.py              # the application   (run.bat does all of the above on Windows)
 ```
 
@@ -241,18 +242,45 @@ A *recipe* (`config.json` -> `inspection`, editable in the app) says what a comp
 detector and a recipe, not new code.
 </details>
 
+<details open>
+<summary><b>The improvement loop: collect, review, retrain (how the model gets accurate)</b></summary>
+
+```mermaid
+flowchart LR
+    L[Live: Auto-collect ON] -->|one frame per decided bottle<br/>+ the model's prediction| I[Label inbox<br/>not reviewed]
+    I --> R[Review: accept / correct]
+    R -->|corrections| H[(Hard examples)]
+    R --> T[Train candidate<br/>good bottles x5, hard examples x3]
+    H --> T
+    T --> V{Validate on the real camera<br/>+ shortcut check}
+    V -->|within limits| A[Approve -> ACTIVATE]
+    V -->|not good enough| L
+```
+
+1. **Live** page (engineer), mode *Classifier + YOLO*, tick **Auto-collect for labelling** and run bottles past
+   the camera. Each decided bottle saves **one** picture to the Label inbox with the model's guess.
+2. **Label** page -> *AI suggested - not reviewed*: accept or correct each one. Every time you correct the model,
+   that picture becomes a **hard example**.
+3. **Train**: good bottles and hard examples are shown to the model more often, so it learns what it got wrong.
+4. **Models** -> **Validate**: enter how it did on real bottles (at least 30 good and 30 defective), run the
+   background-shortcut check. It can only be activated if good bottles called defective <= 2 % and defective bottles
+   passed <= 1 %.
+
+Unsure bottles (a score just under the limit) are shown as **CHECK: Damaged bottle?**, never as GOOD.
+</details>
+
 <details>
 <summary><b>Why a good bottle can still be called defective (and what to do about it)</b></summary>
 
 On the held-out test set the active classifier calls **10 of 19 good bottles defective**, because it learned from only
-72 good bottles. Choosing better thresholds (`python calibrate_thresholds.py`) removes some false alarms but lets 1 of
+72 good bottles. Choosing better thresholds (`python -m vision.calibrate_thresholds`) removes some false alarms but lets 1 of
 219 defective bottles through, so it cannot fix the problem. What helps:
 
 - **More good bottles**, photographed in the real enclosure (Live page -> *Capture frame*).
 - **One steady answer per bottle** instead of per-frame scores (done: `verdict.py`).
-- **Retraining** with those images, then validating on the real camera.
+- **Retraining** with those images (the loop above), then validating on the real camera.
 
-Undo the threshold change any time with `python calibrate_thresholds.py --restore`.
+Undo the threshold change any time with `python -m vision.calibrate_thresholds --restore`.
 </details>
 
 <details>
@@ -401,11 +429,11 @@ python -m plc.ladder_sim       # your real ladder vs the software contract
 <summary><b>Train, evaluate, activate</b></summary>
 
 ```bash
-python train.py --epochs 25 --arch efficientnet_b0                  # a CANDIDATE; never activates
-python model_bench.py cls-test <stamp>                              # held-out test, once
-python model_bench.py yolo --model yolov8n.pt --data v3 --workers 0 # detector candidate (v1 / v2 / v3 data)
-python model_bench.py det-defects --weights <pt> --tag <t> --split-version v3   # missing-cap score via the real rule
-python calibrate_thresholds.py [--apply | --restore]                # thresholds from validation
+python -m vision.train --epochs 25 --arch efficientnet_b0                  # a CANDIDATE; never activates
+python -m registry.model_bench cls-test <stamp>                              # held-out test, once
+python -m registry.model_bench yolo --model yolov8n.pt --data v3 --workers 0 # detector candidate (v1 / v2 / v3 data)
+python -m registry.model_bench det-defects --weights <pt> --tag <t> --split-version v3   # missing-cap score via the real rule
+python -m vision.calibrate_thresholds [--apply | --restore]                # thresholds from validation
 ```
 
 Then **Models** page: Validate (held-out test + a written real-camera check) -> Approve -> ACTIVATE.

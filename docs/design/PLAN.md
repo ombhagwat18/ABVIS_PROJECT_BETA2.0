@@ -19,14 +19,14 @@ By hand:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
 
-python calibrate.py       # measure the crop region -> projects/<slug>/config.json
+python -m vision.calibrate       # measure the crop region -> projects/<slug>/config.json
 python gui.py             # the desktop dashboard
 ```
 
-`python train.py --epochs 25` trains from the terminal instead of the Train button.
-Every module self-checks: `python dataset.py`, `python train.py --demo`,
-`python infer.py`, `python calibrate.py --demo`, `python charts.py`,
-`python bench.py`, `python migrate.py --demo`, `python gui.py --selftest`.
+`python -m vision.train --epochs 25` trains from the terminal instead of the Train button.
+Every module self-checks: `python -m vision.dataset`, `python -m vision.train --demo`,
+`python -m vision.infer`, `python -m vision.calibrate --demo`, `python -m ui.charts`,
+`python -m vision.bench`, `python -m tools.migrate --demo`, `python gui.py --selftest`.
 
 | File | Does |
 |---|---|
@@ -82,7 +82,7 @@ Gitignored: everything under `projects/<slug>/` except the small text files, plu
 `images/`, so a fresh clone needs the images restored to the layout those paths
 already name.
 
-Then `python calibrate.py` to write `config.json` — the ROI is measured on your
+Then `python -m vision.calibrate` to write `config.json` — the ROI is measured on your
 camera and is not portable — and one train run to produce `models/`. Until both
 exist, only the **Label** and **Defect types** tabs do anything useful.
 
@@ -405,5 +405,5 @@ not a bigger model, not more epochs. 1145 images of 112 bottles is 112 bottles.
 4. **Does the line need a reject signal out** — GPIO, PLC, serial — or is the screen
    the whole output? Right now the only outputs are the screen and `data/rejects.csv`.
 5. **Will the camera's framing match the training ROI?** The ROI is measured from
-   these files. A different camera or a moved mount needs `python calibrate.py`
+   these files. A different camera or a moved mount needs `python -m vision.calibrate`
    re-run and the model retrained — the ROI is baked into each checkpoint.

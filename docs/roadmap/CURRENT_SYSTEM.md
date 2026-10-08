@@ -17,7 +17,7 @@ What actually exists in this repository today -- nothing more. For what is *plan
 > contact so far is a first read-only serial link to the real Delta PLC (2026-10-04, USER-STATED; see CLAUDE.md).
 > Every other "tested" below means a software self-test with fakes.
 >
-> Last reconciled against the code: **2026-10-05** (see `docs/audit/GAP_MATRIX_2026-10-05.md`). Older statements
+> Last reconciled against the code: **2026-10-06** (see `docs/audit/GAP_MATRIX_2026-10-05.md`). Older statements
 > that said there is no per-bottle logic, no trigger/timing model, or that the PLC layer is not integrated
 > were stale and have been corrected.
 
@@ -72,7 +72,7 @@ The default (`Classifier`) is exactly the previous behavior.
 
 | Component | Status | Notes |
 |---|---|---|
-| Desktop GUI (`gui.py` + `hmi.py`, 14 pages) | IMPLEMENTED, TESTED SOFTWARE ONLY | Light industrial theme (dark optional), OPERATOR mode (Production / History / Health) and ENGINEER mode (all pages). `python gui.py --selftest` builds every page, runs the line against a fake PLC, writes its production record to a temp folder |
+| Desktop GUI (`gui.py` + `hmi.py`, 15 pages) | IMPLEMENTED, TESTED SOFTWARE ONLY | Light industrial theme (dark optional), OPERATOR mode (Production / History / Database / Health) and ENGINEER mode (all pages); every page scrolls both ways; screens say GOOD / DEFECT: <name>. `python gui.py --selftest` builds every page, runs the line against a fake PLC, writes its production record to a temp folder |
 | Multi-project structure (`projects/<slug>/`) | IMPLEMENTED | `dataset.py` rebinds module-level paths; labels in `labels.csv`, config in `config.json` |
 | Stage 1 dataset (`projects/om_bottle`) | IMPLEMENTED | 1,145 images (2 new skewed images imported 2026-10-05), all reviewed, 8 defect columns. Scene-based train/val/test split. **`missing_cap` = 0 positives**: the 12 user missing-cap images were imported, trained on, shown to teach a background shortcut, and removed again (undo batch `20261005-172406-105`) |
 | Stage 1 classifier training (`train.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY | 12 checkpoints on disk (`20261005-171833` REJECTED: white-background shortcut, see `shortcut_check.json`) (6 with held-out test results), active: `efficientnet_b0` `20260919-164511`. **Training no longer activates the new checkpoint** (`activate=False` default); it becomes a CANDIDATE |
@@ -186,6 +186,10 @@ moves scene 22 into train (`stage2_dataset/split_v3.py`). The v3 YOLOv8n candida
 | Shift reports (History) | IMPLEMENTED, TESTED SOFTWARE ONLY |
 | Camera auto-reconnect while running | IMPLEMENTED, TESTED SOFTWARE ONLY (fake camera) |
 | Ladder requirement check (`plc/ladder_check.py`) | IMPLEMENTED, run on the real project file (VERIFIED-FILE) |
+| Ladder simulation (`plc/ladder_sim.py`) + `selfcheck.py` + engineer "Simulation check" | IMPLEMENTED: the real .isp is run in a scan simulator against 14 scenarios; all self-tests in one command (24 pass) |
+| Stable verdict (`verdict.py`) | IMPLEMENTED, TESTED SOFTWARE ONLY: one GOOD / DEFECT per bottle, latched; operator overlay without boxes / bars |
+| Database page + export (`production_export.py`) | IMPLEMENTED: tables in plain words, CSV for Excel, printable report |
+| Threshold calibration (`calibrate_thresholds.py`) | IMPLEMENTED and applied to `om_bottle` (2026-10-05): test false alarms 28 -> 22, 1 / 219 defective passed, 10 / 19 good test bottles still called defective |
 
 ## 4. Known limitations (summary)
 

@@ -1,54 +1,46 @@
 # Current Scope
 
+*Status 2026-10-06. Companion: [FEATURE_STATUS](FEATURE_STATUS.md) (per-feature truth), [PROGRESS_PLAN](PROGRESS_PLAN.md).*
+
 **Goal:** get the core inspection machine working reliably. One bottle, end to end, on the real conveyor.
 
 ```
-One bottle enters
-   -> Sensor detects the bottle
-   -> Camera captures / inspects
-   -> AI processes
-   -> Decision generated
-   -> PLC receives the result
-   -> Bottle reaches the reject location
-   -> PLC activates the reject
-   -> Bottle is accepted / rejected correctly
+One bottle enters -> photo-eye -> cameras -> AI -> decision -> PLC -> bottle reaches the cylinder -> PLC rejects it
 ```
 
 **Principle:** AI decides *what* the object/defect is. The PLC decides *how* the physical machine responds.
 
-## In scope now (dependency order -- see [PROGRESS_PLAN.md](PROGRESS_PLAN.md))
+## Where each step stands
 
-| # | Item | State today |
-|---|---|---|
-| 1 | YOLO runtime integration | **CURRENT DEVELOPMENT.** `detect.py` + Camera hook + Live-tab selector exist (opt-in, observational); software-tested; not validated on live bottle frames |
-| 2 | Camera acquisition | PARTIAL. Works on driver defaults; no exposure/gain/focus, reconnect or trigger |
-| 3 | Bottle / component detection | PARTIAL. YOLOv8n finds bottle/cap/label boxes (opt-in in the Live tab); components only, no defect verdict |
-| 4 | Inspection window | Not started |
-| 5 | Per-bottle association | Not started (a sensor-triggered single capture may replace full tracking -- a design decision for Phase 2) |
-| 6 | Multi-camera fusion | PARTIAL. Rule exists (FAULT > REJECT > PASS); no frame alignment across cameras |
-| 7 | Decision engine | PARTIAL. Per-frame thresholds only; needs rules for detections, fault latching |
-| 8 | PASS / REJECT / FAULT | Foundation done (software-tested) |
-| 9 | Inspection trace | Foundation done (in-memory) |
-| 10 | Timing model | Not started; needs measured physical values |
-| 11 | Mock PLC | Not started |
-| 12 | Real PLC communication | Not started; addresses unverified |
-| 13 | Conveyor / sensor synchronization | Not started; hardware required |
-| 14 | Reject timing | Not started; hardware required |
-| 15 | Physical testing | Not started |
+| # | Step | Software | On the machine |
+|---|---|---|---|
+| 1 | Photo-eye trigger -> inspection id | DONE (self-tested, fake ladder) | not run |
+| 2 | Camera acquisition, camera lock, reconnect | DONE (auto-reconnect while running) | EMEETs on one USB 2.0 hub: one 1080p stream; enclosure not commissioned |
+| 3 | Frames after the trigger, per-camera window | DONE (`tracking.py`, staggered stations) | speed / distances not measured |
+| 4 | AI: classifier + YOLO detector | DONE offline; detector runtime in the line | not validated on EMEET frames; missing cap unreliable |
+| 5 | Decision engine (recipe, vote, fusion) | DONE | thresholds are development values |
+| 6 | One steady verdict for the operator | DONE (`verdict.py`) | - |
+| 7 | PLC link + commands | DONE (simulator); real PLC read-only | write handshake and reject cycle not run |
+| 8 | Reject timing (time-based, no encoder) | DONE (deadline FIFO, calibration wizard) | PLC T0/T1 = 15 s / 5 s must be fixed |
+| 9 | Safety: halt latch, E-stop input, fault latch | DONE in software | PLC has no E-stop input / interlock / timeout |
+| 10 | Record: SQLite, evidence, alarms, logs, export | DONE | - |
+| 11 | Physical testing | - | **NOT STARTED** |
 
-## Explicitly out of scope until the machine cycle works
+## In scope next (physical commissioning)
 
-SQLite / any database, production dashboard, user login / roles / permissions, OCR, barcode/QR, auto or
-AI-assisted annotation, active learning, anomaly detection, reports, analytics, alarms management,
-cloud / SaaS, multi-job platform features. These are **deferred, not abandoned** -- see
-[FUTURE_ENHANCEMENTS.md](FUTURE_ENHANCEMENTS.md).
+Fix the ladder presets and add the safety rungs ([PLC_LADDER_REQUIREMENTS](../hardware/PLC_LADDER_REQUIREMENTS.md)); put the
+cameras on separate USB 3 ports; measure belt speed and distances; capture real EMEET frames (good bottles and
+missing-cap bottles from several bottles); retrain and validate on them; then run the 16-step commissioning order in
+[PRODUCTION_HMI_AND_COMMISSIONING](../guides/PRODUCTION_HMI_AND_COMMISSIONING.md).
 
-Also out of scope right now: further model experiments (YOLOv8s, other backbones). The objective is machine
-integration, not endless training.
+## Still out of scope until the machine cycle works on the real machine
+
+User login / roles, OCR, barcode/QR, anomaly detection, cloud / SaaS, multi-job platform features, segmentation
+models. These are **deferred, not abandoned** -- see [FUTURE_ENHANCEMENTS](FUTURE_ENHANCEMENTS.md).
 
 ## Definition of done for this scope
 
-The **first complete machine cycle** has run on the physical machine: a real bottle is sensed, inspected,
-given a PASS / REJECT / FAULT, the PLC receives the correct result in time, and the correct bottle is
-physically rejected -- demonstrated with deliberately defective and good bottles, with the timing budget
-measured rather than assumed. Until then, nothing here should be described as working on the machine.
+The **first complete machine cycle** has run on the physical machine: a real bottle is sensed, inspected, given a
+PASS / REJECT / FAULT, the PLC receives the correct result in time, and the correct bottle is physically rejected --
+demonstrated with deliberately defective and good bottles, with the timing budget measured rather than assumed. Until
+then, nothing here should be described as working on the machine.

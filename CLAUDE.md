@@ -2,11 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Code layout (since 2026-10-08)
+
+Root keeps only two launchers (`gui.py`, `selfcheck.py`), `run.bat`, `settings.json` and data folders. Code is in packages;
+modules import each other as `from vision import dataset as D`. Run a module's own self-check with `-m`
+(`python -m vision.infer`), never `python vision/infer.py`. `ROOT` constants in moved modules are `Path(__file__).parent.parent`.
+
+- `vision/` - dataset, train, infer, detect, segment, calibrate, calibrate_thresholds, bench, verdict, vision_data, annotate, autoannotate, yolo_stage2_train
+- `line/` - decision, machine_cycle, machine_state, tracking, alarms, production_store, production_export, inspection_trace, applog
+- `registry/` - model_registry, model_bench, model_checks
+- `ui/` - app (was gui.py), hmi, theme, charts, annotation_studio
+- `tools/` - selfcheck, migrate, camera_planner;  `plc/` unchanged
+- Older sections below that name a bare module (`dataset.py`, `gui.py`, `hmi.py`...) mean the file in the package above.
+
 ## What this is
 
 A bottle-inspection system for a QC conveyor (first target: 250 ml bottles), in two halves:
 
-- **Vision / data tooling** — a CustomTkinter desktop app (`gui.py` ~5k lines + `hmi.py`) to label
+- **Vision / data tooling** — a CustomTkinter desktop app (`gui.py` ~6k lines + `hmi.py`) to label
   images, manage defect classes, train a multi-label classifier (Stage 1), annotate boxes and
   polygons, and run live multi-camera inspection with PASS / REJECT / FAULT verdicts. A
   YOLOv8n component detector (Stage 2) is trained and available as an opt-in runtime path.
@@ -22,7 +35,12 @@ A bottle-inspection system for a QC conveyor (first target: 250 ml bottles), in 
   saved ladder still has T0 K150 / T1 K50 (15 s / 5 s) -- `plc_t0_s` must equal what is actually in the PLC.
   Net 1 is `X1 -> SET Y1` (latched), so the conveyor runs until X2; software cannot write Y1 by design.
 
-Git repo on `main`; `.gitignore` is whitelist-style (see below).
+Git repo on `main` (work goes on a branch + pull request); `.gitignore` is whitelist-style (see below).
+
+**Where to read first:** `README.md` (overview, status), `docs/TEAM_HANDBOOK.md` (everything about the system for a
+new team member or an AI assistant: stack, features, settings, operations), `docs/PROJECT_BRIEF_FOR_REVIEW.md` (status
++ review questions), `docs/roadmap/FEATURE_STATUS.md` (per-feature truth). When a feature's status changes, update
+FEATURE_STATUS first; the README, brief and handbook quote it.
 
 `legacy/web_dashboard/` (`app.py` FastAPI + `index.html`) are an earlier browser-based version of the app: dead
 code (nothing imports them, `run.bat` never launches them, and `app.py`'s write endpoints
@@ -32,8 +50,8 @@ have no auth). The desktop app is the application. Don't extend them; ask before
 
 `run.bat` does the full setup and launch (picks the CUDA or CPU torch wheel, migrates an old
 `All Datasets/` layout, runs `calibrate.py` if no ROI is set, then `python gui.py` — kept as
-`python.exe` so tracebacks stay visible). Manually: `python calibrate.py` once (measures the crop
-ROI -> `projects/<slug>/config.json`), then `python gui.py`; `python train.py --epochs 25` trains
+`python.exe` so tracebacks stay visible). Manually: `python -m vision.calibrate` once (measures the crop
+ROI -> `projects/<slug>/config.json`), then `python gui.py`; `python -m vision.train --epochs 25` trains
 from the terminal. `torch`/`torchvision` are installed separately (CUDA-vs-CPU wheel); `psutil` is
 optional (without it the Camera tab's CPU/RAM readings are blank). Not in `requirements.txt` but
 imported lazily where needed: `ultralytics==8.1.0` (every YOLO path), `pyserial` (the "Real PLC
@@ -49,31 +67,33 @@ labelled Stage 1 data is `om_bottle`; `bottle_detection` is a near-empty detecti
 
 ## Tests
 
-There is no separate test suite — every module is its own self-check, run
-directly:
+**One command:** `python selfcheck.py` (quick set, ~2 min, no window) or `python selfcheck.py --full` (adds dataset,
+training maths, inference, detector and the whole GUI; 25 checks). Each check runs in its own process; the GUI's
+engineer "Simulation check" button runs the same list. There is no separate test suite — every module is its own
+self-check, run directly:
 
 ```bash
-python dataset.py            # demo() + project_demo(): CSV/crop/scene-split correctness
-python train.py --demo
-python infer.py              # tri-state PASS/REJECT/FAULT, freshness, frame metadata, restart safety
-python inspection_trace.py   # InspectionRecord, ids, TraceStore, live Camera -> record
-python detect.py             # detector contract/validation (fakes) + real-checkpoint sanity check
-python calibrate.py --demo
-python charts.py
-python bench.py
-python migrate.py --demo
-python vision_data.py        # unified dataset prep: class mapping, cross-folder scene merge, leak fix, box checks
-python decision.py           # per-bottle decision rules, frame vote, camera fusion
-python segment.py            # segmentation runtime interface (fake model; no weights exist yet)
-python autoannotate.py       # model box proposals: kept out of boxes/export until accepted
-python machine_cycle.py      # full cycle: FAKE PLC emulating the decoded ladder + fake cameras/detector
+python -m vision.dataset            # demo() + project_demo(): CSV/crop/scene-split correctness
+python -m vision.train --demo
+python -m vision.infer              # tri-state PASS/REJECT/FAULT, freshness, frame metadata, restart safety
+python -m line.inspection_trace   # InspectionRecord, ids, TraceStore, live Camera -> record
+python -m vision.detect             # detector contract/validation (fakes) + real-checkpoint sanity check
+python -m vision.calibrate --demo
+python -m ui.charts
+python -m vision.bench
+python -m tools.migrate --demo
+python -m vision.vision_data        # unified dataset prep: class mapping, cross-folder scene merge, leak fix, box checks
+python -m line.decision           # per-bottle decision rules, frame vote, camera fusion
+python -m vision.segment            # segmentation runtime interface (fake model; no weights exist yet)
+python -m vision.autoannotate       # model box proposals: kept out of boxes/export until accepted
+python -m line.machine_cycle      # full cycle: FAKE PLC emulating the decoded ladder + fake cameras/detector
                              #   (incl. staggered camera stations, association fault, SQLite record)
-python tracking.py           # time-based position source (no encoder), camera stations, association, calibration
-python machine_state.py      # the one machine state + start checklist
-python alarms.py             # coded alarms: dedup, condition vs event, acknowledge
-python production_store.py   # SQLite runs / bottles / alarms, evidence policy
-python model_registry.py --selftest   # CANDIDATE -> VALIDATED -> APPROVED -> ACTIVE gates, rollback (temp dir)
-python applog.py             # structured event logs: 7 channels, search
+python -m line.tracking           # time-based position source (no encoder), camera stations, association, calibration
+python -m line.machine_state      # the one machine state + start checklist
+python -m line.alarms             # coded alarms: dedup, condition vs event, acknowledge
+python -m line.production_store   # SQLite runs / bottles / alarms, evidence policy
+python -m registry.model_registry --selftest   # CANDIDATE -> VALIDATED -> APPROVED -> ACTIVE gates, rollback (temp dir)
+python -m line.applog             # structured event logs: 7 channels, search
 python stage2_dataset/split_v3.py --selftest   # v3 split (missing-cap scene in train), input untouched
 python stage2_dataset/seg_pipeline.py --selftest
 python gui.py --selftest     # builds every real tab (incl. Machine against a fake PLC), no device I/O
@@ -88,10 +108,18 @@ python -m plc.ladder_check             # READ-ONLY report on plc file/final_year
 python -m plc.ladder_sim               # runs that ladder in a scan simulator vs the software contract (S1-S14)
 python -m plc.ladder_sim --selftest
 python selfcheck.py [--full]           # every module self-test in its own process (the GUI "Simulation check" button)
-python verdict.py                      # stable one-verdict-per-bottle tracker
-python production_export.py            # database rows in words, CSV, printable report
-python calibrate_thresholds.py [--apply|--restore]   # thresholds from validation, checked on test
+python -m vision.verdict                      # stable one-verdict-per-bottle tracker
+python -m line.production_export            # database rows in words, CSV, printable report
+python -m vision.calibrate_thresholds [--apply|--restore]   # thresholds from validation, checked on test
+python -m registry.model_checks                 # activation gates + background-shortcut check
 ```
+
+Dev-environment gotchas that cost time before: (1) other jobs on this PC (e.g. a YOLO training in another project)
+can exhaust RAM / the Windows paging file ("The paging file is too small", Claude Code kills background shells) and
+hang CUDA work: run checks with `CUDA_VISIBLE_DEVICES=` (CPU) when the GPU is busy and check free RAM first;
+(2) in Git Bash do not pass Python containing backticks or triple quotes through a heredoc: write a script file
+and run it; (3) tests must never write into the real `projects/*/production`, `logs/` or `settings.json`
+(the GUI / machine_cycle self-tests redirect to temp folders: keep it that way).
 
 There is no single-test runner: each file runs all its checks; to run one, import the module
 and call that check function. `python -m plc.handshake_test --real` and
@@ -262,7 +290,7 @@ VALIDATED (needs a held-out test result + a written real-camera validation) -> A
 previous model is ARCHIVED, `models/deployments.jsonl` logs it, `rollback()` re-activates it. Classifier
 activation writes `active_model` + that checkpoint's thresholds; detector activation sets
 `detector_weights` after checking the candidate's sha256 (and writes a `MODEL_PROVENANCE.json` beside it,
-which `detect.verify_checkpoint` reads). `python train.py --activate` keeps the old CLI behaviour.
+which `detect.verify_checkpoint` reads). `python -m vision.train --activate` keeps the old CLI behaviour.
 `model_bench.py` trains/scores candidates (it snapshots and restores `active.txt` and `config.json`).
 
 A defect column with zero training positives gets an unreachable threshold
@@ -505,6 +533,18 @@ defect only if it is in >= `vote` of them, then LATCHES GOOD / DEFECT until the 
 names via `verdict.pretty`; the PLC / DB / code keep PASS / REJECT / FAULT. The line's decision is still
 `decision.py`; the tracker only DISPLAYS.
 
+**Improvement loop.** `LiveTab._auto_collect` saves ONE frame per latched bottle (`Verdict.bottle` increments on
+each latch) via `dataset.save_capture(reviewed=False)` + a suggestion in `cache/suggestions.json` (plus an `"auto"`
+section with the verdict); daily cap `autocollect_daily_cap`. `dataset.set_labels` / `apply_labels` call
+`record_corrections`: model suggestion (judged with the project thresholds) vs the person's label -> `cache/
+hard_examples.json` (false_defect / missed_defect / wrong_defect; agreement removes the entry). `train.run` uses
+`sample_weights` (settings `train_balance_good`, `train_good_cap` 5, `train_hard_factor` 3) via a
+`WeightedRandomSampler`; sampling is recorded in metrics.json. Unsure band: `Camera.check_margin` (settings
+`check_margin`, 0.10) marks "?defect" frames -> verdict `UNSURE` ("CHECK: x?"); the line has the same rule as
+`decision_rules.check_margin` (default 0 = off) -> FAULT. `model_registry.validate(name, note, real=, shortcut=)`
+enforces `model_checks.gates` (settings `activation_gates`); the Models page uses `hmi.ValidateDialog`.
+`autoannotate.predict` gives the Annotate page's PREDICTED line with `decision.detection_findings`.
+
 **Thresholds** come from `calibrate_thresholds.py` (validation F1, middle of the perfect band, floor 0.30, recall
 guard; test only reported). `--apply` keeps the old ones in `config.json` `thresholds_before_calibration`;
 `--restore` undoes it. 2026-10-05 on 20260919-164511: test false alarms 28 -> 22, 1/219 defective passed, 10/19 good
@@ -522,7 +562,7 @@ one line per EVENT (never per frame). Hooks: `App._on_alarm` (alarm), `PLCServic
 (camera state changes + reconnect attempts). `applog.search()` feeds the Health page viewer. Self-tests point
 `applog.setup()` at their temp folder: never let a test write fake bottles into `logs/`.
 
-### GUI (`gui.py`, ~5k lines, + `hmi.py`)
+### GUI (`gui.py`, ~6k lines, + `hmi.py`)
 
 **Theme:** `theme.py` is the one palette: a **light industrial HMI** by default, the older dark one with
 `settings.json` `"ui_theme": "dark"` (chosen once at import, applied at the next start, like the text size).
@@ -532,14 +572,14 @@ sit on the dark `VIDEO_BG`; text on a state-coloured button is `ACC_T`. `gui.py`
 colours elsewhere. `theme.apply_ctk()` also rewrites CustomTkinter's stock widget colours.
 
 **Operator / engineer:** `App.ui_mode` (`settings.json` `ui_mode`, header button, optional `engineer_pin`).
-OPERATOR shows only `App.OPERATOR_PAGES` (Production, History, Health) via `NavShell.show_only`; pages are
+OPERATOR shows only `App.OPERATOR_PAGES` (Production, History, Database, Health) via `NavShell.show_only`; pages are
 never destroyed. The Production page's ENGINEER row (`ProductionTab.eng`: task, cameras, timing,
 calibration / layout dialogs, HALT latch, simulator feed) is hidden for the operator. New production screens
 (`HistoryTab`, `HealthTab`, `ModelsTab`, the two line dialogs) live in `hmi.py`, same `(app, parent)` +
 `refresh()` contract. The GUI self-test sets `app.production_dir` to a temp folder: never let a test write
 into a real project's production record.
 
-Single `App(ctk.CTk)` with a `NavShell` (left rail grouped DATA / MODEL / RUNTIME / SYSTEM, same
+Single `App(ctk.CTk)` with a `NavShell` (left rail grouped PRODUCTION / DATA / MODEL / ENGINEERING / SYSTEM, same
 `add/tab/get/set` API as the `CTkTabview` it replaced) and a status bar of PLC / LINE / CAMERAS /
 MODEL lamps (`App.update_lamps`, cached state only, ~2 Hz from `pump`). A label edit calls
 `App.data_changed()` (re-read labels, mark Defects/Train/Data health stale, refreshed when shown)
@@ -552,7 +592,7 @@ widget costs ~4x as much to create/redraw. **Text size** (`settings.json` `font_
 at once and applied only at the next start (`App.restart`): rescaling a running window redraws
 every widget (20+ s, looked frozen), and with a scrollable page on screen it also recursed
 `CTkScrollbar.set` <-> `update_idletasks` (guarded in `theme._guard_scrollbar`). Don't call
-`ctk.set_widget_scaling` on a built window. `App.TABS` (14): **Production**, History, Health, Label,
+`ctk.set_widget_scaling` on a built window. `App.TABS` (15): **Production**, History, Database, Health, Label,
 Defects, Train, Analysis, Models, Live, Machine, Camera, Data health, Annotate, Settings (`all_tabs()` must
 list the tab objects in exactly this order; Settings stays last for the self-test). The rail groups them
 (`App.GROUPS`: PRODUCTION / DATA / MODEL / ENGINEERING / SYSTEM). In-file class order differs (MachineTab,
@@ -634,7 +674,7 @@ on a GPU-less machine would be a lie.
 
 One-shot move of the legacy single-project layout (`All Datasets/<Class>/`,
 `data/`, `models/`) into `projects/<slug>/...`. Dry-run by default
-(`python migrate.py` prints the plan only); `--run` actually **renames**
+(`python -m tools.migrate` prints the plan only); `--run` actually **renames**
 folders in place (not copies — ~1GB, instant on the same volume) and
 rewrites `labels.csv` paths row-by-row via `remap()`, preserving every
 hand-added label exactly rather than re-importing (which would lose them).
@@ -668,8 +708,12 @@ regress them:
 
 ## Key docs already in the repo
 
-All documentation is indexed in `docs/README.md` (hardware, guides, roadmap, audit, design). Camera placement / line timing: `docs/hardware/CAMERA_PLACEMENT_AND_LINE_PLAN.md`; tab purposes: `docs/guides/TAB_GUIDE.md`.
+- `docs/PROJECT_BRIEF_FOR_REVIEW.md` - one self-contained brief (hardware, architecture, status, known problems, review
+  questions) for a reviewer or an AI assistant; keep its numbers in step with FEATURE_STATUS when they change.
 
+- `docs/README.md` indexes all documentation (hardware, guides, roadmap, audit, design). Camera placement / line timing:
+  `docs/hardware/CAMERA_PLACEMENT_AND_LINE_PLAN.md`; what each tab is for: `docs/guides/TAB_GUIDE.md` (written before the
+  operator/engineer split and the History/Database/Health/Models pages: check it against `App.TABS`).
 - `docs/design/PLAN.md` — original design doc: data shape, the five bugs above in full
   detail, rationale for every non-obvious choice (input size, ROI
   measurement, scene-based split, deliberately skipped features like
@@ -680,7 +724,7 @@ All documentation is indexed in `docs/README.md` (hardware, guides, roadmap, aud
   its "camera verdict is not connected to the PLC" finding is partly addressed in software.
 - `docs/roadmap/PLC_COMMUNICATION.md` — the PLC contract, decoded ladder, simulator
   measurements and fault matrix. `docs/roadmap/VISION_DATASET.md` — dataset readiness
-  for classification / detection / segmentation (`python vision_data.py build|export-cls|validate`).
+  for classification / detection / segmentation (`python -m vision.vision_data build|export-cls|validate`).
 - `docs/roadmap/` — the current, maintained description of the project:
   what exists (`CURRENT_SYSTEM.md`), what is in scope now (`CURRENT_SCOPE.md`),
   what is deliberately deferred (`FUTURE_ENHANCEMENTS.md`), the target

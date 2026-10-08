@@ -1,0 +1,205 @@
+{
+  "stamp": "20261008-090538",
+  "arch": "convnext_tiny",
+  "scored_on": "2026-10-08 10:18:54",
+  "threshold_source": "validation (metrics.json per_defect.threshold)",
+  "test": {
+    "n_images": 246,
+    "macro_f1": 0.7946,
+    "macro_precision": 0.7445,
+    "macro_recall": 0.875,
+    "exact_match_accuracy": 0.813,
+    "label_accuracy": 0.969,
+    "pass_reject_accuracy": 0.9187,
+    "false_pass": 1,
+    "false_reject": 19,
+    "per_defect": {
+      "damaged_bottle": {
+        "n_pos": 64,
+        "threshold": 0.15,
+        "precision": 0.9846,
+        "recall": 1.0,
+        "f1": 0.9922,
+        "tp": 64,
+        "fp": 1,
+        "fn": 0
+      },
+      "damaged_label": {
+        "n_pos": 36,
+        "threshold": 0.15,
+        "precision": 0.5714,
+        "recall": 1.0,
+        "f1": 0.7273,
+        "tp": 36,
+        "fp": 27,
+        "fn": 0
+      },
+      "missing_cap": {
+        "n_pos": 7,
+        "threshold": 0.05,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 7,
+        "fp": 0,
+        "fn": 0
+      },
+      "missing_label": {
+        "n_pos": 12,
+        "threshold": 0.5,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 12
+      },
+      "skewed_bottle": {
+        "n_pos": 32,
+        "threshold": 0.5,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 32,
+        "fp": 0,
+        "fn": 0
+      },
+      "skewed_label": {
+        "n_pos": 31,
+        "threshold": 0.25,
+        "precision": 0.9688,
+        "recall": 1.0,
+        "f1": 0.9841,
+        "tp": 31,
+        "fp": 1,
+        "fn": 0
+      },
+      "tilt_cap": {
+        "n_pos": 22,
+        "threshold": 0.35,
+        "precision": 0.5789,
+        "recall": 1.0,
+        "f1": 0.7333,
+        "tp": 22,
+        "fp": 16,
+        "fn": 0
+      },
+      "water_level": {
+        "n_pos": 23,
+        "threshold": 0.55,
+        "precision": 0.8519,
+        "recall": 1.0,
+        "f1": 0.92,
+        "tp": 23,
+        "fp": 4,
+        "fn": 0
+      }
+    }
+  },
+  "dropped": 0,
+  "leak_excluded": 20,
+  "test_leak_free": {
+    "n_images": 226,
+    "macro_f1": 0.9199,
+    "macro_precision": 0.866,
+    "macro_recall": 1.0,
+    "exact_match_accuracy": 0.8496,
+    "label_accuracy": 0.979,
+    "pass_reject_accuracy": 0.9159,
+    "false_pass": 0,
+    "false_reject": 19,
+    "per_defect": {
+      "damaged_bottle": {
+        "n_pos": 64,
+        "threshold": 0.15,
+        "precision": 0.9846,
+        "recall": 1.0,
+        "f1": 0.9922,
+        "tp": 64,
+        "fp": 1,
+        "fn": 0
+      },
+      "damaged_label": {
+        "n_pos": 35,
+        "threshold": 0.15,
+        "precision": 0.6863,
+        "recall": 1.0,
+        "f1": 0.814,
+        "tp": 35,
+        "fp": 16,
+        "fn": 0
+      },
+      "missing_cap": {
+        "n_pos": 7,
+        "threshold": 0.05,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 7,
+        "fp": 0,
+        "fn": 0
+      },
+      "missing_label": {
+        "n_pos": 0,
+        "threshold": 0.5,
+        "fp": 0,
+        "note": "no test positives - unscored"
+      },
+      "skewed_bottle": {
+        "n_pos": 32,
+        "threshold": 0.5,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 32,
+        "fp": 0,
+        "fn": 0
+      },
+      "skewed_label": {
+        "n_pos": 24,
+        "threshold": 0.25,
+        "precision": 0.96,
+        "recall": 1.0,
+        "f1": 0.9796,
+        "tp": 24,
+        "fp": 1,
+        "fn": 0
+      },
+      "tilt_cap": {
+        "n_pos": 22,
+        "threshold": 0.35,
+        "precision": 0.5789,
+        "recall": 1.0,
+        "f1": 0.7333,
+        "tp": 22,
+        "fp": 16,
+        "fn": 0
+      },
+      "water_level": {
+        "n_pos": 23,
+        "threshold": 0.55,
+        "precision": 0.8519,
+        "recall": 1.0,
+        "f1": 0.92,
+        "tp": 23,
+        "fp": 4,
+        "fn": 0
+      }
+    }
+  },
+  "latency": {
+    "device": "cuda",
+    "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU",
+    "batch": 1,
+    "n": 246,
+    "ms_mean": 9.17,
+    "ms_p50": 9.0,
+    "ms_p95": 10.12,
+    "fps": 109.0,
+    "cpu_ms_mean": 70.98,
+    "scope": "predict_view on a pre-cropped 192x448 view; excludes ROI crop/letterbox"
+  },
+  "model_size_mb": 106.19,
+  "sha256": "dccfd09a9849151f177c222423fa0ef3dffb01f2236f57c8b53e602d5849ddcf",
+  "labels_csv_sha256": "94289df59be567ce643622f2a017e56b3fea7668b88d468fd1f5041a5f42ad7e"
+}

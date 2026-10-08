@@ -91,3 +91,16 @@ meaning from `docs/roadmap/PLC_COMMUNICATION.md`.
 | PLC ladder requirements | DONE (document + checker): `docs/hardware/PLC_LADDER_REQUIREMENTS.md`, `python -m plc.ladder_check`. The ladder itself is the user's; not edited |
 | Missing-cap data + retraining | DONE, with a negative result for the classifier (shortcut, REJECTED, images removed, undoable) and a v3 detector candidate that needs machine validation. See README "Missing cap" |
 | Per-camera classifier ROI, user login, PC heartbeat | NOT DONE: heartbeat needs a ladder rung first (R13); ROI per camera needs a second classifier; login deferred |
+
+## 6. Third pass (2026-10-05 evening, status 2026-10-06)
+
+| Request | Now |
+|---|---|
+| One direct answer per bottle, no boxes / bars, industry-style | DONE: `verdict.py` + operator overlay; GOOD / DEFECT: <name>; boxes and bars only with "Engineer details" |
+| Good bottles shown as defective, better confidence | PARTLY: thresholds re-chosen from validation, steady verdict; the model itself is limited by 72 good images, so more real good bottles + retraining are still needed |
+| Auto-annotation prediction of defects | DONE / documented: classifier defect pre-labels (Label tab) use the calibrated thresholds; Annotate tab queues; `docs/guides/AUTO_ANNOTATION.md` (with sources) |
+| Simulation check for engineers only, simulator and real PLC | DONE: engineer-only, live PLC snapshot, switch to remove it later (`show_simulation_check`) |
+| Panels full of text hide buttons -> scroll both ways | DONE: every page is a `ScrollHost` |
+| Explain and add the database, exportable | DONE: Database page, CSV + report export, `docs/guides/DATABASE.md` |
+| Restart the system | The app was restarted but stopped by the OS under memory pressure (another training job on the PC) |
+| Docs for ChatGPT review | `docs/PROJECT_BRIEF_FOR_REVIEW.md` |

@@ -1,6 +1,6 @@
 # What each tab is for
 
-The desktop app (`gui.py`) has 14 pages, grouped in the left rail. OPERATOR mode shows only the PRODUCTION
+The desktop app (`gui.py`) has 15 pages, grouped in the left rail. OPERATOR mode shows only the PRODUCTION
 group; ENGINEER mode (header button) shows everything. This answers "what does it do and do we need it" for each.
 Sources: the `*Tab` classes in `gui.py`, `hmi.py`, `annotation_studio.py`, and `docs/roadmap/FEATURE_STATUS.md`.
 Operator and commissioning workflow: [PRODUCTION_HMI_AND_COMMISSIONING.md](PRODUCTION_HMI_AND_COMMISSIONING.md).
