@@ -19,7 +19,7 @@
   ],
   "camera": 0,
   "thresholds": {
-    "damaged_bottle": 0.5,
+    "damaged_bottle": 0.35,
     "damaged_label": 0.35,
     "missing_cap": 1.01,
     "missing_label": 0.5,

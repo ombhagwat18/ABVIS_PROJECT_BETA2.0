@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Production Tab Guide</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#1d2330;--dim:#5b6475;--line:#d9dde5;--ok:#1f8a3b;--bad:#c62828;--warn:#b26a00;--acc:#1f5fbf}
+@media (prefers-color-scheme:dark){:root{--bg:#14171d;--card:#1d222b;--ink:#e8ebf1;--dim:#9aa3b2;--line:#2e3542;--ok:#4cc16b;--bad:#ff6b6b;--warn:#ffb454;--acc:#6aa4ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:26px;margin:8px 0}h2{font-size:19px;margin:30px 0 8px;border-bottom:2px solid var(--line);padding-bottom:4px}
+p,li{color:var(--ink)}.dim{color:var(--dim)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:10px 0}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:14px}
+th{background:var(--bg);color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+code{background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:13px}
+.tag{display:inline-block;border-radius:5px;padding:0 7px;font-size:12px;font-weight:600;color:#fff}
+.op{background:var(--ok)}.eng{background:var(--warn)}.hw{background:var(--bad)}
+.pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font:13px/1.45 Consolas,monospace;white-space:pre;overflow-x:auto}
+.warn{border-left:5px solid var(--bad)}.note{border-left:5px solid var(--acc)}
+@media(max-width:640px){th,td{font-size:13px;padding:6px}}
+</style>
+</head>
+<body>
+<main>
+<h1>Production tab: what every control does</h1>
+<p class="dim">Written from the code in <code>gui.py</code> / <code>machine_cycle.py</code>. <span class="tag op">OPERATOR</span> controls are visible in both modes; <span class="tag eng">ENGINEER</span> controls only in engineer mode. Nothing here has been run on the finished machine; the PLC link is real, the full inspect &rarr; reject cycle is not yet proven.</p>
+
+<h2>1. One bottle, step by step (all timing is by clock; there is no encoder)</h2>
+<div class="pre">t = 0        photo-eye X0 sees the bottle  -> PLC ladder sets M2 (trigger)
+t = delay    bottle reaches the camera      (capture_delay_s)
+t = delay..delay+window   N frames, spread evenly over the window (Frames / Window s)
+             each frame: classifier + YOLO  -> vote across frames -> ONE verdict
+t = decision PASS  -> software writes M0 immediately
+             REJECT-> software writes M1 at   travel - T0   after the trigger
+t = travel   PLC timer T0 ends, Y0 (reject cylinder) fires for T1; bottle is at the cylinder
+             travel = reject_travel_s (stopwatch value)  or  Inspect-&gt;reject mm / Speed mm/s</div>
+<div class="card note"><b>Rule that decides everything:</b> the REJECT command must go out <i>before</i> the bottle arrives by exactly the PLC's T0.
+So <b>T0 must be shorter than the travel time</b>, and the whole inspection (delay + window + AI time) must finish before <code>travel &minus; T0</code>.
+Example: travel 4.5 s, T0 1.5 s &rarr; REJECT sent at 3.0 s &rarr; delay 0.6 + window 1.5 + AI 0.3 = 2.4 s &check;.
+Start is refused when T0 &ge; travel.</div>
+
+<h2>2. Buttons</h2>
+<table>
+<tr><th>Control</th><th>Who</th><th>What it does</th></tr>
+<tr><td><b>START INSPECTION</b></td><td><span class="tag op">OP</span></td><td>Runs the start checklist, loads models, opens the line cameras, waits for a frame from each, then starts listening for triggers. Disabled unless every check passes.</td></tr>
+<tr><td><b>STOP</b></td><td><span class="tag op">OP</span></td><td>Orderly stop: no new triggers answered, bottles still being inspected end as FAULT, cameras close. Does not move the conveyor.</td></tr>
+<tr><td><b>RESET FAULT</b></td><td><span class="tag op">OP</span></td><td>Clears a halt (3 FAULT bottles in a row, E-stop, crash) and acknowledges alarms. Refused while the E-stop input still reads pressed.</td></tr>
+<tr><td>TEST INSPECTION (no PLC)</td><td><span class="tag eng">ENG</span></td><td>Grabs frames now, runs the models, shows the verdict and saves evidence. Never talks to the PLC. Use it to check the AI on a bottle held in front of the camera.</td></tr>
+<tr><td>CAMERA TEST</td><td><span class="tag eng">ENG</span></td><td>Opens the cameras only: resolution, fps, brightness, contrast, sharpness. Use it to focus and aim.</td></tr>
+<tr><td>Capture test frame</td><td><span class="tag eng">ENG</span></td><td>Saves the current frame to a test folder (for building the dataset from the real enclosure).</td></tr>
+<tr><td>HALT (latch)</td><td><span class="tag eng">ENG</span></td><td>Software safety latch: while halted no PASS/REJECT is sent and every trigger becomes a FAULT bottle. <b>Not an emergency stop</b> &ndash; the hardware E-stop must cut power by itself.</td></tr>
+</table>
+
+<h2>3. Timing row (engineer)</h2>
+<table>
+<tr><th>Field</th><th>Meaning</th><th>How to set it</th></tr>
+<tr><td>Inspect&rarr;reject mm, Speed mm/s</td><td>Distance from the photo-eye to the reject cylinder and belt speed; travel = distance / speed.</td><td>Measure with a tape and a stopwatch (marked bottle over a known length). <b>Speed 5 mm/s is wrong for a 100 mm/s belt.</b> Leave 0 to use T0 as travel. Overridden by <code>reject_travel_s</code> in settings.json.</td></tr>
+<tr><td>T0 s</td><td>PLC timer T0: delay from M1 to Y0. <b>Must equal the ladder.</b></td><td>Read the preset in ISPSoft (K15 = 1.5 s). Change both together.</td></tr>
+<tr><td>T1 s</td><td>PLC timer T1: how long Y0 stays on.</td><td>Same rule as T0.</td></tr>
+<tr><td>Late limit s</td><td>A REJECT that would go out later than this past its deadline is <b>not fired</b>; the bottle is answered PASS, recorded FAULT, alarm to remove it by hand.</td><td>0.2&ndash;0.3 s.</td></tr>
+<tr><td>Frames</td><td>How many frames are analysed per camera per bottle (taken evenly across the window).</td><td>6&ndash;10. More = steadier verdict, more AI time.</td></tr>
+<tr><td>Window s</td><td>How long the bottle is watched once it reaches the camera.</td><td>Time the bottle is visible (camera planner shows the maximum). 1.0&ndash;1.5 s.</td></tr>
+<tr><td>Capture delay s</td><td>Wait after the trigger before the window opens: the time the bottle needs to travel from the photo-eye to the camera, minus half the window.</td><td><code>python camera_planner.py</code> computes it. <b>0 means "watch from the instant of the trigger", which is why bottles were "not found".</b></td></tr>
+<tr><td>FAULT &rarr;</td><td>What the machine does with a FAULT bottle: REJECT (safe) or PASS.</td><td>Keep REJECT.</td></tr>
+<tr><td>E-stop input</td><td>PLC input (e.g. X3) that reads the E-stop contact. Empty = not wired.</td><td>Needs a rung in the ladder first.</td></tr>
+<tr><td>Save</td><td>Writes these values to settings.json.</td><td></td></tr>
+<tr><td>Speed calibration&hellip; / Line layout&hellip;</td><td>Wizard that measures belt speed; editor for camera positions along the belt (stations).</td><td>Use stations when the camera is not at the photo-eye.</td></tr>
+<tr><td>Simulation check&hellip;</td><td>Runs the whole software test list and the ladder simulation side by side.</td><td>Run after any change. Ladder FAIL = ladder/settings wrong; self-test FAIL = code wrong.</td></tr>
+<tr><td>Recipe&hellip;</td><td>Which parts must be present (bottle, cap, label) and where.</td><td>Per product.</td></tr>
+</table>
+<p class="dim">Not in the screen yet: <code>reject_travel_s</code>, <code>inspect_spread</code> (settings.json only; close the app before editing it).</p>
+
+<h2>4. PLC buttons row (engineer; tick <b>arm</b> first)</h2>
+<table>
+<tr><th>Button</th><th>Writes</th><th>Works only if</th></tr>
+<tr><td>START conveyor</td><td>M10</td><td>the ladder has <code>(X1 OR M10) &rarr; SET Y1</code>. <span class="tag hw">Your saved ladder does NOT</span></td></tr>
+<tr><td>STOP conveyor</td><td>M11</td><td>the ladder has <code>(X2 OR M11) &rarr; RST Y1</code>. <span class="tag hw">Not in your ladder</span></td></tr>
+<tr><td>BOTTLE trigger</td><td>M2</td><td>always (the ladder reads M2). With the line running the bottle is inspected.</td></tr>
+<tr><td>CLEAR STUCK TRIGGER</td><td>M0</td><td>an M2 stayed on with no answer (answers it PASS so inspection can continue).</td></tr>
+</table>
+<div class="card warn"><b>Why START/STOP "do nothing":</b> the software writes M10/M11 successfully (the log says <code>OPERATOR_WRITTEN</code>), but the ladder in <code>final_year.isp</code> has no rung that reads them (check R8 = ABSENT). Add these two rungs in ISPSoft, download to the PLC, and the buttons work. Until then use the physical X1/X2 buttons. The ladder is yours; this software never edits it.
+<div class="pre">Net A:  | X1  M10 |  (parallel)  ----[ SET Y1 ]
+Net B:  | X2 / M11 |  stop: NOT X2 AND NOT M11 ----[ RST Y1 ]   (keep your existing NC logic for X2)
+Also recommended: M10 / M11 reset themselves after one scan (pulse), e.g. a rung  M10 -> RST M10  ,  M11 -> RST M11</div></div>
+
+<h2>5. What you see</h2>
+<table>
+<tr><th>Item</th><th>Meaning</th></tr>
+<tr><td>Camera panes</td><td>Live picture with component boxes (bottle / cap / label from YOLO) when the task includes detection. The line above the picture is the live verdict (about 3 per second), for display only.</td></tr>
+<tr><td>LIVE: NO BOTTLE / GOOD / DEFECT x / FAULT</td><td>Display. <b>The PLC answer comes only from the frames taken after the trigger.</b> With task "Classification" alone there is no presence check, so an empty belt can read DEFECT: use "Classification + Detection".</td></tr>
+<tr><td>CURRENT BOTTLE</td><td>The last decided bottle: id, verdict, defect, per-camera result, command sent, times, and the evidence picture with boxes. It stays until the next bottle is decided.</td></tr>
+<tr><td>Counters</td><td>TOTAL, PASS, REJECT, FAULT, NOT INSPECTED (trigger lost or unanswered), MISSED REJECT (too late to fire), QUEUE (bottles waiting for their deadline).</td></tr>
+<tr><td>Table</td><td>One row per bottle: confidence, scheduled reject time, command, status, PLC acknowledgement.</td></tr>
+<tr><td>Alarms</td><td>Coded alarms with what to do. Every bottle is also written to the database (History / Database pages).</td></tr>
+</table>
+
+<h2>6. Task options</h2>
+<table>
+<tr><th>Task</th><th>Status</th></tr>
+<tr><td>Classification</td><td>Works (EfficientNet-B0, trained on a different background; accuracy on this enclosure is unproven). No presence check.</td></tr>
+<tr><td>Classification + Detection</td><td><b>Recommended.</b> YOLO says whether a bottle is there and finds cap/label; no bottle &rarr; FAULT, missing cap/label can be flagged.</td></tr>
+<tr><td>Detection</td><td>Components only, never a defect verdict on its own.</td></tr>
+<tr><td>Segmentation</td><td>Not usable: no model trained (polygons are not human-reviewed yet). Start is refused.</td></tr>
+</table>
+
+<h2>7. Operator vs engineer mode</h2>
+<p><b>Operator</b> sees Production, History, Database and Health. <b>Engineer</b> sees everything, and the ENGINEER row on Production. Switch with the button in the top bar (optional PIN in settings.json <code>engineer_pin</code>). The Health page now has a live <b>PLC I/O</b> card: X0&ndash;X2, Y0&ndash;Y1, M0/M1/M2/M10/M11 states, read only.</p>
+
+<h2>8. Order to bring up the line</h2>
+<ol>
+<li>Fix the ladder: T0 K15 (1.5 s), T1 as wanted; add the M10/M11 rungs. Put the same T0/T1 in the screen and Save.</li>
+<li>Measure belt speed, photo-eye &rarr; camera, photo-eye &rarr; cylinder. Run <code>python camera_planner.py</code>; enter <i>Capture delay</i> and <i>Window</i>.</li>
+<li>CAMERA TEST: focus, framing, the whole bottle visible.</li>
+<li>TEST INSPECTION with a good and a bad bottle held at the camera.</li>
+<li>START INSPECTION, then one bottle at a time, watching CURRENT BOTTLE and the PLC I/O card. Only then continuous feeding.</li>
+</ol>
+</main>
+</body>
+</html>

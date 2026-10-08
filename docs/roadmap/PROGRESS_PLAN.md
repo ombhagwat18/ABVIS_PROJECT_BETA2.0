@@ -1,52 +1,50 @@
 # Progress and flow plan
 
-Status legend: DONE (software-verified) / NEXT (do on or right after the first hardware day) / LATER.
-Companion: `FEATURE_STATUS.md` (per-feature truth), `CURRENT_SCOPE.md` (what is in scope now), `docs/hardware/CAMERA_PLACEMENT_AND_LINE_PLAN.md`.
+*Status 2026-10-06.* Legend: DONE (software-verified with fakes) / NEXT (on or right after the first hardware day) / LATER.
+Companions: [FEATURE_STATUS](FEATURE_STATUS.md), [CURRENT_SCOPE](CURRENT_SCOPE.md),
+[CAMERA_PLACEMENT_AND_LINE_PLAN](../hardware/CAMERA_PLACEMENT_AND_LINE_PLAN.md).
 
 ## Flow of the whole system
 
 ```
-DATA            label / import / annotate  ->  labels.csv, annotations.json
-MODEL           train classifier (Stage 1) + detector (Stage 2) + [segmenter, untrained]  ->  checkpoints + metrics + provenance
-SETUP           calibrate ROI, lock camera controls, measure belt/distances, set line settings
-RUN             X0 -> M2 -> capture after trigger -> models -> decision (vote, fuse) -> FIFO -> M0 / M1 at deadline -> PLC fires Y0
-RECORD          production CSV (now) -> evidence images + SQLite (later)
+DATA      label / import / annotate (model proposals + review queues)  ->  labels.csv, annotations
+MODEL     train candidates (never auto-activated) -> held-out test -> validate on a real camera -> approve -> activate / rollback
+SETUP     calibrate ROI, lock camera controls, speed calibration, line layout + camera stations, recipe
+RUN       X0 -> M2 -> frames after trigger (per camera window) -> AI -> decision (vote, fuse) -> FIFO -> M0 / M1 at deadline -> PLC fires Y0
+SHOW      one steady GOOD / DEFECT per bottle; counters, alarms, history
+RECORD    SQLite (runs, bottles, alarms) + evidence pictures + event logs + CSV / printable report
 ```
 
 ## Phase plan
 
 | Phase | Work | Status |
 |---|---|---|
-| 1 Data + Stage 1 classifier + test evaluation | DONE |
-| 2 Stage 2 detector (YOLOv8n/s) + runtime hook | DONE (software) |
-| 3 PLC link + trigger/command rules + decision engine + machine cycle | DONE (simulator/fakes) |
-| 4 Desktop app, 11 tabs, theme | DONE |
-| 5 **Hardware day 1**: measure, fix ladder presets, mount cam A, lock controls, calibrate, collect data from the real enclosure | NEXT |
-| 6 Fine-tune classifier on real-enclosure frames; re-measure on a fresh held-out set | NEXT |
-| 7 Camera B + per-camera delay + failure injection tests | NEXT |
-| 8 Safety: E-stop input, PC<->PLC heartbeat, fault latching, alarm list | NEXT |
-| 9 Operator HMI (kiosk Production view, engineer mode) | NEXT |
-| 10 Evidence images + SQLite traceability, reports, login | LATER |
-| 11 Segmenter: review polygons -> train -> enable label-area rules | LATER (blocked on human review) |
+| 1 | Data + Stage 1 classifier + held-out test | DONE |
+| 2 | Stage 2 detector + runtime hook + recipe-driven decision | DONE |
+| 3 | PLC link, trigger/command rules, decision engine, machine cycle, time-based tracking, staggered cameras | DONE (simulator / fakes) |
+| 4 | Desktop app: 15 pages, operator/engineer modes, light theme, scrolling pages, one machine state | DONE |
+| 5 | Traceability: SQLite, evidence, alarms, event logs, History / Database pages, CSV + report export | DONE |
+| 6 | Model lifecycle: registry, gated activation, rollback, threshold calibration | DONE |
+| 7 | Checks: ladder decoder + ladder simulator + `selfcheck.py` (engineer "Simulation check") | DONE |
+| 8 | **Hardware day 1**: fix PLC presets (K15 / K5), add E-stop input / Y0 interlock / answer timeout, USB 3 ports, measure speed and distances, lock camera controls | **NEXT** |
+| 9 | Capture real EMEET frames (good + missing-cap bottles, several bottles/poses), retrain classifier and detector, validate on the real camera | **NEXT** |
+| 10 | Physical commissioning: PASS, REJECT, line, sequential cameras, multi-bottle, latency p50/p95, E-stop | **NEXT** |
+| 11 | PLC protocol v2 (several bottles in flight), PC heartbeat watchdog | LATER (needs ladder + software change together) |
+| 12 | Login / roles, shift reports beyond day / shift, anomaly detection, segmenter | LATER |
 
-## Universal / data-agnostic system: how a new product works today, and the gap
+## New product: how it works today
 
-Today (works): new project -> Import dataset or Label -> Defects (add classes) -> Train -> Data health (ROI) -> Annotate (boxes) ->
-train detector -> write the `config.json` `"inspection"` recipe by hand -> Production. No code change.
+New project -> Import dataset or Label -> Defects (add classes) -> Train -> Data health (ROI) -> Annotate (boxes, with
+proposals and review queues) -> train detector -> **Recipe...** dialog -> Production. No code change.
 
-Gaps to make "just give it data" real:
-1. **Auto-annotation** (NEXT after hardware): the classifier already writes *suggestions* (`cache/suggestions.json`, never training data until accepted).
-   Extend the same pattern to boxes: run the current YOLO over new images, write boxes as **unreviewed proposals** in the Annotate tab
-   (accept / nudge / reject, like seeded polygons). Add active-learning ordering (least-confident first). Rule kept: a model-proposed label
-   never enters training until a person accepts it.
-2. **Recipe editor in the GUI** (anchor/required parts/zones are hand-edited JSON today).
-3. **One "New product wizard"** chaining Import -> classes -> ROI -> train -> recipe, with the checks that each step passed.
-4. **Model registry GUI + dataset versioning** (hashes already exist in the provenance files).
-5. For products with no defect examples: an anomaly-detection model trained on good samples only (LATER).
+Remaining gaps: a "new product wizard" chaining those steps with checks; dataset versioning; for products with no
+defect examples, an anomaly-detection model trained on good samples only.
 
-## What else we need (hardware + features)
+## What else we need (hardware + data)
 
-Have: PLC ladder (decoded), simulator link, 2 cameras, LED strips, enclosure, conveyor, Festo cylinder + valve, photo-eye.
-Need: belt speed/distance measurements; USB 3 ports or a powered USB 3 hub per camera; DC (non-PWM) LED supply + diffusers; camera mounts with
-fine adjustment; lens hoods; hardwired E-stop with a PLC status input; PLC address list from the real machine; known-defect bottles for
-every class (especially `missing_cap`, `missing_label` which have ~0 real examples); a sacrificial-bottle test plan.
+Have: PLC ladder (read and simulated), simulator link, 2 cameras, LED strips, enclosure, conveyor, Festo cylinder +
+valve, photo-eye.
+Need: belt speed / distance measurements; USB 3 port per camera; DC (non-PWM) LED supply + diffusers; camera mounts;
+hardwired E-stop with a PLC status input; the program actually loaded in the real PLC (upload it and compare); known
+defective bottles for every class, **especially missing_cap and missing_label**, from several bottles; a
+sacrificial-bottle test plan.

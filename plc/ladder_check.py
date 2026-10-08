@@ -249,7 +249,7 @@ if __name__ == "__main__":
     path = Path(args[0]) if args else DEFAULT_ISP
     if "t0" not in opt or "t1" not in opt:
         try:
-            import dataset as D
+            from vision import dataset as D
             s = D.load_settings()
             opt.setdefault("t0", s.get("plc_t0_s"))
             opt.setdefault("t1", s.get("plc_t1_s"))

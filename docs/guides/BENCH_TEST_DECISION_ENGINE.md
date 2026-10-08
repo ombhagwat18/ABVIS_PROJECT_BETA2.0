@@ -87,7 +87,7 @@ Use the real input, not a software switch: the trigger is then exactly the one t
 
 ## 5. Evidence labels
 
-Everything above the PLC link was run as software self-tests with fakes (`python machine_cycle.py`,
+Everything above the PLC link was run as software self-tests with fakes (`python -m line.machine_cycle`,
 `python -m plc.test_service`). The real-PLC link on COM5 was proven by COMMGR/ISPSoft (2026-10-04), **not yet by
 this software**: record the first successful Machine-tab connection and handshake as PHYSICAL evidence in
 `docs/roadmap/PLC_COMMUNICATION.md`.
