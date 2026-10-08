@@ -1,12 +1,12 @@
 {
-  "date": "2026-10-05 17:46:39",
+  "date": "2026-10-08 09:28:39",
   "model": "yolov8n.pt",
   "run_dir": "models\\stage2_yolo\\bench_yolov8n_v3",
   "checkpoint": "models\\stage2_yolo\\bench_yolov8n_v3\\weights\\best.pt",
-  "sha256": "312bd66f1a54aefb8c4bc965a541c8d952c06d818411221ea24b3786bbc647bf",
+  "sha256": "0e2e8ebdb1c3bcc2946272fd6f18cbc43b0d7cf2ed6eb7b2f96325845a6cb414",
   "size_mb": 6.23,
   "n_params": 3006233,
-  "train_minutes": 25.3,
+  "train_minutes": 22.5,
   "epochs_run": 48,
   "resumed": false,
   "train_args": {
@@ -76,23 +76,23 @@
     "n_images": 52,
     "device": "0",
     "batch": 1,
-    "latency_ms_mean": 10.561873076924782,
-    "latency_ms_p50": 10.30504999994264,
-    "latency_ms_p95": 13.358689999950002,
-    "fps_end_to_end": 94.68017582835432,
-    "model_inference_ms_mean": 5.476910334367019,
-    "fps_model_only": 182.58469446269888
+    "latency_ms_mean": 13.753194230769868,
+    "latency_ms_p50": 11.479099999974096,
+    "latency_ms_p95": 22.89423500001248,
+    "fps_end_to_end": 72.71038154632552,
+    "model_inference_ms_mean": 7.80178950383113,
+    "fps_model_only": 128.17572167371884
   },
   "benchmark_cpu": {
     "n_images": 52,
     "device": "cpu",
     "batch": 1,
-    "latency_ms_mean": 52.820717307703,
-    "latency_ms_p50": 53.034200000070086,
-    "latency_ms_p95": 55.82193000001325,
-    "fps_end_to_end": 18.931965542508205,
-    "model_inference_ms_mean": 42.61992986385639,
-    "fps_model_only": 23.463201445764103
+    "latency_ms_mean": 63.09656538462168,
+    "latency_ms_p50": 60.76564999989387,
+    "latency_ms_p95": 70.03301499998997,
+    "fps_end_to_end": 15.848723205522163,
+    "model_inference_ms_mean": 56.63243165382972,
+    "fps_model_only": 17.657726691175476
   },
   "dataset": {
     "version": "v3",
@@ -110,8 +110,8 @@
     "labels\\val.cache"
   ],
   "mem_before": {
-    "free_ram_mb": 5483,
-    "free_commit_mb": 15986,
+    "free_ram_mb": 2894,
+    "free_commit_mb": 11048,
     "total_ram_mb": 16004
   },
   "env": {

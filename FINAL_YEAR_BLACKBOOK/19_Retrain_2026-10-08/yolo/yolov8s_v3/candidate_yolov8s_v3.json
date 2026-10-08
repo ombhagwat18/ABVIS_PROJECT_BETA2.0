@@ -1,0 +1,124 @@
+{
+  "date": "2026-10-08 10:17:46",
+  "model": "yolov8s.pt",
+  "run_dir": "models\\stage2_yolo\\bench_yolov8s_v3",
+  "checkpoint": "models\\stage2_yolo\\bench_yolov8s_v3\\weights\\best.pt",
+  "sha256": "928f9cf10de8c1628823f9bb72f474996d6d4a09356918c6058baa2ea90d1852",
+  "size_mb": 22.5,
+  "n_params": 11126745,
+  "train_minutes": 48.7,
+  "epochs_run": 80,
+  "resumed": false,
+  "train_args": {
+    "epochs": 80,
+    "imgsz": 640,
+    "batch": 8,
+    "patience": 20,
+    "seed": 0,
+    "deterministic": true,
+    "workers": 0,
+    "selection": "best.pt = best val fitness"
+  },
+  "note": "Test is reported for this candidate as a benchmark; selection between candidates must use val. stage2_best.pt / training_metadata.json were not modified.",
+  "val": {
+    "map50": 0.9835250000000001,
+    "map50_95": 0.8586426283204367,
+    "precision": 0.9984232470346962,
+    "recall": 0.9797979797979798,
+    "per_class": {
+      "bottle": {
+        "precision": 0.9994447295285761,
+        "recall": 1.0,
+        "map50": 0.995,
+        "map50_95": 0.8203650691126428
+      },
+      "cap": {
+        "precision": 0.9979507369272044,
+        "recall": 1.0,
+        "map50": 0.995,
+        "map50_95": 0.9887244995125173
+      },
+      "label": {
+        "precision": 0.9978742746483082,
+        "recall": 0.9393939393939394,
+        "map50": 0.9605750000000002,
+        "map50_95": 0.7668383163361504
+      }
+    }
+  },
+  "test": {
+    "map50": 0.9790115940136174,
+    "map50_95": 0.8177779962829229,
+    "precision": 0.9736885571047127,
+    "recall": 0.9965635738831615,
+    "per_class": {
+      "bottle": {
+        "precision": 0.9993616866705706,
+        "recall": 1.0,
+        "map50": 0.995,
+        "map50_95": 0.8456214142080191
+      },
+      "cap": {
+        "precision": 0.9903781451272722,
+        "recall": 1.0,
+        "map50": 0.9946694214876033,
+        "map50_95": 0.987908370649982
+      },
+      "label": {
+        "precision": 0.9313258395162953,
+        "recall": 0.9896907216494846,
+        "map50": 0.9473653605532492,
+        "map50_95": 0.6198042039907683
+      }
+    }
+  },
+  "benchmark_gpu": {
+    "n_images": 52,
+    "device": "0",
+    "batch": 1,
+    "latency_ms_mean": 10.90633269227335,
+    "latency_ms_p50": 10.761749999801395,
+    "latency_ms_p95": 12.043614999788588,
+    "fps_end_to_end": 91.68984921104189,
+    "model_inference_ms_mean": 6.86946282019982,
+    "fps_model_only": 145.57179013466325
+  },
+  "benchmark_cpu": {
+    "n_images": 52,
+    "device": "cpu",
+    "batch": 1,
+    "latency_ms_mean": 88.55355769234254,
+    "latency_ms_p50": 88.18319999977575,
+    "latency_ms_p95": 92.05463999971924,
+    "fps_end_to_end": 11.29260106606053,
+    "model_inference_ms_mean": 80.28744275753314,
+    "fps_model_only": 12.455247865098716
+  },
+  "dataset": {
+    "version": "v3",
+    "yaml": "stage2_dataset\\yolo_export_v3\\data.yaml",
+    "annotations_file": "stage2_dataset/annotations_v2.json",
+    "split_file": "stage2_dataset/split_v3.json",
+    "split_json_sha256": "a9f8d7f10f4a8799ae66695c7da116560f2fe1f4767a6a73554aa84749301c5b",
+    "annotations_sha256": "48848286221cb60c1a2bf8fa94c3296e4d4195aa7f460779827f67c1a138f9a9",
+    "export_tree_sha256": "74f82dc030bb05549328d62b7b975da368a1380fde754ba3f627dc933971dfa3",
+    "export_unchanged": true
+  },
+  "removed_ultralytics_cache_files": [
+    "labels\\test.cache",
+    "labels\\train.cache",
+    "labels\\val.cache"
+  ],
+  "mem_before": {
+    "free_ram_mb": 3117,
+    "free_commit_mb": 10782,
+    "total_ram_mb": 16004
+  },
+  "env": {
+    "ultralytics": "8.1.0",
+    "torch": "2.4.1+cu124",
+    "cuda": "12.4",
+    "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU",
+    "python": "3.8.0"
+  }
+}
