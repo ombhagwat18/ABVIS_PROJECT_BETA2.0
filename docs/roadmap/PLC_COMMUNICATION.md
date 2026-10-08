@@ -210,7 +210,7 @@ python -m plc.test_simulation --real --bench 200 --faults   # SIMULATOR, read-on
 python -m plc.handshake_test --fake                 # FAKE: the harness itself
 python -m plc.handshake_test --real --cycles PASS,REJECT,PASS,REJECT,REJECT,PASS --wait 60   # SIMULATOR, writes M0/M1
 python -m plc.handshake_test --real --sim-x0 --t0 1.5 --t1 0.5 --csv trace.csv   # ...X0 pulsed by Python, full trace
-python machine_cycle.py                             # FAKE: the whole per-bottle cycle against FakeLadder
+python -m line.machine_cycle                             # FAKE: the whole per-bottle cycle against FakeLadder
 ```
 
 `FakeLadder` runs the seven decoded nets in order every scan, commits each scan atomically, and serves X from a

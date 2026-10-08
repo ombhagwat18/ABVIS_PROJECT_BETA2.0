@@ -31,7 +31,7 @@ REPO_ROOT = HERE.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import annotate as A  # noqa: E402
+from vision import annotate as A
 
 CLASSES = ["label"]
 SPLITS = ("train", "val", "test")
@@ -183,7 +183,7 @@ def validate(seg_json=SEG_JSON, split_json=SPLIT_JSON, image_root=IMAGE_ROOT, ou
 
 def studio():
     import customtkinter as ctk
-    from annotation_studio import AnnotationTab
+    from ui.annotation_studio import AnnotationTab
     seg = A.load_annotations(SEG_JSON)
     smap = split_map(SPLIT_JSON)
     # images that have a label first, train before val before test

@@ -297,19 +297,19 @@ Per-project `config.json`: `roi`, `roi_frame`, `input_wh`, `cache_wh`, `threshol
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt && pip install ultralytics==8.1.0 pyserial comtypes psutil
-python calibrate.py            # first run: measure the classifier ROI
+python -m vision.calibrate            # first run: measure the classifier ROI
 python gui.py                  # the application
 ```
 
 **Test:** `python selfcheck.py` (quick, ~2 min) or `--full` (25 checks incl. the GUI). `python -m plc.ladder_sim` checks your
 ladder. When the GPU/RAM is busy: `set CUDA_VISIBLE_DEVICES=` first.
 
-**Train and deploy a classifier:** `python train.py --epochs 25 --arch efficientnet_b0` (CANDIDATE) ->
-`python model_bench.py cls-test <stamp>` (held-out test, once) -> `python calibrate_thresholds.py [--apply|--restore]` ->
+**Train and deploy a classifier:** `python -m vision.train --epochs 25 --arch efficientnet_b0` (CANDIDATE) ->
+`python -m registry.model_bench cls-test <stamp>` (held-out test, once) -> `python -m vision.calibrate_thresholds [--apply|--restore]` ->
 Models page: Validate (real-camera numbers + shortcut check) -> Approve -> ACTIVATE (line stopped); Roll back if needed.
 
-**Train a detector:** `python model_bench.py yolo --model yolov8n.pt --data v3 --workers 0` (always pass `workers`; the default
-exhausts memory on 16 GB), then `python model_bench.py det-defects --weights <pt> --tag <t> --split-version v3`.
+**Train a detector:** `python -m registry.model_bench yolo --model yolov8n.pt --data v3 --workers 0` (always pass `workers`; the default
+exhausts memory on 16 GB), then `python -m registry.model_bench det-defects --weights <pt> --tag <t> --split-version v3`.
 
 **First physical run (order):** connect PLC read-only -> read T0/T1 in the PLC and fix presets -> photo-eye test ->
 cameras on separate USB 3 ports, CAMERA TEST -> Speed calibration -> Line layout -> TEST INSPECTION on known good /

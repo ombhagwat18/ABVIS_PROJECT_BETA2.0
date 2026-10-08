@@ -27,7 +27,7 @@ REPO_ROOT = HERE.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import annotate as A  # noqa: E402
+from vision import annotate as A
 
 CANDIDATES_JSON = HERE / "annotation_candidates.json"
 IMAGE_ROOT = HERE / "clean"
@@ -50,7 +50,7 @@ def load_candidates(path: Path = CANDIDATES_JSON) -> tuple[list[str], dict[str, 
 def main():
     import customtkinter as ctk
 
-    from annotation_studio import AnnotationTab
+    from ui.annotation_studio import AnnotationTab
 
     images, meta = load_candidates()
 
@@ -74,7 +74,7 @@ def selftest():
 
     import customtkinter as ctk
 
-    from annotation_studio import AnnotationTab
+    from ui.annotation_studio import AnnotationTab
 
     real_images, real_meta = load_candidates()
     assert len(real_images) == 594, f"expected 594 candidate images, got {len(real_images)}"
@@ -178,7 +178,7 @@ def selftest():
         mb.showerror, mb.showinfo, mb.askyesno = orig
 
     # ---- prove the pre-existing Stage 2C (project-based) studio still works ----
-    from annotation_studio import selftest as studio_selftest
+    from ui.annotation_studio import selftest as studio_selftest
     studio_selftest()
     print("ok  existing Stage 2C project-mode Annotation Studio selftest still passes unchanged")
 

@@ -49,6 +49,11 @@ class Sim:
         self.t = 0.0
         self.events: list = []                   # (t, device, value) for WATCH devices
         self._last: dict = {}
+        # A contact the ladder uses as NOT X.. is a normally-CLOSED button wired to an input: its idle state is ON
+        # (e.g. "NOT X2 -> RST Y1" is a stop button that must read 1 until pressed). Start those inputs at 1.
+        self.nc_inputs = sorted({d for n in nets for k, d in n.contacts if k == "NOT " and d.startswith("X")})
+        for d in self.nc_inputs:
+            self.bits[d] = 1
         for n in nets:
             for o in n.outputs:
                 if o[0] == "TMR" and len(o) > 2:
@@ -257,11 +262,16 @@ def run_scenarios(nets, cfg: dict) -> list:
         s.set("X3", 1)
         s.pulse("X1", 0.1)
         started = s.get("Y1")
-        s.pulse("X2", 0.1)
+        nc = "X2" in s.nc_inputs                       # stop button wired normally-closed: pressing it drives X2 to 0
+        s.set("X2", 0 if nc else 1)
+        s.run(0.1)
+        s.set("X2", 1 if nc else 0)
+        s.run(0.05)
         R.append(Result("S8", "Conveyor: X1 start latches Y1, X2 stop releases it",
                         PASS if started and not s.get("Y1") else FAIL,
-                        "Y1 latched by X1 and released by X2" if started and not s.get("Y1")
-                        else f"after X1 Y1={started}; after X2 Y1={s.get('Y1')}", "the PLC owns the conveyor"))
+                        ("Y1 latched by X1 and released by the stop button" + (" (X2 normally-closed)" if nc else ""))
+                        if started and not s.get("Y1") else f"after X1 Y1={started}; after stop Y1={s.get('Y1')}",
+                        "the PLC owns the conveyor"))
         s = Sim(nets)
         s.set("X3", 1)
         s.pulse("M10", 0.3)
@@ -301,7 +311,7 @@ def run_scenarios(nets, cfg: dict) -> list:
                     "M2 stays ON for 30 s and nothing happens: the bottle passes uninspected if the PC stops",
                     "PC crash / freeze"))
     # ---------------------------------------------------------------- timing against the line settings
-    import machine_cycle as MC
+    from line import machine_cycle as MC
     lc = MC.line_settings(dict(cfg, plc_t0_s=lt0 or 0.01, plc_t1_s=lt1 or 0.01))    # the ladder's T0, as the PLC runs it
     bad = MC.timing_problem(lc)
     travel, measured = MC.travel_time(lc)
@@ -350,7 +360,7 @@ def report(path, cfg: dict, detail: bool = False) -> str:
 def _settings_cfg(args: list) -> dict:
     cfg: dict = {}
     try:
-        import dataset as D
+        from vision import dataset as D
         cfg = dict(D.load_settings())
     except Exception:                                                  # noqa: BLE001 - settings are optional
         pass
@@ -394,6 +404,10 @@ def selftest():
              for n in saved[:6]]
     r = st(run_scenarios(flash, {"plc_t0_s": 15.0, "plc_t1_s": 5.0}))
     assert r["S4"] == FAIL, r
+    # a stop button wired normally-closed ("NOT X2 -> RST Y1") is pressed by driving X2 to 0, not 1
+    nc = [n if n.id != 2 else N(2, [("NOT ", "X2")], [("RST", "Y1")]) for n in saved]
+    r = st(run_scenarios(nc, {"plc_t0_s": 15.0, "plc_t1_s": 5.0}))
+    assert r["S8"] == PASS, r
     # a ladder with no reject cycle at all
     r = st(run_scenarios(saved[:5], {"plc_t0_s": 1.5, "plc_t1_s": 0.5}))
     assert r["S4"] == FAIL, r
