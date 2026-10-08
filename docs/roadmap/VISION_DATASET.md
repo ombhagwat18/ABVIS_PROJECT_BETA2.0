@@ -3,9 +3,9 @@
 Audit of 2026-10-03, from the working tree. Rebuild every number here with:
 
 ```
-python vision_data.py build        # audit -> vision_dataset/manifests/{unified_manifest.csv, dataset_report.json}
-python vision_data.py export-cls   # derived YOLO-classification tree (hard links; --mode crop for ROI PNG crops)
-python vision_data.py validate     # 14 checks, incl. that no checkpoint or source annotation changed
+python -m vision.vision_data build        # audit -> vision_dataset/manifests/{unified_manifest.csv, dataset_report.json}
+python -m vision.vision_data export-cls   # derived YOLO-classification tree (hard links; --mode crop for ROI PNG crops)
+python -m vision.vision_data validate     # 14 checks, incl. that no checkpoint or source annotation changed
 ```
 
 `vision_dataset/` is derived output (not in git). Nothing in `projects/`, `stage2_dataset/` or `models/` is written.

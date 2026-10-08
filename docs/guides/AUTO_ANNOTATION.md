@@ -45,7 +45,7 @@ For deciding GOOD / DEFECT and *which* defect (missing cap, tilted cap, damaged 
    most one defect is flagged. Spot-check a few first.
 5. Train again (Train page). The new model becomes a CANDIDATE; activate it on the Models page after validation.
 
-A defect fires when its score reaches the *calibrated* threshold (`python calibrate_thresholds.py`), not a hand-tuned
+A defect fires when its score reaches the *calibrated* threshold (`python -m vision.calibrate_thresholds`), not a hand-tuned
 low one, so a good bottle is not proposed as defective by noise.
 
 ## 2. Component boxes (the detector draws bottle / cap / label)

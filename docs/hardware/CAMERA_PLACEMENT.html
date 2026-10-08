@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera Placement</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#1d2330;--dim:#5b6475;--line:#d9dde5;--ok:#1f8a3b;--bad:#c62828;--warn:#b26a00;--acc:#1f5fbf;--belt:#4a9a55;--wall:#8a93a3}
+@media (prefers-color-scheme:dark){:root{--bg:#14171d;--card:#1d222b;--ink:#e8ebf1;--dim:#9aa3b2;--line:#2e3542;--ok:#4cc16b;--bad:#ff6b6b;--warn:#ffb454;--acc:#6aa4ff;--belt:#3c7d46;--wall:#6b7485}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:26px;margin:8px 0}h2{font-size:19px;margin:28px 0 8px;border-bottom:2px solid var(--line);padding-bottom:4px}
+.dim{color:var(--dim)}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:10px 0}
+.warn{border-left:5px solid var(--warn)}.note{border-left:5px solid var(--acc)}
+.grid{display:grid;grid-template-columns:300px 1fr;gap:16px}@media(max-width:820px){.grid{grid-template-columns:1fr}}
+label{display:grid;grid-template-columns:1fr 84px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+input{width:84px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line)}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:14px;vertical-align:top}
+th{background:var(--bg);color:var(--dim);font-size:12px;text-transform:uppercase}
+.ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}.w{color:var(--warn);font-weight:600}
+code{background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:13px}
+svg{width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:8px}
+svg text{fill:var(--ink);font:11px system-ui,sans-serif}
+</style>
+</head>
+<body>
+<main>
+<h1>Camera placement in the enclosure</h1>
+<p class="dim">Enclosure 450 &times; 320 &times; 400 mm (L &times; W &times; H, your numbers). Conveyor 5 ft in about 15 s &asymp; 100 mm/s. Change any value on the left; the drawing and the settings update. Defaults for the bottle and camera field of view are <b>assumptions to be measured</b>, not facts.</p>
+
+<div class="card warn"><b>Two things to measure before trusting any number here:</b> (1) the camera's real field of view: hold a ruler at a known distance and read how wide and how tall the picture is, then FOV = 2&middot;atan(width / 2 / distance). (2) The belt speed: time a marked bottle over a measured length.</div>
+
+<div class="grid">
+<div class="card">
+<b>Measure / enter</b>
+<label>Camera to bottle centre (mm)<input id="dist" type="number" value="160"></label>
+<label>Camera height above belt (mm)<input id="camh" type="number" value="90"></label>
+<label>Long-side FOV, deg (measure)<input id="fovl" type="number" value="65"></label>
+<label>Short-side FOV, deg (measure)<input id="fovs" type="number" value="40"></label>
+<label>Resolution long side (px)<input id="resl" type="number" value="1920"></label>
+<label>Resolution short side (px)<input id="ress" type="number" value="1080"></label>
+<label>Bottle width (mm)<input id="bw" type="number" value="60"></label>
+<label>Bottle height (mm)<input id="bh" type="number" value="165"></label>
+<label>Belt speed (mm/s, measure)<input id="v" type="number" value="100"></label>
+<label>Photo-eye to camera A (mm)<input id="da" type="number" value="250"></label>
+<label>Camera B stagger along belt (mm)<input id="st" type="number" value="130"></label>
+<label>Exposure (s)<input id="ex" type="number" step="0.001" value="0.004"></label>
+<label>Inspect window (s)<input id="win" type="number" step="0.1" value="1.5"></label>
+<label>Reject cylinder from photo-eye (mm)<input id="dr" type="number" value="450"></label>
+<label><span>Portrait mounting (1=yes)</span><input id="por" type="number" value="1" min="0" max="1"></label>
+</div>
+<div>
+<svg id="top" viewBox="0 0 640 400" role="img" aria-label="Top view"></svg>
+<p class="dim" style="margin:4px 0 0">Top view. Belt runs left to right. Camera A and B face the bottle from opposite walls, B further along the belt. Blue cones = field of view.</p>
+<svg id="side" viewBox="0 0 640 230" role="img" aria-label="Side view" style="margin-top:10px"></svg>
+<p class="dim" style="margin:4px 0 0">Side view from the belt direction: the camera optical axis at the middle of the bottle.</p>
+</div>
+</div>
+
+<h2>Result</h2>
+<table id="res"></table>
+
+<h2>Settings to enter (Production tab, or settings.json)</h2>
+<div class="card" id="cfg" style="font-family:Consolas,monospace;font-size:13px;white-space:pre"></div>
+
+<h2>Placement rules</h2>
+<table>
+<tr><th>Item</th><th>Do</th><th>Why</th></tr>
+<tr><td>Two cameras</td><td>Opposite walls, B staggered along the belt by more than the number shown above.</td><td>Neither camera sees the other, no lens glints in frame, each sees its half of the bottle. About 240&deg; of good coverage, not 360&deg;.</td></tr>
+<tr><td>Height</td><td>Optical axis at mid-bottle, camera level.</td><td>Cap, label and the water line stay in frame without tilt distortion.</td></tr>
+<tr><td>Orientation</td><td>Portrait (rotate 90&deg;): <code>camera_controls</code> <code>"rotate": 90</code> in settings.json.</td><td>A tall bottle fills the long side of the frame; the model input is tall.</td></tr>
+<tr><td>Lighting</td><td>Two 6500 K strips above each camera, angled down 30&ndash;45&deg;, diffused; DC (non-PWM) supply.</td><td>No hard streak on the PET; no flicker bands.</td></tr>
+<tr><td>Background</td><td>Matte black behind each camera's bottle (the opposite wall), black floor, hood around each lens.</td><td>Clean edges; no reflections.</td></tr>
+<tr><td>Focus / exposure</td><td>Lock by hand at the bottle position, exposure as short as the light allows (blur shown above).</td><td>A drifting autofocus changes the image bottle to bottle.</td></tr>
+<tr><td>USB</td><td>Each camera on its own USB port (different root hub).</td><td>Two cameras on one USB 2.0 hub gave only one 1080p stream.</td></tr>
+</table>
+
+<h2>After mounting (in this order)</h2>
+<ol>
+<li>Production tab &rarr; <b>CAMERA TEST</b>: bottle fully in view, focus sharp.</li>
+<li><b>Set ROI&hellip;</b>: drag a rectangle around where the bottle passes. The grey/yellow rectangle then shows on the live pane; bottles whose centre is outside it are ignored.</li>
+<li><b>Arrival timing&hellip;</b>: send 5+ bottles one at a time. The tool times X0 &rarr; bottle visible in the ROI &rarr; bottle gone, and proposes <code>capture_delay_s</code> and <code>inspect_window_s</code>. Apply. This replaces the calculation above with a measurement.</li>
+<li>Time the bottle from the photo-eye to the reject cylinder (stopwatch) and put it in <code>reject_travel_s</code>; set the ladder's T0 below (travel &minus; delay &minus; window &minus; 0.4 s).</li>
+<li>TEST INSPECTION with a good and a bad bottle, then START INSPECTION.</li>
+</ol>
+</main>
+<script>
+const $=id=>document.getElementById(id), N=id=>parseFloat($(id).value)||0;
+const f=(x,d=1)=>Number.isFinite(x)?x.toFixed(d):'-';
+const tan=d=>Math.tan(d*Math.PI/360)*2;            // 2*tan(fov/2)
+function calc(){
+  const d=N('dist'),por=N('por')===1,fl=N('fovl'),fs=N('fovs'),rl=N('resl'),rs=N('ress'),bw=N('bw'),bh=N('bh'),v=N('v'),da=N('da'),st=N('st'),ex=N('ex'),win=N('win'),dr=N('dr');
+  const fh=por?fs:fl, fv=por?fl:fs, rh=por?rs:rl, rv=por?rl:rs;
+  const covH=d*tan(fh), covV=d*tan(fv), ppm=rh/covH;
+  const fits=covH>=bw*1.2&&covV>=bh*1.2;
+  const inView=(covH+bw)/v, arrA=da/v, arrB=(da+st)/v;
+  const delay=Math.max(0,arrA-win/2), winMax=Math.min(inView,2*arrA);
+  const blur=v*ex*ppm;
+  const minStag=2*d*tan(fh)/2;                       // B must be out of A's view: lateral shift > 2d*tan(fh/2)
+  const roiW=bw*1.2/covH, roiH=Math.min(1,bh*1.2/covV);
+  const travel=dr/v;
+  // inspection must finish before the reject command: travel - T0 ; give T0 = travel - (delay + win + 0.4)
+  const t0max=travel-(delay+win+0.4);
+  const rows=[
+   ['Scene at the bottle',`${f(covH,0)} &times; ${f(covV,0)} mm (${f(ppm,1)} px/mm)`,''],
+   ['Bottle fits with 20% margin',fits?'yes':'NO',fits?'ok':'bad'],
+   ['Bottle in the image',`${f(bw*ppm,0)} &times; ${f(bh*ppm,0)} px`,''],
+   ['Camera inside the 320 mm width',d<=160?'yes':'NO (wall closer than the bottle line)',d<=160?'ok':'bad'],
+   ['Motion blur',`${f(blur,1)} px per exposure`,blur<2?'ok':'bad'],
+   ['Bottle appears in camera A',`${f(arrA,2)} s after the photo-eye`,''],
+   ['Bottle appears in camera B',`${f(arrB,2)} s after the photo-eye`,''],
+   ['Bottle visible in one camera for',`${f(inView,2)} s (window must be &le; ${f(winMax,2)} s)`,win<=winMax?'ok':'bad'],
+   ['B stagger needed to hide camera A from B',`&gt; ${f(minStag,0)} mm`,st>minStag?'ok':'bad'],
+   ['Photo-eye &rarr; reject cylinder',`${f(travel,2)} s`,''],
+   ['Largest PLC T0 that still works',`${f(t0max,2)} s (REJECT is sent at travel &minus; T0 = ${f(travel-t0max,2)} s)`,t0max>0.3?'ok':'bad']];
+  $('res').innerHTML='<tr><th>Item</th><th>Value</th></tr>'+rows.map(r=>`<tr><td>${r[0]}</td><td class="${r[2]}">${r[1]}</td></tr>`).join('');
+  $('cfg').textContent=`"capture_delay_s": ${f(delay,2)}      (camera A; camera B needs +${f(st/v,2)} s: set it in Line layout / camera stations)
+"inspect_window_s": ${f(Math.min(win,winMax),2)}
+"reject_travel_s": ${f(travel,2)}      (replace with the stopwatch value)
+"plc_t0_s": <= ${f(Math.max(0,t0max),2)}      (and the same K value in the ladder)
+ROI (fraction of the frame)  width ${f(roiW,2)}, height ${f(roiH,2)}, centred on the bottle path  -> use "Set ROI..." to draw it`;
+  draw(d,covH,fh,st,da,por,bw,bh,covV,fv);
+}
+function draw(d,covH,fh,st,da,por,bw,bh,covV,fv){
+  // top view: scale 450 mm -> 520 px
+  const k=520/450,x0=60,y0=60,L=450,W=320,by=y0+W*k/2;
+  let s=`<rect x="${x0}" y="${y0}" width="${L*k}" height="${W*k}" fill="none" stroke="var(--wall)" stroke-width="3"/>`;
+  s+=`<rect x="${x0-50}" y="${by-8}" width="${L*k+100}" height="16" fill="var(--belt)"/><text x="${x0-48}" y="${by-12}">belt &rarr;</text>`;
+  const cax=x0+(L/2-st/2)*k, cbx=x0+(L/2+st/2)*k;
+  const half=h=>Math.tan(h*Math.PI/360)*d*k;
+  const cone=(cx,cy,dir)=>`<polygon points="${cx},${cy} ${cx-half(fh)},${cy+dir*d*k} ${cx+half(fh)},${cy+dir*d*k}" fill="#6aa4ff" fill-opacity=".25" stroke="#6aa4ff"/>`;
+  s+=cone(cax,by-d*k,1)+cone(cbx,by+d*k,-1);
+  s+=`<rect x="${cax-7}" y="${by-d*k-7}" width="14" height="14" fill="#222"/><text x="${cax-6}" y="${by-d*k-12}">A</text>`;
+  s+=`<rect x="${cbx-7}" y="${by+d*k-7}" width="14" height="14" fill="#222"/><text x="${cbx-6}" y="${by+d*k+22}">B</text>`;
+  s+=`<circle cx="${cax}" cy="${by}" r="${bw*k/2}" fill="#fc6" stroke="#a70"/><circle cx="${cbx}" cy="${by}" r="${bw*k/2}" fill="#fc6" stroke="#a70" stroke-dasharray="3 3"/>`;
+  const px=cax-da*k;                                  // photo-eye upstream of camera A
+  s+=`<rect x="${px-4}" y="${by-34}" width="8" height="68" fill="#c62828"/><text x="${px-22}" y="${by-40}">photo-eye</text>`;
+  s+=`<line x1="${px}" y1="${by+44}" x2="${cax}" y2="${by+44}" stroke="var(--dim)"/><text x="${(px+cax)/2-40}" y="${by+58}">${f(da,0)} mm to A</text>`;
+  s+=`<text x="${x0}" y="${y0-8}">enclosure 450 &times; 320 mm</text>`;
+  $('top').innerHTML=s;
+  // side view: scale 400 mm height
+  const k2=190/400,gx=60,gy=205;
+  let t=`<line x1="20" y1="${gy}" x2="620" y2="${gy}" stroke="var(--belt)" stroke-width="6"/>`;
+  const bx=330, bhp=bh*k2, bwp=bw*k2;
+  t+=`<rect x="${bx-bwp/2}" y="${gy-bhp}" width="${bwp}" height="${bhp}" rx="6" fill="#fc6" fill-opacity=".6" stroke="#a70"/>`;
+  const camy=gy-N('camh')*k2, camx=bx-d*k2;
+  t+=`<rect x="${camx-6}" y="${camy-9}" width="12" height="18" fill="#222"/><text x="${camx-12}" y="${camy-14}">camera</text>`;
+  const halfv=Math.tan(fv*Math.PI/360)*d*k2;
+  t+=`<polygon points="${camx},${camy} ${bx},${camy-halfv} ${bx},${camy+halfv}" fill="#6aa4ff" fill-opacity=".22" stroke="#6aa4ff"/>`;
+  t+=`<text x="${bx+bwp/2+8}" y="${gy-bhp/2}">${f(bh,0)} mm</text><text x="24" y="20">scene height at the bottle: ${f(covV,0)} mm</text>`;
+  $('side').innerHTML=t;
+}
+document.querySelectorAll('input').forEach(i=>i.addEventListener('input',calc));
+calc();
+</script>
+</body>
+</html>

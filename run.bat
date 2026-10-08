@@ -56,7 +56,7 @@ rem ------------------------------------------- migrate the old single-project l
 if exist "All Datasets" (
     echo.
     echo   Moving the old layout into projects\ ...
-    python migrate.py "OM Bottle" --run
+    python -m tools.migrate "OM Bottle" --run
     echo.
 )
 
@@ -67,7 +67,7 @@ python -c "import dataset as D,sys; sys.exit(0 if D.CONFIG_JSON.exists() or not 
 if errorlevel 1 (
     echo.
     echo   First run - measuring the crop region from your images...
-    python calibrate.py
+    python -m vision.calibrate
     echo.
 )
 
