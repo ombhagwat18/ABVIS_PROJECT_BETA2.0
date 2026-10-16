@@ -79,3 +79,7 @@ vision_dataset/manifests/hash_cache.json
 
 # archived models (moved out before retraining)
 models_archive/
+
+# Claude Code context: local only, not published
+CLAUDE.md
+.claude/
