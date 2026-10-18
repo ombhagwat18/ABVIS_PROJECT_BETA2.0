@@ -13,6 +13,7 @@ import statistics
 import sys
 import time
 
+from line import clock
 from . import handshake_test as H
 from .client import PLCClient, TcpTransport
 from .service import PLCService
@@ -29,12 +30,12 @@ def row(test, ok, evidence):
 
 def idle(svc, wait=6.0):
     """Wait until M0/M1/M2/Y0 are all OFF and T0/T1 are 0; return the last sample."""
-    end = time.monotonic() + wait
+    end = clock.now() + wait
     while True:
         s = svc.sample(BITS, ["T0", "T1"])
         if not any(s[b] for b in BITS) and not s["T0"] and not s["T1"]:
             return s, True
-        if time.monotonic() > end:
+        if clock.now() > end:
             return s, False
         time.sleep(0.05)
 

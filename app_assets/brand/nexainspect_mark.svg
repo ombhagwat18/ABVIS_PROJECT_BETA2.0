@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="240" height="240" viewBox="0 0 240 240">
+  <title>NexaInspect mark</title>
+  <!-- The lens-and-check symbol of nexainspect_logo.svg on its own, strokes slightly heavier so it stays legible
+       at 32 x 32 and 16 x 16 (application icon, header, report corner). -->
+  <defs>
+    <linearGradient id="lens" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F6FED"/>
+      <stop offset="1" stop-color="#14243A"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(8 8)">
+    <circle cx="112" cy="112" r="88" fill="none" stroke="#D8E0E9" stroke-width="12"/>
+    <path d="M112 24 A88 88 0 0 1 188 68" fill="none" stroke="#16A6A1" stroke-width="16" stroke-linecap="round"/>
+    <path d="M188 156 A88 88 0 0 1 112 200" fill="none" stroke="#2F6FED" stroke-width="16" stroke-linecap="round"/>
+    <path d="M36 156 A88 88 0 0 1 36 68" fill="none" stroke="#14243A" stroke-width="16" stroke-linecap="round"/>
+    <path d="M74 55 L99 79 L84 108 L111 135 L145 101 L169 125 L145 158 L111 181 L78 157 L54 128 L68 94 Z"
+          fill="url(#lens)"/>
+    <circle cx="112" cy="112" r="36" fill="#FFFFFF"/>
+    <circle cx="112" cy="112" r="25" fill="#EAF2FF" stroke="#2F6FED" stroke-width="6"/>
+    <path d="M98 112 L108 123 L129 99" fill="none" stroke="#16A6A1" stroke-width="10" stroke-linecap="round"
+          stroke-linejoin="round"/>
+    <path d="M190 40 L208 40 L208 58" fill="none" stroke="#16A6A1" stroke-width="9" stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+</svg>

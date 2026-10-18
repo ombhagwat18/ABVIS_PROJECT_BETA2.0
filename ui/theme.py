@@ -19,23 +19,33 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+# LIGHT = the NexaInspect design tokens (app_assets/brand): navy navigation, blue primary action, teal brand accent.
+# FAULT keeps the brand's warning amber, not the reject red: PASS / REJECT / FAULT stay three different colours,
+# and the words are always shown next to the colour.
 LIGHT = {
     # surfaces
-    "BG": "#eef1f4", "PANEL": "#ffffff", "PANEL_2": "#e6eaef", "RAIL": "#dfe4ea", "LINE": "#c3cad3",
-    "VIDEO_BG": "#1c2026", "FIELD": "#ffffff", "HOVER": "#d5dbe3", "HOVER_2": "#c8d0da",
+    "BG": "#f3f6fa", "PANEL": "#ffffff", "PANEL_2": "#eaeff5", "RAIL": "#e3e9f0", "LINE": "#d8e0e9",
+    "VIDEO_BG": "#1c2026", "FIELD": "#ffffff", "HOVER": "#dce4ed", "HOVER_2": "#cbd5e1",
+    "HEADER": "#ffffff",
+    # navigation rail (navy)
+    "NAV": "#14243a", "NAV_HOVER": "#24364b", "NAV_TEXT": "#c9d3df", "NAV_MUTED": "#7f90a6",
     # text
-    "INK": "#111827", "DIM": "#4b5563", "MUTED": "#8b95a1",
+    "INK": "#172433", "DIM": "#637184", "MUTED": "#8b97a8",
     # accent
-    "ACC": "#1d4ed8", "ACC_H": "#1e40af", "ACC_T": "#ffffff", "ACC_SOFT": "#dbe6fd",
+    "ACC": "#2f6fed", "ACC_H": "#2459c9", "ACC_T": "#ffffff", "ACC_SOFT": "#e3ecfd",
+    "NAVY": "#14243a", "NAVY_2": "#24364b", "TEAL": "#16a6a1",
     # state
-    "PASS": "#15803d", "REJECT": "#c81e1e", "FAULT": "#b45309", "INFO": "#0369a1", "OFF": "#9ca3af",
-    "PASS_SOFT": "#dcfce7", "REJECT_SOFT": "#fee2e2", "FAULT_SOFT": "#fef3c7", "INFO_SOFT": "#e0f2fe",
+    "PASS": "#16845b", "REJECT": "#c83d4d", "FAULT": "#b7791f", "INFO": "#0369a1", "OFF": "#6b7280",
+    "PASS_SOFT": "#dff3ea", "REJECT_SOFT": "#fbe4e7", "FAULT_SOFT": "#fbf0dc", "INFO_SOFT": "#e0f2fe",
 }
 DARK = {
     "BG": "#15181c", "PANEL": "#1e2329", "PANEL_2": "#272d35", "RAIL": "#101316", "LINE": "#343b44",
     "VIDEO_BG": "#0b0d10", "FIELD": "#0b0d10", "HOVER": "#323a44", "HOVER_2": "#3d4652",
+    "HEADER": "#101316",
+    "NAV": "#101316", "NAV_HOVER": "#24364b", "NAV_TEXT": "#c9d3df", "NAV_MUTED": "#5d6773",
     "INK": "#e6e9ed", "DIM": "#8b95a1", "MUTED": "#5d6773",
     "ACC": "#2f6fed", "ACC_H": "#2559c4", "ACC_T": "#ffffff", "ACC_SOFT": "#1f3354",
+    "NAVY": "#d8e0e9", "NAVY_2": "#a9b6c6", "TEAL": "#1fb8b2",
     "PASS": "#22c55e", "REJECT": "#ef4444", "FAULT": "#f59e0b", "INFO": "#38bdf8", "OFF": "#4b5563",
     "PASS_SOFT": "#163524", "REJECT_SOFT": "#3d1b1b", "FAULT_SOFT": "#3b2c10", "INFO_SOFT": "#12303f",
 }
@@ -63,6 +73,17 @@ LINE = _P["LINE"]            # borders, gridlines, separators
 VIDEO_BG = _P["VIDEO_BG"]    # behind camera frames and image previews (dark in both themes)
 FIELD = _P["FIELD"]          # entry / text box background
 HOVER, HOVER_2 = _P["HOVER"], _P["HOVER_2"]
+HEADER = _P["HEADER"]        # top bar (brand, product, lamps) and footer
+
+# ---------------------------------------------------------------- navigation rail
+NAV = _P["NAV"]              # rail background (navy)
+NAV_HOVER = _P["NAV_HOVER"]  # a rail button under the pointer
+NAV_TEXT = _P["NAV_TEXT"]    # page names on the rail
+NAV_MUTED = _P["NAV_MUTED"]  # group headings on the rail
+
+# ---------------------------------------------------------------- brand
+NAVY, NAVY_2 = _P["NAVY"], _P["NAVY_2"]      # brand word "Nexa", headings that carry the brand (navy-on-light)
+TEAL = _P["TEAL"]            # brand accent only (tagline, verified mark) - never a machine state
 
 # ---------------------------------------------------------------- text
 INK = _P["INK"]              # primary text

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import threading
 import time
+from line import clock
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -94,7 +95,7 @@ class _Cfg:
 class VerdictTracker:
     """Feed one call per scored frame; read .current() from any thread."""
 
-    def __init__(self, clock=time.monotonic, **cfg):
+    def __init__(self, clock=clock.now, **cfg):
         self.cfg = _Cfg(**cfg)
         self.clock = clock
         self._lock = threading.Lock()

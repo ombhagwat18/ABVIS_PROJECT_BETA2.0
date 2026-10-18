@@ -1,0 +1,5584 @@
+{
+ "classifier": {
+  "20261008-081732": {
+   "arch": "efficientnet_b0",
+   "test_macro_f1": 0.9775,
+   "n_test": 246,
+   "thresholds": {
+    "damaged_bottle": 0.1,
+    "damaged_label": 0.75,
+    "missing_cap": 0.05,
+    "missing_label": 0.5,
+    "skewed_bottle": 0.05,
+    "skewed_label": 0.05,
+    "tilt_cap": 0.55,
+    "water_level": 0.05
+   },
+   "real": [
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.157,
+      "damaged_label": 0.221,
+      "missing_cap": 0.998,
+      "missing_label": 0.257,
+      "skewed_bottle": 0.066,
+      "skewed_label": 0.242,
+      "tilt_cap": 0.141,
+      "water_level": 0.193
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.149,
+      "damaged_label": 0.211,
+      "missing_cap": 0.998,
+      "missing_label": 0.247,
+      "skewed_bottle": 0.061,
+      "skewed_label": 0.23,
+      "tilt_cap": 0.132,
+      "water_level": 0.182
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.148,
+      "damaged_label": 0.203,
+      "missing_cap": 0.998,
+      "missing_label": 0.261,
+      "skewed_bottle": 0.062,
+      "skewed_label": 0.227,
+      "tilt_cap": 0.132,
+      "water_level": 0.182
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f4.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.168,
+      "damaged_label": 0.227,
+      "missing_cap": 0.997,
+      "missing_label": 0.268,
+      "skewed_bottle": 0.071,
+      "skewed_label": 0.256,
+      "tilt_cap": 0.15,
+      "water_level": 0.204
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f5.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.173,
+      "damaged_label": 0.23,
+      "missing_cap": 0.997,
+      "missing_label": 0.28,
+      "skewed_bottle": 0.075,
+      "skewed_label": 0.26,
+      "tilt_cap": 0.153,
+      "water_level": 0.211
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.016,
+      "damaged_label": 0.016,
+      "missing_cap": 1.0,
+      "missing_label": 0.029,
+      "skewed_bottle": 0.002,
+      "skewed_label": 0.025,
+      "tilt_cap": 0.007,
+      "water_level": 0.01
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.016,
+      "damaged_label": 0.016,
+      "missing_cap": 1.0,
+      "missing_label": 0.028,
+      "skewed_bottle": 0.002,
+      "skewed_label": 0.023,
+      "tilt_cap": 0.007,
+      "water_level": 0.01
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f3.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.017,
+      "damaged_label": 0.017,
+      "missing_cap": 1.0,
+      "missing_label": 0.029,
+      "skewed_bottle": 0.002,
+      "skewed_label": 0.025,
+      "tilt_cap": 0.007,
+      "water_level": 0.01
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.003,
+      "damaged_label": 0.003,
+      "missing_cap": 1.0,
+      "missing_label": 0.007,
+      "skewed_bottle": 0.0,
+      "skewed_label": 0.004,
+      "tilt_cap": 0.001,
+      "water_level": 0.002
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.003,
+      "damaged_label": 0.003,
+      "missing_cap": 1.0,
+      "missing_label": 0.007,
+      "skewed_bottle": 0.0,
+      "skewed_label": 0.004,
+      "tilt_cap": 0.001,
+      "water_level": 0.003
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f3.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.003,
+      "damaged_label": 0.003,
+      "missing_cap": 1.0,
+      "missing_label": 0.007,
+      "skewed_bottle": 0.0,
+      "skewed_label": 0.005,
+      "tilt_cap": 0.001,
+      "water_level": 0.003
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.019,
+      "damaged_label": 0.013,
+      "missing_cap": 1.0,
+      "missing_label": 0.031,
+      "skewed_bottle": 0.002,
+      "skewed_label": 0.023,
+      "tilt_cap": 0.009,
+      "water_level": 0.008
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.014,
+      "damaged_label": 0.009,
+      "missing_cap": 1.0,
+      "missing_label": 0.023,
+      "skewed_bottle": 0.001,
+      "skewed_label": 0.016,
+      "tilt_cap": 0.005,
+      "water_level": 0.006
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.001,
+      "damaged_label": 0.0,
+      "missing_cap": 1.0,
+      "missing_label": 0.001,
+      "skewed_bottle": 0.0,
+      "skewed_label": 0.001,
+      "tilt_cap": 0.0,
+      "water_level": 0.0
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.001,
+      "damaged_label": 0.0,
+      "missing_cap": 1.0,
+      "missing_label": 0.002,
+      "skewed_bottle": 0.0,
+      "skewed_label": 0.001,
+      "tilt_cap": 0.0,
+      "water_level": 0.001
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.184,
+      "damaged_label": 0.326,
+      "missing_cap": 0.992,
+      "missing_label": 0.306,
+      "skewed_bottle": 0.074,
+      "skewed_label": 0.31,
+      "tilt_cap": 0.144,
+      "water_level": 0.195
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.195,
+      "damaged_label": 0.36,
+      "missing_cap": 0.991,
+      "missing_label": 0.326,
+      "skewed_bottle": 0.078,
+      "skewed_label": 0.325,
+      "tilt_cap": 0.157,
+      "water_level": 0.204
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f1.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.088,
+      "damaged_label": 0.129,
+      "missing_cap": 0.999,
+      "missing_label": 0.154,
+      "skewed_bottle": 0.028,
+      "skewed_label": 0.126,
+      "tilt_cap": 0.055,
+      "water_level": 0.108
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f2.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.042,
+      "damaged_label": 0.065,
+      "missing_cap": 0.999,
+      "missing_label": 0.076,
+      "skewed_bottle": 0.011,
+      "skewed_label": 0.052,
+      "tilt_cap": 0.021,
+      "water_level": 0.046
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.224,
+      "damaged_label": 0.392,
+      "missing_cap": 0.988,
+      "missing_label": 0.337,
+      "skewed_bottle": 0.089,
+      "skewed_label": 0.377,
+      "tilt_cap": 0.179,
+      "water_level": 0.233
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.211,
+      "damaged_label": 0.378,
+      "missing_cap": 0.99,
+      "missing_label": 0.321,
+      "skewed_bottle": 0.078,
+      "skewed_label": 0.352,
+      "tilt_cap": 0.161,
+      "water_level": 0.213
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.116,
+      "damaged_label": 0.177,
+      "missing_cap": 0.998,
+      "missing_label": 0.215,
+      "skewed_bottle": 0.047,
+      "skewed_label": 0.183,
+      "tilt_cap": 0.082,
+      "water_level": 0.164
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.118,
+      "damaged_label": 0.179,
+      "missing_cap": 0.998,
+      "missing_label": 0.21,
+      "skewed_bottle": 0.049,
+      "skewed_label": 0.181,
+      "tilt_cap": 0.083,
+      "water_level": 0.169
+     }
+    },
+    {
+     "frame": "captures\\TOPVIEW_20261006-134648\\topview_bottle_f1.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.029,
+      "damaged_label": 0.046,
+      "missing_cap": 0.999,
+      "missing_label": 0.063,
+      "skewed_bottle": 0.011,
+      "skewed_label": 0.057,
+      "tilt_cap": 0.019,
+      "water_level": 0.052
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.003,
+      "damaged_label": 0.002,
+      "missing_cap": 1.0,
+      "missing_label": 0.005,
+      "skewed_bottle": 0.0,
+      "skewed_label": 0.004,
+      "tilt_cap": 0.001,
+      "water_level": 0.004
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.003,
+      "damaged_label": 0.002,
+      "missing_cap": 1.0,
+      "missing_label": 0.005,
+      "skewed_bottle": 0.001,
+      "skewed_label": 0.004,
+      "tilt_cap": 0.001,
+      "water_level": 0.004
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f3.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.003,
+      "damaged_label": 0.002,
+      "missing_cap": 1.0,
+      "missing_label": 0.005,
+      "skewed_bottle": 0.001,
+      "skewed_label": 0.004,
+      "tilt_cap": 0.001,
+      "water_level": 0.004
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f4.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.003,
+      "damaged_label": 0.002,
+      "missing_cap": 1.0,
+      "missing_label": 0.005,
+      "skewed_bottle": 0.001,
+      "skewed_label": 0.004,
+      "tilt_cap": 0.001,
+      "water_level": 0.004
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f5.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.003,
+      "damaged_label": 0.002,
+      "missing_cap": 1.0,
+      "missing_label": 0.005,
+      "skewed_bottle": 0.0,
+      "skewed_label": 0.004,
+      "tilt_cap": 0.001,
+      "water_level": 0.004
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000001_FAULT.jpg",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.023,
+      "damaged_label": 0.029,
+      "missing_cap": 1.0,
+      "missing_label": 0.048,
+      "skewed_bottle": 0.009,
+      "skewed_label": 0.039,
+      "tilt_cap": 0.014,
+      "water_level": 0.048
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000003_FAULT.jpg",
+     "hits": [
+      "missing_cap",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.029,
+      "damaged_label": 0.036,
+      "missing_cap": 1.0,
+      "missing_label": 0.054,
+      "skewed_bottle": 0.011,
+      "skewed_label": 0.047,
+      "tilt_cap": 0.018,
+      "water_level": 0.056
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000001_FAULT.jpg",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.011,
+      "damaged_label": 0.016,
+      "missing_cap": 1.0,
+      "missing_label": 0.032,
+      "skewed_bottle": 0.003,
+      "skewed_label": 0.025,
+      "tilt_cap": 0.006,
+      "water_level": 0.017
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000002_FAULT.jpg",
+     "hits": [
+      "missing_cap",
+      "skewed_label",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.065,
+      "damaged_label": 0.107,
+      "missing_cap": 0.999,
+      "missing_label": 0.131,
+      "skewed_bottle": 0.023,
+      "skewed_label": 0.122,
+      "tilt_cap": 0.047,
+      "water_level": 0.083
+     }
+    }
+   ],
+   "secs": 14.3
+  },
+  "20261008-082510": {
+   "arch": "resnet18",
+   "test_macro_f1": 0.9769,
+   "n_test": 246,
+   "thresholds": {
+    "damaged_bottle": 0.05,
+    "damaged_label": 0.15,
+    "missing_cap": 0.05,
+    "missing_label": 0.5,
+    "skewed_bottle": 0.2,
+    "skewed_label": 0.55,
+    "tilt_cap": 0.5,
+    "water_level": 0.25
+   },
+   "real": [
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.04,
+      "damaged_label": 0.045,
+      "missing_cap": 0.985,
+      "missing_label": 0.038,
+      "skewed_bottle": 0.057,
+      "skewed_label": 0.089,
+      "tilt_cap": 0.122,
+      "water_level": 0.022
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.042,
+      "damaged_label": 0.048,
+      "missing_cap": 0.984,
+      "missing_label": 0.037,
+      "skewed_bottle": 0.061,
+      "skewed_label": 0.086,
+      "tilt_cap": 0.119,
+      "water_level": 0.022
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f3.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.045,
+      "damaged_label": 0.041,
+      "missing_cap": 0.985,
+      "missing_label": 0.037,
+      "skewed_bottle": 0.058,
+      "skewed_label": 0.086,
+      "tilt_cap": 0.129,
+      "water_level": 0.023
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f4.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.042,
+      "damaged_label": 0.046,
+      "missing_cap": 0.984,
+      "missing_label": 0.038,
+      "skewed_bottle": 0.06,
+      "skewed_label": 0.092,
+      "tilt_cap": 0.128,
+      "water_level": 0.022
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f5.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.042,
+      "damaged_label": 0.047,
+      "missing_cap": 0.984,
+      "missing_label": 0.037,
+      "skewed_bottle": 0.063,
+      "skewed_label": 0.093,
+      "tilt_cap": 0.12,
+      "water_level": 0.023
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.168,
+      "damaged_label": 0.081,
+      "missing_cap": 0.958,
+      "missing_label": 0.03,
+      "skewed_bottle": 0.028,
+      "skewed_label": 0.148,
+      "tilt_cap": 0.077,
+      "water_level": 0.01
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.169,
+      "damaged_label": 0.077,
+      "missing_cap": 0.96,
+      "missing_label": 0.03,
+      "skewed_bottle": 0.027,
+      "skewed_label": 0.149,
+      "tilt_cap": 0.079,
+      "water_level": 0.011
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.166,
+      "damaged_label": 0.077,
+      "missing_cap": 0.959,
+      "missing_label": 0.029,
+      "skewed_bottle": 0.027,
+      "skewed_label": 0.142,
+      "tilt_cap": 0.077,
+      "water_level": 0.011
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.083,
+      "damaged_label": 0.065,
+      "missing_cap": 0.957,
+      "missing_label": 0.047,
+      "skewed_bottle": 0.031,
+      "skewed_label": 0.138,
+      "tilt_cap": 0.089,
+      "water_level": 0.008
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.084,
+      "damaged_label": 0.064,
+      "missing_cap": 0.958,
+      "missing_label": 0.045,
+      "skewed_bottle": 0.029,
+      "skewed_label": 0.135,
+      "tilt_cap": 0.086,
+      "water_level": 0.007
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.082,
+      "damaged_label": 0.067,
+      "missing_cap": 0.957,
+      "missing_label": 0.047,
+      "skewed_bottle": 0.031,
+      "skewed_label": 0.132,
+      "tilt_cap": 0.087,
+      "water_level": 0.008
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.063,
+      "damaged_label": 0.157,
+      "missing_cap": 0.87,
+      "missing_label": 0.045,
+      "skewed_bottle": 0.011,
+      "skewed_label": 0.164,
+      "tilt_cap": 0.214,
+      "water_level": 0.105
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f2.png",
+     "hits": [
+      "damaged_label",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.039,
+      "damaged_label": 0.323,
+      "missing_cap": 0.812,
+      "missing_label": 0.063,
+      "skewed_bottle": 0.015,
+      "skewed_label": 0.218,
+      "tilt_cap": 0.117,
+      "water_level": 0.135
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.047,
+      "damaged_label": 0.023,
+      "missing_cap": 0.98,
+      "missing_label": 0.037,
+      "skewed_bottle": 0.043,
+      "skewed_label": 0.056,
+      "tilt_cap": 0.094,
+      "water_level": 0.029
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.046,
+      "damaged_label": 0.022,
+      "missing_cap": 0.98,
+      "missing_label": 0.036,
+      "skewed_bottle": 0.041,
+      "skewed_label": 0.054,
+      "tilt_cap": 0.09,
+      "water_level": 0.029
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.021,
+      "damaged_label": 0.107,
+      "missing_cap": 0.4,
+      "missing_label": 0.087,
+      "skewed_bottle": 0.031,
+      "skewed_label": 0.225,
+      "tilt_cap": 0.253,
+      "water_level": 0.082
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.02,
+      "damaged_label": 0.099,
+      "missing_cap": 0.381,
+      "missing_label": 0.083,
+      "skewed_bottle": 0.033,
+      "skewed_label": 0.245,
+      "tilt_cap": 0.243,
+      "water_level": 0.096
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.096,
+      "damaged_label": 0.045,
+      "missing_cap": 0.919,
+      "missing_label": 0.075,
+      "skewed_bottle": 0.127,
+      "skewed_label": 0.087,
+      "tilt_cap": 0.093,
+      "water_level": 0.045
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.071,
+      "damaged_label": 0.038,
+      "missing_cap": 0.942,
+      "missing_label": 0.091,
+      "skewed_bottle": 0.136,
+      "skewed_label": 0.068,
+      "tilt_cap": 0.09,
+      "water_level": 0.04
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f1.png",
+     "hits": [
+      "damaged_label",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.023,
+      "damaged_label": 0.207,
+      "missing_cap": 0.398,
+      "missing_label": 0.091,
+      "skewed_bottle": 0.019,
+      "skewed_label": 0.292,
+      "tilt_cap": 0.15,
+      "water_level": 0.062
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f2.png",
+     "hits": [
+      "damaged_label",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.023,
+      "damaged_label": 0.235,
+      "missing_cap": 0.399,
+      "missing_label": 0.084,
+      "skewed_bottle": 0.017,
+      "skewed_label": 0.289,
+      "tilt_cap": 0.146,
+      "water_level": 0.056
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.188,
+      "damaged_label": 0.035,
+      "missing_cap": 0.893,
+      "missing_label": 0.077,
+      "skewed_bottle": 0.101,
+      "skewed_label": 0.175,
+      "tilt_cap": 0.091,
+      "water_level": 0.03
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.246,
+      "damaged_label": 0.031,
+      "missing_cap": 0.88,
+      "missing_label": 0.072,
+      "skewed_bottle": 0.1,
+      "skewed_label": 0.17,
+      "tilt_cap": 0.098,
+      "water_level": 0.033
+     }
+    },
+    {
+     "frame": "captures\\TOPVIEW_20261006-134648\\topview_bottle_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.033,
+      "damaged_label": 0.016,
+      "missing_cap": 0.971,
+      "missing_label": 0.061,
+      "skewed_bottle": 0.101,
+      "skewed_label": 0.087,
+      "tilt_cap": 0.084,
+      "water_level": 0.051
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.023,
+      "damaged_label": 0.018,
+      "missing_cap": 0.985,
+      "missing_label": 0.064,
+      "skewed_bottle": 0.025,
+      "skewed_label": 0.072,
+      "tilt_cap": 0.082,
+      "water_level": 0.024
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.022,
+      "damaged_label": 0.018,
+      "missing_cap": 0.985,
+      "missing_label": 0.063,
+      "skewed_bottle": 0.025,
+      "skewed_label": 0.072,
+      "tilt_cap": 0.08,
+      "water_level": 0.024
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f3.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.022,
+      "damaged_label": 0.018,
+      "missing_cap": 0.985,
+      "missing_label": 0.062,
+      "skewed_bottle": 0.025,
+      "skewed_label": 0.072,
+      "tilt_cap": 0.083,
+      "water_level": 0.024
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f4.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.023,
+      "damaged_label": 0.018,
+      "missing_cap": 0.985,
+      "missing_label": 0.063,
+      "skewed_bottle": 0.024,
+      "skewed_label": 0.072,
+      "tilt_cap": 0.083,
+      "water_level": 0.023
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f5.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.022,
+      "damaged_label": 0.018,
+      "missing_cap": 0.985,
+      "missing_label": 0.064,
+      "skewed_bottle": 0.025,
+      "skewed_label": 0.074,
+      "tilt_cap": 0.084,
+      "water_level": 0.023
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000001_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.051,
+      "damaged_label": 0.027,
+      "missing_cap": 0.967,
+      "missing_label": 0.067,
+      "skewed_bottle": 0.129,
+      "skewed_label": 0.116,
+      "tilt_cap": 0.089,
+      "water_level": 0.023
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000003_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.051,
+      "damaged_label": 0.029,
+      "missing_cap": 0.967,
+      "missing_label": 0.081,
+      "skewed_bottle": 0.132,
+      "skewed_label": 0.13,
+      "tilt_cap": 0.076,
+      "water_level": 0.023
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000001_FAULT.jpg",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.046,
+      "damaged_label": 0.067,
+      "missing_cap": 0.967,
+      "missing_label": 0.06,
+      "skewed_bottle": 0.049,
+      "skewed_label": 0.179,
+      "tilt_cap": 0.082,
+      "water_level": 0.029
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000002_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.103,
+      "damaged_label": 0.064,
+      "missing_cap": 0.927,
+      "missing_label": 0.129,
+      "skewed_bottle": 0.108,
+      "skewed_label": 0.181,
+      "tilt_cap": 0.135,
+      "water_level": 0.016
+     }
+    }
+   ],
+   "secs": 9.1
+  },
+  "20261008-083257": {
+   "arch": "efficientnet_b1",
+   "test_macro_f1": 0.9076,
+   "n_test": 246,
+   "thresholds": {
+    "damaged_bottle": 0.55,
+    "damaged_label": 0.65,
+    "missing_cap": 0.05,
+    "missing_label": 0.5,
+    "skewed_bottle": 0.35,
+    "skewed_label": 0.65,
+    "tilt_cap": 0.55,
+    "water_level": 0.7
+   },
+   "real": [
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.682,
+      "damaged_label": 0.625,
+      "missing_cap": 0.915,
+      "missing_label": 0.667,
+      "skewed_bottle": 0.555,
+      "skewed_label": 0.663,
+      "tilt_cap": 0.597,
+      "water_level": 0.667
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.678,
+      "damaged_label": 0.621,
+      "missing_cap": 0.915,
+      "missing_label": 0.663,
+      "skewed_bottle": 0.544,
+      "skewed_label": 0.656,
+      "tilt_cap": 0.591,
+      "water_level": 0.662
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.691,
+      "damaged_label": 0.644,
+      "missing_cap": 0.921,
+      "missing_label": 0.683,
+      "skewed_bottle": 0.584,
+      "skewed_label": 0.686,
+      "tilt_cap": 0.604,
+      "water_level": 0.682
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f4.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.675,
+      "damaged_label": 0.633,
+      "missing_cap": 0.919,
+      "missing_label": 0.68,
+      "skewed_bottle": 0.548,
+      "skewed_label": 0.659,
+      "tilt_cap": 0.594,
+      "water_level": 0.672
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f5.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.677,
+      "damaged_label": 0.627,
+      "missing_cap": 0.92,
+      "missing_label": 0.669,
+      "skewed_bottle": 0.542,
+      "skewed_label": 0.652,
+      "tilt_cap": 0.589,
+      "water_level": 0.665
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle"
+     ],
+     "probs": {
+      "damaged_bottle": 0.658,
+      "damaged_label": 0.476,
+      "missing_cap": 0.828,
+      "missing_label": 0.508,
+      "skewed_bottle": 0.46,
+      "skewed_label": 0.649,
+      "tilt_cap": 0.445,
+      "water_level": 0.58
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle"
+     ],
+     "probs": {
+      "damaged_bottle": 0.662,
+      "damaged_label": 0.477,
+      "missing_cap": 0.837,
+      "missing_label": 0.515,
+      "skewed_bottle": 0.462,
+      "skewed_label": 0.648,
+      "tilt_cap": 0.447,
+      "water_level": 0.584
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.661,
+      "damaged_label": 0.472,
+      "missing_cap": 0.83,
+      "missing_label": 0.503,
+      "skewed_bottle": 0.449,
+      "skewed_label": 0.652,
+      "tilt_cap": 0.444,
+      "water_level": 0.575
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle"
+     ],
+     "probs": {
+      "damaged_bottle": 0.672,
+      "damaged_label": 0.363,
+      "missing_cap": 0.867,
+      "missing_label": 0.457,
+      "skewed_bottle": 0.35,
+      "skewed_label": 0.552,
+      "tilt_cap": 0.326,
+      "water_level": 0.49
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.674,
+      "damaged_label": 0.354,
+      "missing_cap": 0.857,
+      "missing_label": 0.446,
+      "skewed_bottle": 0.342,
+      "skewed_label": 0.543,
+      "tilt_cap": 0.309,
+      "water_level": 0.479
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.675,
+      "damaged_label": 0.358,
+      "missing_cap": 0.862,
+      "missing_label": 0.448,
+      "skewed_bottle": 0.34,
+      "skewed_label": 0.541,
+      "tilt_cap": 0.312,
+      "water_level": 0.486
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_bottle",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.654,
+      "damaged_label": 0.38,
+      "missing_cap": 0.865,
+      "missing_label": 0.487,
+      "skewed_bottle": 0.367,
+      "skewed_label": 0.526,
+      "tilt_cap": 0.551,
+      "water_level": 0.611
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.648,
+      "damaged_label": 0.439,
+      "missing_cap": 0.872,
+      "missing_label": 0.501,
+      "skewed_bottle": 0.377,
+      "skewed_label": 0.522,
+      "tilt_cap": 0.626,
+      "water_level": 0.648
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.645,
+      "damaged_label": 0.322,
+      "missing_cap": 0.939,
+      "missing_label": 0.338,
+      "skewed_bottle": 0.225,
+      "skewed_label": 0.683,
+      "tilt_cap": 0.459,
+      "water_level": 0.468
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.647,
+      "damaged_label": 0.315,
+      "missing_cap": 0.94,
+      "missing_label": 0.332,
+      "skewed_bottle": 0.221,
+      "skewed_label": 0.682,
+      "tilt_cap": 0.454,
+      "water_level": 0.462
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f1.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.429,
+      "damaged_label": 0.504,
+      "missing_cap": 0.641,
+      "missing_label": 0.376,
+      "skewed_bottle": 0.273,
+      "skewed_label": 0.78,
+      "tilt_cap": 0.367,
+      "water_level": 0.338
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f2.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.422,
+      "damaged_label": 0.495,
+      "missing_cap": 0.651,
+      "missing_label": 0.393,
+      "skewed_bottle": 0.293,
+      "skewed_label": 0.789,
+      "tilt_cap": 0.373,
+      "water_level": 0.336
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.557,
+      "damaged_label": 0.487,
+      "missing_cap": 0.898,
+      "missing_label": 0.538,
+      "skewed_bottle": 0.4,
+      "skewed_label": 0.721,
+      "tilt_cap": 0.512,
+      "water_level": 0.577
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.577,
+      "damaged_label": 0.565,
+      "missing_cap": 0.916,
+      "missing_label": 0.663,
+      "skewed_bottle": 0.536,
+      "skewed_label": 0.752,
+      "tilt_cap": 0.618,
+      "water_level": 0.698
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f1.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.35,
+      "damaged_label": 0.412,
+      "missing_cap": 0.561,
+      "missing_label": 0.296,
+      "skewed_bottle": 0.212,
+      "skewed_label": 0.773,
+      "tilt_cap": 0.315,
+      "water_level": 0.292
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f2.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.352,
+      "damaged_label": 0.406,
+      "missing_cap": 0.547,
+      "missing_label": 0.284,
+      "skewed_bottle": 0.209,
+      "skewed_label": 0.787,
+      "tilt_cap": 0.323,
+      "water_level": 0.279
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f1.png",
+     "hits": [
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.545,
+      "damaged_label": 0.452,
+      "missing_cap": 0.916,
+      "missing_label": 0.546,
+      "skewed_bottle": 0.366,
+      "skewed_label": 0.742,
+      "tilt_cap": 0.532,
+      "water_level": 0.586
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.573,
+      "damaged_label": 0.452,
+      "missing_cap": 0.927,
+      "missing_label": 0.551,
+      "skewed_bottle": 0.414,
+      "skewed_label": 0.735,
+      "tilt_cap": 0.505,
+      "water_level": 0.597
+     }
+    },
+    {
+     "frame": "captures\\TOPVIEW_20261006-134648\\topview_bottle_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.659,
+      "damaged_label": 0.683,
+      "missing_cap": 0.926,
+      "missing_label": 0.732,
+      "skewed_bottle": 0.669,
+      "skewed_label": 0.77,
+      "tilt_cap": 0.621,
+      "water_level": 0.754
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.653,
+      "damaged_label": 0.4,
+      "missing_cap": 0.923,
+      "missing_label": 0.431,
+      "skewed_bottle": 0.31,
+      "skewed_label": 0.682,
+      "tilt_cap": 0.287,
+      "water_level": 0.504
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.648,
+      "damaged_label": 0.392,
+      "missing_cap": 0.927,
+      "missing_label": 0.433,
+      "skewed_bottle": 0.313,
+      "skewed_label": 0.693,
+      "tilt_cap": 0.295,
+      "water_level": 0.509
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.653,
+      "damaged_label": 0.405,
+      "missing_cap": 0.927,
+      "missing_label": 0.443,
+      "skewed_bottle": 0.319,
+      "skewed_label": 0.69,
+      "tilt_cap": 0.297,
+      "water_level": 0.514
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f4.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.642,
+      "damaged_label": 0.397,
+      "missing_cap": 0.926,
+      "missing_label": 0.428,
+      "skewed_bottle": 0.313,
+      "skewed_label": 0.692,
+      "tilt_cap": 0.291,
+      "water_level": 0.507
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f5.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.646,
+      "damaged_label": 0.393,
+      "missing_cap": 0.924,
+      "missing_label": 0.432,
+      "skewed_bottle": 0.316,
+      "skewed_label": 0.69,
+      "tilt_cap": 0.29,
+      "water_level": 0.506
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000001_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.624,
+      "damaged_label": 0.654,
+      "missing_cap": 0.944,
+      "missing_label": 0.668,
+      "skewed_bottle": 0.576,
+      "skewed_label": 0.747,
+      "tilt_cap": 0.57,
+      "water_level": 0.721
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000003_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap",
+      "water_level"
+     ],
+     "probs": {
+      "damaged_bottle": 0.626,
+      "damaged_label": 0.648,
+      "missing_cap": 0.949,
+      "missing_label": 0.683,
+      "skewed_bottle": 0.578,
+      "skewed_label": 0.754,
+      "tilt_cap": 0.574,
+      "water_level": 0.73
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000001_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.596,
+      "damaged_label": 0.323,
+      "missing_cap": 0.944,
+      "missing_label": 0.452,
+      "skewed_bottle": 0.325,
+      "skewed_label": 0.749,
+      "tilt_cap": 0.341,
+      "water_level": 0.474
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000002_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "missing_label",
+      "skewed_bottle",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.649,
+      "damaged_label": 0.507,
+      "missing_cap": 0.92,
+      "missing_label": 0.607,
+      "skewed_bottle": 0.511,
+      "skewed_label": 0.739,
+      "tilt_cap": 0.495,
+      "water_level": 0.642
+     }
+    }
+   ],
+   "secs": 17.0
+  },
+  "20261008-083918": {
+   "arch": "mobilenet_v3_small",
+   "test_macro_f1": 0.93,
+   "n_test": 246,
+   "thresholds": {
+    "damaged_bottle": 0.05,
+    "damaged_label": 0.05,
+    "missing_cap": 0.05,
+    "missing_label": 0.5,
+    "skewed_bottle": 0.15,
+    "skewed_label": 0.05,
+    "tilt_cap": 0.05,
+    "water_level": 0.45
+   },
+   "real": [
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.119,
+      "damaged_label": 0.79,
+      "missing_cap": 0.398,
+      "missing_label": 0.312,
+      "skewed_bottle": 0.019,
+      "skewed_label": 0.113,
+      "tilt_cap": 0.274,
+      "water_level": 0.217
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.096,
+      "damaged_label": 0.769,
+      "missing_cap": 0.364,
+      "missing_label": 0.295,
+      "skewed_bottle": 0.021,
+      "skewed_label": 0.094,
+      "tilt_cap": 0.28,
+      "water_level": 0.213
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.178,
+      "damaged_label": 0.774,
+      "missing_cap": 0.494,
+      "missing_label": 0.331,
+      "skewed_bottle": 0.031,
+      "skewed_label": 0.129,
+      "tilt_cap": 0.268,
+      "water_level": 0.162
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f4.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.136,
+      "damaged_label": 0.767,
+      "missing_cap": 0.439,
+      "missing_label": 0.303,
+      "skewed_bottle": 0.021,
+      "skewed_label": 0.103,
+      "tilt_cap": 0.275,
+      "water_level": 0.193
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f5.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.183,
+      "damaged_label": 0.692,
+      "missing_cap": 0.509,
+      "missing_label": 0.344,
+      "skewed_bottle": 0.027,
+      "skewed_label": 0.114,
+      "tilt_cap": 0.274,
+      "water_level": 0.176
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f1.png",
+     "hits": [
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.03,
+      "damaged_label": 0.264,
+      "missing_cap": 0.476,
+      "missing_label": 0.498,
+      "skewed_bottle": 0.015,
+      "skewed_label": 0.385,
+      "tilt_cap": 0.108,
+      "water_level": 0.036
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.061,
+      "damaged_label": 0.383,
+      "missing_cap": 0.406,
+      "missing_label": 0.589,
+      "skewed_bottle": 0.024,
+      "skewed_label": 0.283,
+      "tilt_cap": 0.146,
+      "water_level": 0.046
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.065,
+      "damaged_label": 0.397,
+      "missing_cap": 0.375,
+      "missing_label": 0.599,
+      "skewed_bottle": 0.026,
+      "skewed_label": 0.331,
+      "tilt_cap": 0.153,
+      "water_level": 0.05
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.065,
+      "damaged_label": 0.126,
+      "missing_cap": 0.981,
+      "missing_label": 0.175,
+      "skewed_bottle": 0.042,
+      "skewed_label": 0.035,
+      "tilt_cap": 0.055,
+      "water_level": 0.044
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.057,
+      "damaged_label": 0.098,
+      "missing_cap": 0.977,
+      "missing_label": 0.144,
+      "skewed_bottle": 0.034,
+      "skewed_label": 0.024,
+      "tilt_cap": 0.042,
+      "water_level": 0.035
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.08,
+      "damaged_label": 0.143,
+      "missing_cap": 0.98,
+      "missing_label": 0.176,
+      "skewed_bottle": 0.043,
+      "skewed_label": 0.035,
+      "tilt_cap": 0.059,
+      "water_level": 0.048
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.157,
+      "damaged_label": 0.456,
+      "missing_cap": 0.608,
+      "missing_label": 0.558,
+      "skewed_bottle": 0.103,
+      "skewed_label": 0.214,
+      "tilt_cap": 0.247,
+      "water_level": 0.141
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.131,
+      "damaged_label": 0.243,
+      "missing_cap": 0.581,
+      "missing_label": 0.611,
+      "skewed_bottle": 0.053,
+      "skewed_label": 0.158,
+      "tilt_cap": 0.153,
+      "water_level": 0.086
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.237,
+      "damaged_label": 0.237,
+      "missing_cap": 0.769,
+      "missing_label": 0.144,
+      "skewed_bottle": 0.013,
+      "skewed_label": 0.025,
+      "tilt_cap": 0.09,
+      "water_level": 0.025
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.222,
+      "damaged_label": 0.195,
+      "missing_cap": 0.739,
+      "missing_label": 0.12,
+      "skewed_bottle": 0.012,
+      "skewed_label": 0.02,
+      "tilt_cap": 0.069,
+      "water_level": 0.019
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.2,
+      "damaged_label": 0.211,
+      "missing_cap": 0.803,
+      "missing_label": 0.268,
+      "skewed_bottle": 0.079,
+      "skewed_label": 0.119,
+      "tilt_cap": 0.122,
+      "water_level": 0.112
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.238,
+      "damaged_label": 0.271,
+      "missing_cap": 0.791,
+      "missing_label": 0.31,
+      "skewed_bottle": 0.104,
+      "skewed_label": 0.157,
+      "tilt_cap": 0.14,
+      "water_level": 0.142
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.484,
+      "damaged_label": 0.318,
+      "missing_cap": 0.748,
+      "missing_label": 0.372,
+      "skewed_bottle": 0.205,
+      "skewed_label": 0.152,
+      "tilt_cap": 0.284,
+      "water_level": 0.254
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.352,
+      "damaged_label": 0.357,
+      "missing_cap": 0.78,
+      "missing_label": 0.483,
+      "skewed_bottle": 0.239,
+      "skewed_label": 0.192,
+      "tilt_cap": 0.416,
+      "water_level": 0.308
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.233,
+      "damaged_label": 0.244,
+      "missing_cap": 0.802,
+      "missing_label": 0.275,
+      "skewed_bottle": 0.091,
+      "skewed_label": 0.142,
+      "tilt_cap": 0.148,
+      "water_level": 0.165
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.247,
+      "damaged_label": 0.217,
+      "missing_cap": 0.802,
+      "missing_label": 0.247,
+      "skewed_bottle": 0.079,
+      "skewed_label": 0.119,
+      "tilt_cap": 0.129,
+      "water_level": 0.147
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.48,
+      "damaged_label": 0.246,
+      "missing_cap": 0.818,
+      "missing_label": 0.403,
+      "skewed_bottle": 0.171,
+      "skewed_label": 0.128,
+      "tilt_cap": 0.235,
+      "water_level": 0.198
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.5,
+      "damaged_label": 0.28,
+      "missing_cap": 0.793,
+      "missing_label": 0.437,
+      "skewed_bottle": 0.198,
+      "skewed_label": 0.16,
+      "tilt_cap": 0.264,
+      "water_level": 0.211
+     }
+    },
+    {
+     "frame": "captures\\TOPVIEW_20261006-134648\\topview_bottle_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.425,
+      "damaged_label": 0.523,
+      "missing_cap": 0.761,
+      "missing_label": 0.478,
+      "skewed_bottle": 0.215,
+      "skewed_label": 0.196,
+      "tilt_cap": 0.282,
+      "water_level": 0.21
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.087,
+      "damaged_label": 0.142,
+      "missing_cap": 0.919,
+      "missing_label": 0.202,
+      "skewed_bottle": 0.032,
+      "skewed_label": 0.022,
+      "tilt_cap": 0.073,
+      "water_level": 0.133
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.1,
+      "damaged_label": 0.147,
+      "missing_cap": 0.911,
+      "missing_label": 0.24,
+      "skewed_bottle": 0.037,
+      "skewed_label": 0.034,
+      "tilt_cap": 0.085,
+      "water_level": 0.147
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.088,
+      "damaged_label": 0.172,
+      "missing_cap": 0.93,
+      "missing_label": 0.228,
+      "skewed_bottle": 0.039,
+      "skewed_label": 0.029,
+      "tilt_cap": 0.082,
+      "water_level": 0.142
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f4.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.1,
+      "damaged_label": 0.167,
+      "missing_cap": 0.926,
+      "missing_label": 0.21,
+      "skewed_bottle": 0.033,
+      "skewed_label": 0.024,
+      "tilt_cap": 0.082,
+      "water_level": 0.138
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f5.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.086,
+      "damaged_label": 0.153,
+      "missing_cap": 0.923,
+      "missing_label": 0.22,
+      "skewed_bottle": 0.034,
+      "skewed_label": 0.029,
+      "tilt_cap": 0.077,
+      "water_level": 0.137
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000001_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.263,
+      "damaged_label": 0.119,
+      "missing_cap": 0.855,
+      "missing_label": 0.287,
+      "skewed_bottle": 0.172,
+      "skewed_label": 0.064,
+      "tilt_cap": 0.164,
+      "water_level": 0.116
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000003_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.197,
+      "damaged_label": 0.099,
+      "missing_cap": 0.866,
+      "missing_label": 0.269,
+      "skewed_bottle": 0.147,
+      "skewed_label": 0.049,
+      "tilt_cap": 0.149,
+      "water_level": 0.095
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000001_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.209,
+      "damaged_label": 0.134,
+      "missing_cap": 0.841,
+      "missing_label": 0.361,
+      "skewed_bottle": 0.11,
+      "skewed_label": 0.101,
+      "tilt_cap": 0.2,
+      "water_level": 0.147
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000002_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.368,
+      "damaged_label": 0.299,
+      "missing_cap": 0.757,
+      "missing_label": 0.481,
+      "skewed_bottle": 0.223,
+      "skewed_label": 0.185,
+      "tilt_cap": 0.335,
+      "water_level": 0.203
+     }
+    }
+   ],
+   "secs": 11.6
+  },
+  "20261008-090538": {
+   "arch": "convnext_tiny",
+   "test_macro_f1": 0.99,
+   "n_test": 246,
+   "thresholds": {
+    "damaged_bottle": 0.15,
+    "damaged_label": 0.15,
+    "missing_cap": 0.05,
+    "missing_label": 0.5,
+    "skewed_bottle": 0.5,
+    "skewed_label": 0.25,
+    "tilt_cap": 0.35,
+    "water_level": 0.55
+   },
+   "real": [
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.237,
+      "damaged_label": 0.135,
+      "missing_cap": 0.421,
+      "missing_label": 0.414,
+      "skewed_bottle": 0.308,
+      "skewed_label": 0.294,
+      "tilt_cap": 0.191,
+      "water_level": 0.432
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.236,
+      "damaged_label": 0.131,
+      "missing_cap": 0.415,
+      "missing_label": 0.408,
+      "skewed_bottle": 0.291,
+      "skewed_label": 0.299,
+      "tilt_cap": 0.195,
+      "water_level": 0.45
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.214,
+      "damaged_label": 0.151,
+      "missing_cap": 0.406,
+      "missing_label": 0.413,
+      "skewed_bottle": 0.325,
+      "skewed_label": 0.292,
+      "tilt_cap": 0.23,
+      "water_level": 0.477
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f4.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.221,
+      "damaged_label": 0.148,
+      "missing_cap": 0.405,
+      "missing_label": 0.406,
+      "skewed_bottle": 0.3,
+      "skewed_label": 0.324,
+      "tilt_cap": 0.193,
+      "water_level": 0.441
+     }
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f5.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.212,
+      "damaged_label": 0.164,
+      "missing_cap": 0.402,
+      "missing_label": 0.414,
+      "skewed_bottle": 0.284,
+      "skewed_label": 0.334,
+      "tilt_cap": 0.206,
+      "water_level": 0.45
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.188,
+      "damaged_label": 0.249,
+      "missing_cap": 0.461,
+      "missing_label": 0.293,
+      "skewed_bottle": 0.34,
+      "skewed_label": 0.249,
+      "tilt_cap": 0.213,
+      "water_level": 0.284
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.195,
+      "damaged_label": 0.247,
+      "missing_cap": 0.442,
+      "missing_label": 0.306,
+      "skewed_bottle": 0.321,
+      "skewed_label": 0.259,
+      "tilt_cap": 0.209,
+      "water_level": 0.288
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.199,
+      "damaged_label": 0.248,
+      "missing_cap": 0.46,
+      "missing_label": 0.312,
+      "skewed_bottle": 0.331,
+      "skewed_label": 0.268,
+      "tilt_cap": 0.212,
+      "water_level": 0.284
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.229,
+      "damaged_label": 0.325,
+      "missing_cap": 0.4,
+      "missing_label": 0.547,
+      "skewed_bottle": 0.289,
+      "skewed_label": 0.285,
+      "tilt_cap": 0.309,
+      "water_level": 0.298
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.22,
+      "damaged_label": 0.319,
+      "missing_cap": 0.405,
+      "missing_label": 0.551,
+      "skewed_bottle": 0.283,
+      "skewed_label": 0.279,
+      "tilt_cap": 0.315,
+      "water_level": 0.317
+     }
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "missing_label",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.219,
+      "damaged_label": 0.34,
+      "missing_cap": 0.399,
+      "missing_label": 0.537,
+      "skewed_bottle": 0.296,
+      "skewed_label": 0.282,
+      "tilt_cap": 0.315,
+      "water_level": 0.313
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.201,
+      "damaged_label": 0.133,
+      "missing_cap": 0.489,
+      "missing_label": 0.276,
+      "skewed_bottle": 0.234,
+      "skewed_label": 0.219,
+      "tilt_cap": 0.495,
+      "water_level": 0.343
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.236,
+      "damaged_label": 0.243,
+      "missing_cap": 0.316,
+      "missing_label": 0.274,
+      "skewed_bottle": 0.206,
+      "skewed_label": 0.157,
+      "tilt_cap": 0.316,
+      "water_level": 0.269
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f1.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.136,
+      "damaged_label": 0.148,
+      "missing_cap": 0.871,
+      "missing_label": 0.365,
+      "skewed_bottle": 0.279,
+      "skewed_label": 0.283,
+      "tilt_cap": 0.251,
+      "water_level": 0.376
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f2.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.137,
+      "damaged_label": 0.145,
+      "missing_cap": 0.87,
+      "missing_label": 0.363,
+      "skewed_bottle": 0.267,
+      "skewed_label": 0.277,
+      "tilt_cap": 0.245,
+      "water_level": 0.377
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f1.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.118,
+      "damaged_label": 0.065,
+      "missing_cap": 0.112,
+      "missing_label": 0.019,
+      "skewed_bottle": 0.143,
+      "skewed_label": 0.174,
+      "tilt_cap": 0.066,
+      "water_level": 0.077
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f2.png",
+     "hits": [
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.106,
+      "damaged_label": 0.069,
+      "missing_cap": 0.109,
+      "missing_label": 0.018,
+      "skewed_bottle": 0.137,
+      "skewed_label": 0.179,
+      "tilt_cap": 0.056,
+      "water_level": 0.065
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.215,
+      "damaged_label": 0.219,
+      "missing_cap": 0.369,
+      "missing_label": 0.241,
+      "skewed_bottle": 0.422,
+      "skewed_label": 0.25,
+      "tilt_cap": 0.226,
+      "water_level": 0.219
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.194,
+      "damaged_label": 0.13,
+      "missing_cap": 0.43,
+      "missing_label": 0.305,
+      "skewed_bottle": 0.466,
+      "skewed_label": 0.317,
+      "tilt_cap": 0.292,
+      "water_level": 0.315
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f1.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.144,
+      "damaged_label": 0.073,
+      "missing_cap": 0.118,
+      "missing_label": 0.031,
+      "skewed_bottle": 0.126,
+      "skewed_label": 0.275,
+      "tilt_cap": 0.085,
+      "water_level": 0.07
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f2.png",
+     "hits": [
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.141,
+      "damaged_label": 0.072,
+      "missing_cap": 0.117,
+      "missing_label": 0.032,
+      "skewed_bottle": 0.121,
+      "skewed_label": 0.262,
+      "tilt_cap": 0.082,
+      "water_level": 0.063
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.246,
+      "damaged_label": 0.256,
+      "missing_cap": 0.326,
+      "missing_label": 0.259,
+      "skewed_bottle": 0.428,
+      "skewed_label": 0.329,
+      "tilt_cap": 0.254,
+      "water_level": 0.231
+     }
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.233,
+      "damaged_label": 0.252,
+      "missing_cap": 0.32,
+      "missing_label": 0.258,
+      "skewed_bottle": 0.421,
+      "skewed_label": 0.352,
+      "tilt_cap": 0.245,
+      "water_level": 0.223
+     }
+    },
+    {
+     "frame": "captures\\TOPVIEW_20261006-134648\\topview_bottle_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.167,
+      "damaged_label": 0.102,
+      "missing_cap": 0.248,
+      "missing_label": 0.165,
+      "skewed_bottle": 0.281,
+      "skewed_label": 0.152,
+      "tilt_cap": 0.233,
+      "water_level": 0.547
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f1.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.196,
+      "damaged_label": 0.116,
+      "missing_cap": 0.37,
+      "missing_label": 0.291,
+      "skewed_bottle": 0.202,
+      "skewed_label": 0.089,
+      "tilt_cap": 0.251,
+      "water_level": 0.248
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f2.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.187,
+      "damaged_label": 0.122,
+      "missing_cap": 0.381,
+      "missing_label": 0.291,
+      "skewed_bottle": 0.21,
+      "skewed_label": 0.088,
+      "tilt_cap": 0.244,
+      "water_level": 0.238
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f3.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.194,
+      "damaged_label": 0.117,
+      "missing_cap": 0.367,
+      "missing_label": 0.298,
+      "skewed_bottle": 0.197,
+      "skewed_label": 0.085,
+      "tilt_cap": 0.25,
+      "water_level": 0.246
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f4.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.192,
+      "damaged_label": 0.117,
+      "missing_cap": 0.368,
+      "missing_label": 0.296,
+      "skewed_bottle": 0.204,
+      "skewed_label": 0.09,
+      "tilt_cap": 0.245,
+      "water_level": 0.238
+     }
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f5.png",
+     "hits": [
+      "damaged_bottle",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.192,
+      "damaged_label": 0.118,
+      "missing_cap": 0.364,
+      "missing_label": 0.299,
+      "skewed_bottle": 0.199,
+      "skewed_label": 0.086,
+      "tilt_cap": 0.239,
+      "water_level": 0.24
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000001_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.192,
+      "damaged_label": 0.199,
+      "missing_cap": 0.505,
+      "missing_label": 0.415,
+      "skewed_bottle": 0.53,
+      "skewed_label": 0.311,
+      "tilt_cap": 0.226,
+      "water_level": 0.395
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000003_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_bottle",
+      "skewed_label"
+     ],
+     "probs": {
+      "damaged_bottle": 0.211,
+      "damaged_label": 0.213,
+      "missing_cap": 0.541,
+      "missing_label": 0.392,
+      "skewed_bottle": 0.521,
+      "skewed_label": 0.305,
+      "tilt_cap": 0.243,
+      "water_level": 0.403
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000001_FAULT.jpg",
+     "hits": [
+      "damaged_label",
+      "missing_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.145,
+      "damaged_label": 0.407,
+      "missing_cap": 0.309,
+      "missing_label": 0.237,
+      "skewed_bottle": 0.349,
+      "skewed_label": 0.187,
+      "tilt_cap": 0.348,
+      "water_level": 0.248
+     }
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000002_FAULT.jpg",
+     "hits": [
+      "damaged_bottle",
+      "damaged_label",
+      "missing_cap",
+      "skewed_label",
+      "tilt_cap"
+     ],
+     "probs": {
+      "damaged_bottle": 0.199,
+      "damaged_label": 0.304,
+      "missing_cap": 0.337,
+      "missing_label": 0.354,
+      "skewed_bottle": 0.478,
+      "skewed_label": 0.341,
+      "tilt_cap": 0.405,
+      "water_level": 0.231
+     }
+    }
+   ],
+   "secs": 5.3
+  }
+ },
+ "detector": {
+  "v8s_v3": {
+   "test_map50": 0.979,
+   "test_map50_95": 0.818,
+   "real": [
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f1.png",
+     "boxes": [
+      [
+       "cap",
+       0.92,
+       [
+        1321,
+        0,
+        1917,
+        399
+       ],
+       0.11
+      ],
+      [
+       "bottle",
+       0.33,
+       [
+        433,
+        4,
+        1885,
+        1080
+       ],
+       0.75
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f2.png",
+     "boxes": [
+      [
+       "cap",
+       0.93,
+       [
+        1318,
+        0,
+        1917,
+        397
+       ],
+       0.11
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f3.png",
+     "boxes": [
+      [
+       "cap",
+       0.9,
+       [
+        1353,
+        0,
+        1920,
+        415
+       ],
+       0.11
+      ],
+      [
+       "bottle",
+       0.65,
+       [
+        482,
+        71,
+        1866,
+        1080
+       ],
+       0.67
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f4.png",
+     "boxes": [
+      [
+       "cap",
+       0.91,
+       [
+        1342,
+        0,
+        1920,
+        410
+       ],
+       0.11
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f5.png",
+     "boxes": [
+      [
+       "cap",
+       0.91,
+       [
+        1340,
+        0,
+        1920,
+        410
+       ],
+       0.11
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f2.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f3.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f2.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f3.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f2.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.37,
+       [
+        1445,
+        120,
+        1920,
+        827
+       ],
+       0.16
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.62,
+       [
+        1445,
+        58,
+        1920,
+        829
+       ],
+       0.18
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.58,
+       [
+        369,
+        15,
+        951,
+        1080
+       ],
+       0.3
+      ],
+      [
+       "bottle",
+       0.54,
+       [
+        1358,
+        156,
+        1920,
+        1080
+       ],
+       0.25
+      ],
+      [
+       "bottle",
+       0.36,
+       [
+        1138,
+        0,
+        1920,
+        1080
+       ],
+       0.41
+      ],
+      [
+       "cap",
+       0.3,
+       [
+        1031,
+        0,
+        1792,
+        332
+       ],
+       0.12
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.54,
+       [
+        401,
+        12,
+        949,
+        1080
+       ],
+       0.28
+      ],
+      [
+       "bottle",
+       0.53,
+       [
+        1358,
+        166,
+        1920,
+        1080
+       ],
+       0.25
+      ],
+      [
+       "cap",
+       0.42,
+       [
+        1029,
+        0,
+        1791,
+        333
+       ],
+       0.12
+      ],
+      [
+       "bottle",
+       0.34,
+       [
+        1104,
+        0,
+        1920,
+        1080
+       ],
+       0.42
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.84,
+       [
+        0,
+        37,
+        558,
+        1080
+       ],
+       0.28
+      ],
+      [
+       "label",
+       0.71,
+       [
+        104,
+        541,
+        533,
+        802
+       ],
+       0.05
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.82,
+       [
+        0,
+        91,
+        582,
+        1080
+       ],
+       0.28
+      ],
+      [
+       "label",
+       0.26,
+       [
+        125,
+        520,
+        549,
+        796
+       ],
+       0.06
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.68,
+       [
+        408,
+        13,
+        940,
+        1080
+       ],
+       0.27
+      ],
+      [
+       "cap",
+       0.61,
+       [
+        999,
+        0,
+        1791,
+        297
+       ],
+       0.11
+      ],
+      [
+       "cap",
+       0.55,
+       [
+        546,
+        0,
+        832,
+        177
+       ],
+       0.02
+      ],
+      [
+       "bottle",
+       0.44,
+       [
+        1314,
+        156,
+        1920,
+        1080
+       ],
+       0.27
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.72,
+       [
+        416,
+        19,
+        939,
+        1080
+       ],
+       0.27
+      ],
+      [
+       "cap",
+       0.59,
+       [
+        548,
+        0,
+        833,
+        177
+       ],
+       0.02
+      ],
+      [
+       "cap",
+       0.58,
+       [
+        1000,
+        0,
+        1791,
+        295
+       ],
+       0.11
+      ],
+      [
+       "bottle",
+       0.52,
+       [
+        1335,
+        156,
+        1920,
+        1080
+       ],
+       0.26
+      ],
+      [
+       "bottle",
+       0.33,
+       [
+        1197,
+        0,
+        1920,
+        1080
+       ],
+       0.38
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.89,
+       [
+        0,
+        36,
+        481,
+        1080
+       ],
+       0.24
+      ],
+      [
+       "label",
+       0.55,
+       [
+        20,
+        493,
+        473,
+        799
+       ],
+       0.07
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.89,
+       [
+        0,
+        14,
+        486,
+        1080
+       ],
+       0.25
+      ],
+      [
+       "label",
+       0.59,
+       [
+        36,
+        469,
+        473,
+        798
+       ],
+       0.07
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TOPVIEW_20261006-134648\\topview_bottle_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.51,
+       [
+        338,
+        0,
+        1685,
+        1080
+       ],
+       0.7
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.66,
+       [
+        856,
+        141,
+        1920,
+        1080
+       ],
+       0.48
+      ],
+      [
+       "bottle",
+       0.58,
+       [
+        0,
+        175,
+        1084,
+        1080
+       ],
+       0.47
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.7,
+       [
+        889,
+        142,
+        1920,
+        1080
+       ],
+       0.47
+      ],
+      [
+       "bottle",
+       0.66,
+       [
+        0,
+        172,
+        1129,
+        1080
+       ],
+       0.49
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f3.png",
+     "boxes": [
+      [
+       "bottle",
+       0.69,
+       [
+        882,
+        138,
+        1920,
+        1080
+       ],
+       0.47
+      ],
+      [
+       "bottle",
+       0.47,
+       [
+        0,
+        176,
+        1084,
+        1080
+       ],
+       0.47
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f4.png",
+     "boxes": [
+      [
+       "bottle",
+       0.67,
+       [
+        873,
+        140,
+        1920,
+        1080
+       ],
+       0.47
+      ],
+      [
+       "bottle",
+       0.58,
+       [
+        0,
+        176,
+        1102,
+        1080
+       ],
+       0.48
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f5.png",
+     "boxes": [
+      [
+       "bottle",
+       0.69,
+       [
+        876,
+        143,
+        1920,
+        1080
+       ],
+       0.47
+      ],
+      [
+       "bottle",
+       0.54,
+       [
+        0,
+        171,
+        1136,
+        1080
+       ],
+       0.5
+      ]
+     ]
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000001_FAULT.jpg",
+     "boxes": []
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000003_FAULT.jpg",
+     "boxes": []
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000001_FAULT.jpg",
+     "boxes": [
+      [
+       "bottle",
+       0.38,
+       [
+        837,
+        0,
+        946,
+        1080
+       ],
+       0.06
+      ]
+     ]
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000002_FAULT.jpg",
+     "boxes": []
+    }
+   ]
+  },
+  "v8n_v3": {
+   "test_map50": 0.971,
+   "test_map50_95": 0.802,
+   "real": [
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.43,
+       [
+        0,
+        163,
+        512,
+        1080
+       ],
+       0.23
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.32,
+       [
+        0,
+        162,
+        526,
+        1080
+       ],
+       0.23
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f3.png",
+     "boxes": [
+      [
+       "bottle",
+       0.33,
+       [
+        0,
+        167,
+        555,
+        1075
+       ],
+       0.24
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f4.png",
+     "boxes": [
+      [
+       "bottle",
+       0.41,
+       [
+        0,
+        166,
+        550,
+        1076
+       ],
+       0.24
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f5.png",
+     "boxes": [
+      [
+       "bottle",
+       0.37,
+       [
+        0,
+        163,
+        541,
+        1076
+       ],
+       0.24
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f2.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f3.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f2.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f3.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.48,
+       [
+        8,
+        98,
+        1177,
+        1078
+       ],
+       0.55
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.47,
+       [
+        11,
+        119,
+        1155,
+        1078
+       ],
+       0.53
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.69,
+       [
+        1385,
+        0,
+        1920,
+        764
+       ],
+       0.2
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.69,
+       [
+        1384,
+        0,
+        1920,
+        764
+       ],
+       0.2
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.83,
+       [
+        1357,
+        108,
+        1920,
+        1074
+       ],
+       0.26
+      ],
+      [
+       "bottle",
+       0.82,
+       [
+        412,
+        21,
+        959,
+        1080
+       ],
+       0.28
+      ],
+      [
+       "label",
+       0.51,
+       [
+        439,
+        631,
+        915,
+        883
+       ],
+       0.06
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.82,
+       [
+        409,
+        21,
+        959,
+        1080
+       ],
+       0.28
+      ],
+      [
+       "bottle",
+       0.81,
+       [
+        1360,
+        156,
+        1920,
+        1075
+       ],
+       0.25
+      ],
+      [
+       "label",
+       0.56,
+       [
+        441,
+        632,
+        916,
+        884
+       ],
+       0.06
+      ],
+      [
+       "bottle",
+       0.27,
+       [
+        0,
+        26,
+        922,
+        1080
+       ],
+       0.47
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.85,
+       [
+        2,
+        21,
+        570,
+        1080
+       ],
+       0.29
+      ],
+      [
+       "label",
+       0.65,
+       [
+        105,
+        574,
+        536,
+        808
+       ],
+       0.05
+      ],
+      [
+       "bottle",
+       0.35,
+       [
+        887,
+        147,
+        1236,
+        1080
+       ],
+       0.16
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.85,
+       [
+        1,
+        19,
+        582,
+        1080
+       ],
+       0.3
+      ],
+      [
+       "label",
+       0.59,
+       [
+        116,
+        570,
+        557,
+        802
+       ],
+       0.05
+      ],
+      [
+       "bottle",
+       0.57,
+       [
+        1,
+        0,
+        908,
+        1073
+       ],
+       0.47
+      ],
+      [
+       "bottle",
+       0.39,
+       [
+        885,
+        120,
+        1237,
+        1079
+       ],
+       0.16
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.82,
+       [
+        1347,
+        170,
+        1918,
+        1077
+       ],
+       0.25
+      ],
+      [
+       "bottle",
+       0.81,
+       [
+        402,
+        21,
+        954,
+        1075
+       ],
+       0.28
+      ],
+      [
+       "label",
+       0.51,
+       [
+        435,
+        614,
+        912,
+        857
+       ],
+       0.06
+      ],
+      [
+       "bottle",
+       0.28,
+       [
+        0,
+        19,
+        922,
+        1080
+       ],
+       0.47
+      ],
+      [
+       "cap",
+       0.25,
+       [
+        555,
+        0,
+        828,
+        175
+       ],
+       0.02
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.81,
+       [
+        365,
+        0,
+        961,
+        1080
+       ],
+       0.31
+      ],
+      [
+       "bottle",
+       0.81,
+       [
+        1350,
+        166,
+        1918,
+        1077
+       ],
+       0.25
+      ],
+      [
+       "label",
+       0.52,
+       [
+        434,
+        615,
+        912,
+        856
+       ],
+       0.06
+      ],
+      [
+       "bottle",
+       0.3,
+       [
+        2,
+        0,
+        923,
+        1080
+       ],
+       0.48
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.87,
+       [
+        0,
+        2,
+        502,
+        1079
+       ],
+       0.26
+      ],
+      [
+       "label",
+       0.7,
+       [
+        9,
+        571,
+        479,
+        802
+       ],
+       0.05
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.87,
+       [
+        0,
+        4,
+        507,
+        1080
+       ],
+       0.26
+      ],
+      [
+       "label",
+       0.72,
+       [
+        12,
+        570,
+        482,
+        801
+       ],
+       0.05
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TOPVIEW_20261006-134648\\topview_bottle_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.68,
+       [
+        546,
+        0,
+        1650,
+        1080
+       ],
+       0.57
+      ],
+      [
+       "bottle",
+       0.35,
+       [
+        4,
+        49,
+        1137,
+        1080
+       ],
+       0.56
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.69,
+       [
+        547,
+        0,
+        1653,
+        1080
+       ],
+       0.58
+      ],
+      [
+       "bottle",
+       0.36,
+       [
+        5,
+        51,
+        1137,
+        1080
+       ],
+       0.56
+      ],
+      [
+       "bottle",
+       0.28,
+       [
+        845,
+        216,
+        1920,
+        1080
+       ],
+       0.45
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f3.png",
+     "boxes": [
+      [
+       "bottle",
+       0.59,
+       [
+        444,
+        0,
+        1655,
+        1080
+       ],
+       0.63
+      ],
+      [
+       "bottle",
+       0.35,
+       [
+        5,
+        51,
+        1145,
+        1080
+       ],
+       0.57
+      ],
+      [
+       "bottle",
+       0.26,
+       [
+        837,
+        232,
+        1920,
+        1080
+       ],
+       0.44
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f4.png",
+     "boxes": [
+      [
+       "bottle",
+       0.66,
+       [
+        513,
+        0,
+        1657,
+        1080
+       ],
+       0.6
+      ],
+      [
+       "bottle",
+       0.33,
+       [
+        5,
+        51,
+        1140,
+        1080
+       ],
+       0.56
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f5.png",
+     "boxes": [
+      [
+       "bottle",
+       0.67,
+       [
+        486,
+        0,
+        1658,
+        1080
+       ],
+       0.61
+      ],
+      [
+       "bottle",
+       0.37,
+       [
+        4,
+        50,
+        1145,
+        1080
+       ],
+       0.57
+      ],
+      [
+       "bottle",
+       0.25,
+       [
+        834,
+        213,
+        1920,
+        1080
+       ],
+       0.45
+      ]
+     ]
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000001_FAULT.jpg",
+     "boxes": []
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000003_FAULT.jpg",
+     "boxes": [
+      [
+       "bottle",
+       0.33,
+       [
+        3,
+        0,
+        950,
+        1080
+       ],
+       0.49
+      ]
+     ]
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000001_FAULT.jpg",
+     "boxes": [
+      [
+       "bottle",
+       0.42,
+       [
+        0,
+        162,
+        646,
+        1080
+       ],
+       0.29
+      ]
+     ]
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000002_FAULT.jpg",
+     "boxes": [
+      [
+       "bottle",
+       0.41,
+       [
+        1,
+        132,
+        692,
+        1080
+       ],
+       0.32
+      ],
+      [
+       "bottle",
+       0.4,
+       [
+        1,
+        72,
+        487,
+        1080
+       ],
+       0.24
+      ],
+      [
+       "bottle",
+       0.27,
+       [
+        0,
+        171,
+        356,
+        1080
+       ],
+       0.16
+      ]
+     ]
+    }
+   ]
+  },
+  "stage2_best(v1, old active)": {
+   "test_map50": 0.642,
+   "test_map50_95": 0.468,
+   "real": [
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.71,
+       [
+        147,
+        0,
+        1375,
+        1080
+       ],
+       0.64
+      ],
+      [
+       "cap",
+       0.49,
+       [
+        150,
+        0,
+        1247,
+        898
+       ],
+       0.48
+      ],
+      [
+       "bottle",
+       0.44,
+       [
+        2,
+        0,
+        598,
+        1080
+       ],
+       0.31
+      ],
+      [
+       "cap",
+       0.4,
+       [
+        994,
+        0,
+        1916,
+        757
+       ],
+       0.34
+      ],
+      [
+       "cap",
+       0.38,
+       [
+        490,
+        0,
+        1501,
+        416
+       ],
+       0.2
+      ],
+      [
+       "cap",
+       0.32,
+       [
+        0,
+        0,
+        803,
+        1058
+       ],
+       0.41
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.7,
+       [
+        142,
+        0,
+        1396,
+        1080
+       ],
+       0.65
+      ],
+      [
+       "cap",
+       0.46,
+       [
+        151,
+        0,
+        1249,
+        919
+       ],
+       0.49
+      ],
+      [
+       "bottle",
+       0.44,
+       [
+        2,
+        0,
+        626,
+        1080
+       ],
+       0.32
+      ],
+      [
+       "cap",
+       0.39,
+       [
+        994,
+        0,
+        1916,
+        758
+       ],
+       0.34
+      ],
+      [
+       "cap",
+       0.35,
+       [
+        326,
+        0,
+        1520,
+        686
+       ],
+       0.4
+      ],
+      [
+       "cap",
+       0.32,
+       [
+        489,
+        0,
+        1500,
+        433
+       ],
+       0.21
+      ],
+      [
+       "cap",
+       0.26,
+       [
+        0,
+        0,
+        799,
+        1061
+       ],
+       0.41
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f3.png",
+     "boxes": [
+      [
+       "bottle",
+       0.63,
+       [
+        181,
+        0,
+        1444,
+        1080
+       ],
+       0.66
+      ],
+      [
+       "bottle",
+       0.49,
+       [
+        1,
+        19,
+        566,
+        1080
+       ],
+       0.29
+      ],
+      [
+       "cap",
+       0.47,
+       [
+        272,
+        0,
+        1453,
+        771
+       ],
+       0.44
+      ],
+      [
+       "cap",
+       0.46,
+       [
+        1004,
+        0,
+        1917,
+        839
+       ],
+       0.37
+      ],
+      [
+       "cap",
+       0.4,
+       [
+        410,
+        0,
+        1592,
+        665
+       ],
+       0.38
+      ],
+      [
+       "cap",
+       0.4,
+       [
+        144,
+        0,
+        1297,
+        944
+       ],
+       0.52
+      ],
+      [
+       "cap",
+       0.29,
+       [
+        0,
+        0,
+        799,
+        1059
+       ],
+       0.41
+      ],
+      [
+       "cap",
+       0.28,
+       [
+        490,
+        0,
+        1550,
+        455
+       ],
+       0.23
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f4.png",
+     "boxes": [
+      [
+       "bottle",
+       0.65,
+       [
+        182,
+        0,
+        1422,
+        1080
+       ],
+       0.65
+      ],
+      [
+       "bottle",
+       0.48,
+       [
+        0,
+        0,
+        718,
+        1080
+       ],
+       0.37
+      ],
+      [
+       "cap",
+       0.47,
+       [
+        502,
+        0,
+        1522,
+        445
+       ],
+       0.22
+      ],
+      [
+       "cap",
+       0.45,
+       [
+        1005,
+        0,
+        1917,
+        788
+       ],
+       0.35
+      ],
+      [
+       "cap",
+       0.4,
+       [
+        423,
+        0,
+        1555,
+        583
+       ],
+       0.32
+      ],
+      [
+       "cap",
+       0.32,
+       [
+        146,
+        0,
+        1258,
+        958
+       ],
+       0.51
+      ],
+      [
+       "cap",
+       0.31,
+       [
+        0,
+        0,
+        786,
+        1063
+       ],
+       0.4
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\CHECK_20261006-133038\\cam2_f5.png",
+     "boxes": [
+      [
+       "bottle",
+       0.65,
+       [
+        176,
+        0,
+        1399,
+        1078
+       ],
+       0.64
+      ],
+      [
+       "cap",
+       0.52,
+       [
+        506,
+        0,
+        1514,
+        448
+       ],
+       0.22
+      ],
+      [
+       "bottle",
+       0.46,
+       [
+        2,
+        0,
+        670,
+        1080
+       ],
+       0.35
+      ],
+      [
+       "cap",
+       0.43,
+       [
+        999,
+        0,
+        1916,
+        765
+       ],
+       0.34
+      ],
+      [
+       "cap",
+       0.37,
+       [
+        176,
+        0,
+        1224,
+        918
+       ],
+       0.46
+      ],
+      [
+       "cap",
+       0.35,
+       [
+        417,
+        0,
+        1537,
+        617
+       ],
+       0.33
+      ],
+      [
+       "cap",
+       0.31,
+       [
+        0,
+        0,
+        796,
+        1059
+       ],
+       0.41
+      ],
+      [
+       "cap",
+       0.25,
+       [
+        288,
+        0,
+        1412,
+        836
+       ],
+       0.45
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f2.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam2_f3.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f2.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\NO_BOTTLE_DESK_20261003-134540\\cam3_f3.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.47,
+       [
+        0,
+        0,
+        1328,
+        1080
+       ],
+       0.69
+      ],
+      [
+       "cap",
+       0.26,
+       [
+        0,
+        0,
+        1125,
+        904
+       ],
+       0.49
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261005-214051\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.31,
+       [
+        0,
+        0,
+        1328,
+        1080
+       ],
+       0.69
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f1.png",
+     "boxes": [
+      [
+       "label",
+       0.38,
+       [
+        1437,
+        142,
+        1919,
+        443
+       ],
+       0.07
+      ],
+      [
+       "bottle",
+       0.34,
+       [
+        0,
+        0,
+        1118,
+        929
+       ],
+       0.5
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261005-214149\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.34,
+       [
+        0,
+        0,
+        1120,
+        908
+       ],
+       0.49
+      ],
+      [
+       "label",
+       0.25,
+       [
+        0,
+        0,
+        784,
+        165
+       ],
+       0.06
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.56,
+       [
+        0,
+        0,
+        1109,
+        1080
+       ],
+       0.58
+      ],
+      [
+       "label",
+       0.51,
+       [
+        471,
+        596,
+        918,
+        886
+       ],
+       0.06
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.58,
+       [
+        0,
+        0,
+        1113,
+        1080
+       ],
+       0.58
+      ],
+      [
+       "label",
+       0.48,
+       [
+        479,
+        597,
+        916,
+        885
+       ],
+       0.06
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f1.png",
+     "boxes": [
+      [
+       "label",
+       0.53,
+       [
+        97,
+        551,
+        526,
+        803
+       ],
+       0.05
+      ],
+      [
+       "bottle",
+       0.47,
+       [
+        0,
+        0,
+        562,
+        1080
+       ],
+       0.29
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085913\\cam3_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.63,
+       [
+        0,
+        0,
+        574,
+        1080
+       ],
+       0.3
+      ],
+      [
+       "label",
+       0.32,
+       [
+        123,
+        541,
+        545,
+        795
+       ],
+       0.05
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.62,
+       [
+        0,
+        0,
+        1107,
+        1080
+       ],
+       0.58
+      ],
+      [
+       "label",
+       0.49,
+       [
+        443,
+        583,
+        905,
+        861
+       ],
+       0.06
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.64,
+       [
+        0,
+        0,
+        1091,
+        1080
+       ],
+       0.57
+      ],
+      [
+       "label",
+       0.51,
+       [
+        444,
+        583,
+        904,
+        860
+       ],
+       0.06
+      ],
+      [
+       "bottle",
+       0.29,
+       [
+        201,
+        0,
+        959,
+        1080
+       ],
+       0.4
+      ],
+      [
+       "bottle",
+       0.27,
+       [
+        1,
+        0,
+        752,
+        1080
+       ],
+       0.39
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.79,
+       [
+        0,
+        0,
+        493,
+        1080
+       ],
+       0.26
+      ],
+      [
+       "label",
+       0.62,
+       [
+        13,
+        548,
+        462,
+        798
+       ],
+       0.05
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TEST_20261007-085928\\cam3_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.81,
+       [
+        0,
+        0,
+        498,
+        1080
+       ],
+       0.26
+      ],
+      [
+       "label",
+       0.67,
+       [
+        38,
+        547,
+        463,
+        798
+       ],
+       0.05
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\TOPVIEW_20261006-134648\\topview_bottle_f1.png",
+     "boxes": []
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f1.png",
+     "boxes": [
+      [
+       "bottle",
+       0.77,
+       [
+        1,
+        0,
+        1016,
+        1080
+       ],
+       0.53
+      ],
+      [
+       "cap",
+       0.46,
+       [
+        4,
+        0,
+        942,
+        1080
+       ],
+       0.49
+      ],
+      [
+       "bottle",
+       0.4,
+       [
+        919,
+        0,
+        1920,
+        1080
+       ],
+       0.52
+      ],
+      [
+       "label",
+       0.3,
+       [
+        651,
+        0,
+        1304,
+        75
+       ],
+       0.02
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f2.png",
+     "boxes": [
+      [
+       "bottle",
+       0.77,
+       [
+        0,
+        4,
+        1018,
+        1080
+       ],
+       0.53
+      ],
+      [
+       "cap",
+       0.47,
+       [
+        4,
+        0,
+        943,
+        1080
+       ],
+       0.49
+      ],
+      [
+       "bottle",
+       0.38,
+       [
+        944,
+        0,
+        1920,
+        1080
+       ],
+       0.51
+      ],
+      [
+       "label",
+       0.27,
+       [
+        650,
+        0,
+        1313,
+        75
+       ],
+       0.02
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f3.png",
+     "boxes": [
+      [
+       "bottle",
+       0.77,
+       [
+        0,
+        0,
+        1012,
+        1080
+       ],
+       0.53
+      ],
+      [
+       "cap",
+       0.46,
+       [
+        4,
+        0,
+        925,
+        1063
+       ],
+       0.47
+      ],
+      [
+       "label",
+       0.32,
+       [
+        647,
+        0,
+        1313,
+        77
+       ],
+       0.03
+      ],
+      [
+       "bottle",
+       0.31,
+       [
+        941,
+        0,
+        1920,
+        1080
+       ],
+       0.51
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f4.png",
+     "boxes": [
+      [
+       "bottle",
+       0.76,
+       [
+        0,
+        16,
+        1012,
+        1080
+       ],
+       0.52
+      ],
+      [
+       "cap",
+       0.39,
+       [
+        4,
+        0,
+        942,
+        1080
+       ],
+       0.49
+      ],
+      [
+       "bottle",
+       0.33,
+       [
+        856,
+        0,
+        1920,
+        1080
+       ],
+       0.55
+      ],
+      [
+       "label",
+       0.29,
+       [
+        649,
+        0,
+        1310,
+        77
+       ],
+       0.02
+      ]
+     ]
+    },
+    {
+     "frame": "captures\\UNKNOWN_20261006-124313\\cam2_f5.png",
+     "boxes": [
+      [
+       "bottle",
+       0.76,
+       [
+        0,
+        8,
+        1028,
+        1080
+       ],
+       0.53
+      ],
+      [
+       "cap",
+       0.45,
+       [
+        4,
+        0,
+        947,
+        1080
+       ],
+       0.49
+      ],
+      [
+       "bottle",
+       0.31,
+       [
+        927,
+        0,
+        1920,
+        1080
+       ],
+       0.52
+      ],
+      [
+       "label",
+       0.27,
+       [
+        646,
+        0,
+        1308,
+        74
+       ],
+       0.02
+      ]
+     ]
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000001_FAULT.jpg",
+     "boxes": []
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-121047_000003_FAULT.jpg",
+     "boxes": []
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000001_FAULT.jpg",
+     "boxes": []
+    },
+    {
+     "frame": "projects/om_bottle/production/evidence\\20261006\\20261006-133449_000002_FAULT.jpg",
+     "boxes": []
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,1132 @@
+{
+ "rules": {
+  "reject_min": 0.9,
+  "pass_max": 0.1
+ },
+ "classifiers": {
+  "20260919-164511": {
+   "arch": "efficientnet_b0",
+   "n_test": 238,
+   "temperature": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "per_defect": {
+    "damaged_bottle": {
+     "val_threshold": 0.05,
+     "n_pos": 64,
+     "n_neg": 174,
+     "pos_median": 0.999,
+     "pos_min": 0.936,
+     "neg_p95": 0.007,
+     "neg_max": 0.008,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "damaged_label": {
+     "val_threshold": 0.1,
+     "n_pos": 36,
+     "n_neg": 202,
+     "pos_median": 0.999,
+     "pos_min": 0.511,
+     "neg_p95": 0.049,
+     "neg_max": 0.175,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.01,
+     "recall_at_0.90": 0.778,
+     "neg_above_0.10": 0.01
+    },
+    "missing_cap": {
+     "val_threshold": 1.01,
+     "n_pos": 0,
+     "n_neg": 238,
+     "pos_median": null,
+     "pos_min": null,
+     "neg_p95": 0.008,
+     "neg_max": 0.011,
+     "recall_at_thr": null,
+     "false_alarm_at_thr": null,
+     "recall_at_0.90": null,
+     "neg_above_0.10": 0.0
+    },
+    "missing_label": {
+     "val_threshold": 0.5,
+     "n_pos": 12,
+     "n_neg": 226,
+     "pos_median": 0.829,
+     "pos_min": 0.749,
+     "neg_p95": 0.015,
+     "neg_max": 0.019,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 0.0,
+     "neg_above_0.10": 0.0
+    },
+    "skewed_bottle": {
+     "val_threshold": 0.05,
+     "n_pos": 31,
+     "n_neg": 207,
+     "pos_median": 1.0,
+     "pos_min": 1.0,
+     "neg_p95": 0.416,
+     "neg_max": 0.76,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.058,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.058
+    },
+    "skewed_label": {
+     "val_threshold": 0.1,
+     "n_pos": 31,
+     "n_neg": 207,
+     "pos_median": 0.982,
+     "pos_min": 0.946,
+     "neg_p95": 0.018,
+     "neg_max": 0.034,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "tilt_cap": {
+     "val_threshold": 0.65,
+     "n_pos": 22,
+     "n_neg": 216,
+     "pos_median": 0.928,
+     "pos_min": 0.658,
+     "neg_p95": 0.181,
+     "neg_max": 0.997,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.046,
+     "recall_at_0.90": 0.591,
+     "neg_above_0.10": 0.106
+    },
+    "water_level": {
+     "val_threshold": 0.1,
+     "n_pos": 23,
+     "n_neg": 215,
+     "pos_median": 0.998,
+     "pos_min": 0.998,
+     "neg_p95": 0.017,
+     "neg_max": 0.989,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.019,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.019
+    }
+   },
+   "bottle_val_thresholds": {
+    "n_good": 19,
+    "n_defective": 219,
+    "two_zone": {
+     "escaped": 0,
+     "false_reject": 10
+    },
+    "three_zone": {
+     "escaped(PASS)": 0,
+     "false_reject(REJECT)": 10,
+     "unsure": 31,
+     "good_unsure": 6,
+     "defective_unsure": 25,
+     "good_pass": 3,
+     "defective_reject": 194
+    }
+   },
+   "config_thresholds": {
+    "damaged_bottle": 0.35,
+    "damaged_label": 0.35,
+    "missing_cap": 1.01,
+    "missing_label": 0.5,
+    "skewed_bottle": 0.5,
+    "skewed_label": 0.4,
+    "tilt_cap": 0.75,
+    "water_level": 0.55
+   },
+   "live_thresholds": {
+    "damaged_bottle": 0.05,
+    "damaged_label": 0.35,
+    "missing_cap": 1.01,
+    "missing_label": 0.5,
+    "skewed_bottle": 0.5,
+    "skewed_label": 0.4,
+    "tilt_cap": 0.75,
+    "water_level": 0.55
+   },
+   "bottle_config_thresholds": {
+    "n_good": 19,
+    "n_defective": 219,
+    "two_zone": {
+     "escaped": 1,
+     "false_reject": 10
+    },
+    "three_zone": {
+     "escaped(PASS)": 0,
+     "false_reject(REJECT)": 10,
+     "unsure": 31,
+     "good_unsure": 6,
+     "defective_unsure": 25,
+     "good_pass": 3,
+     "defective_reject": 194
+    }
+   },
+   "bottle_live_thresholds": {
+    "n_good": 19,
+    "n_defective": 219,
+    "two_zone": {
+     "escaped": 1,
+     "false_reject": 10
+    },
+    "three_zone": {
+     "escaped(PASS)": 0,
+     "false_reject(REJECT)": 10,
+     "unsure": 31,
+     "good_unsure": 6,
+     "defective_unsure": 25,
+     "good_pass": 3,
+     "defective_reject": 194
+    }
+   }
+  },
+  "20261008-081732": {
+   "arch": "efficientnet_b0",
+   "n_test": 246,
+   "temperature": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "per_defect": {
+    "damaged_bottle": {
+     "val_threshold": 0.1,
+     "n_pos": 64,
+     "n_neg": 182,
+     "pos_median": 1.0,
+     "pos_min": 0.981,
+     "neg_p95": 0.008,
+     "neg_max": 0.016,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "damaged_label": {
+     "val_threshold": 0.75,
+     "n_pos": 36,
+     "n_neg": 210,
+     "pos_median": 0.999,
+     "pos_min": 0.975,
+     "neg_p95": 0.208,
+     "neg_max": 0.367,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.11
+    },
+    "missing_cap": {
+     "val_threshold": 0.05,
+     "n_pos": 7,
+     "n_neg": 239,
+     "pos_median": 1.0,
+     "pos_min": 1.0,
+     "neg_p95": 0.009,
+     "neg_max": 0.012,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "missing_label": {
+     "val_threshold": 0.5,
+     "n_pos": 12,
+     "n_neg": 234,
+     "pos_median": 0.995,
+     "pos_min": 0.989,
+     "neg_p95": 0.008,
+     "neg_max": 0.011,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "skewed_bottle": {
+     "val_threshold": 0.05,
+     "n_pos": 32,
+     "n_neg": 214,
+     "pos_median": 1.0,
+     "pos_min": 1.0,
+     "neg_p95": 0.05,
+     "neg_max": 0.194,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.051,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.028
+    },
+    "skewed_label": {
+     "val_threshold": 0.05,
+     "n_pos": 31,
+     "n_neg": 215,
+     "pos_median": 0.81,
+     "pos_min": 0.583,
+     "neg_p95": 0.01,
+     "neg_max": 0.012,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 0.226,
+     "neg_above_0.10": 0.0
+    },
+    "tilt_cap": {
+     "val_threshold": 0.55,
+     "n_pos": 22,
+     "n_neg": 224,
+     "pos_median": 0.944,
+     "pos_min": 0.07,
+     "neg_p95": 0.045,
+     "neg_max": 0.773,
+     "recall_at_thr": 0.818,
+     "false_alarm_at_thr": 0.04,
+     "recall_at_0.90": 0.773,
+     "neg_above_0.10": 0.045
+    },
+    "water_level": {
+     "val_threshold": 0.05,
+     "n_pos": 23,
+     "n_neg": 223,
+     "pos_median": 0.998,
+     "pos_min": 0.997,
+     "neg_p95": 0.006,
+     "neg_max": 0.994,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.018,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.018
+    }
+   },
+   "bottle_val_thresholds": {
+    "n_good": 19,
+    "n_defective": 227,
+    "two_zone": {
+     "escaped": 0,
+     "false_reject": 9
+    },
+    "three_zone": {
+     "escaped(PASS)": 0,
+     "false_reject(REJECT)": 0,
+     "unsure": 35,
+     "good_unsure": 10,
+     "defective_unsure": 25,
+     "good_pass": 9,
+     "defective_reject": 202
+    }
+   }
+  },
+  "20261008-082510": {
+   "arch": "resnet18",
+   "n_test": 246,
+   "temperature": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "per_defect": {
+    "damaged_bottle": {
+     "val_threshold": 0.05,
+     "n_pos": 64,
+     "n_neg": 182,
+     "pos_median": 0.99,
+     "pos_min": 0.784,
+     "neg_p95": 0.126,
+     "neg_max": 0.223,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.077,
+     "recall_at_0.90": 0.891,
+     "neg_above_0.10": 0.066
+    },
+    "damaged_label": {
+     "val_threshold": 0.15,
+     "n_pos": 36,
+     "n_neg": 210,
+     "pos_median": 0.993,
+     "pos_min": 0.513,
+     "neg_p95": 0.04,
+     "neg_max": 0.051,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 0.75,
+     "neg_above_0.10": 0.0
+    },
+    "missing_cap": {
+     "val_threshold": 0.05,
+     "n_pos": 7,
+     "n_neg": 239,
+     "pos_median": 0.998,
+     "pos_min": 0.998,
+     "neg_p95": 0.029,
+     "neg_max": 0.066,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.017,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "missing_label": {
+     "val_threshold": 0.5,
+     "n_pos": 12,
+     "n_neg": 234,
+     "pos_median": 0.248,
+     "pos_min": 0.207,
+     "neg_p95": 0.024,
+     "neg_max": 0.026,
+     "recall_at_thr": 0.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 0.0,
+     "neg_above_0.10": 0.0
+    },
+    "skewed_bottle": {
+     "val_threshold": 0.2,
+     "n_pos": 32,
+     "n_neg": 214,
+     "pos_median": 0.998,
+     "pos_min": 0.997,
+     "neg_p95": 0.912,
+     "neg_max": 0.942,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.056,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.056
+    },
+    "skewed_label": {
+     "val_threshold": 0.55,
+     "n_pos": 31,
+     "n_neg": 215,
+     "pos_median": 0.858,
+     "pos_min": 0.801,
+     "neg_p95": 0.634,
+     "neg_max": 0.697,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.084,
+     "recall_at_0.90": 0.226,
+     "neg_above_0.10": 0.335
+    },
+    "tilt_cap": {
+     "val_threshold": 0.5,
+     "n_pos": 22,
+     "n_neg": 224,
+     "pos_median": 0.67,
+     "pos_min": 0.623,
+     "neg_p95": 0.293,
+     "neg_max": 0.937,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.045,
+     "recall_at_0.90": 0.0,
+     "neg_above_0.10": 0.103
+    },
+    "water_level": {
+     "val_threshold": 0.25,
+     "n_pos": 23,
+     "n_neg": 223,
+     "pos_median": 0.987,
+     "pos_min": 0.974,
+     "neg_p95": 0.063,
+     "neg_max": 0.947,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.018,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.018
+    }
+   },
+   "bottle_val_thresholds": {
+    "n_good": 19,
+    "n_defective": 227,
+    "two_zone": {
+     "escaped": 0,
+     "false_reject": 10
+    },
+    "three_zone": {
+     "escaped(PASS)": 0,
+     "false_reject(REJECT)": 10,
+     "unsure": 67,
+     "good_unsure": 9,
+     "defective_unsure": 58,
+     "good_pass": 0,
+     "defective_reject": 169
+    }
+   }
+  },
+  "20261008-083257": {
+   "arch": "efficientnet_b1",
+   "n_test": 246,
+   "temperature": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "per_defect": {
+    "damaged_bottle": {
+     "val_threshold": 0.55,
+     "n_pos": 64,
+     "n_neg": 182,
+     "pos_median": 0.996,
+     "pos_min": 0.945,
+     "neg_p95": 0.03,
+     "neg_max": 0.603,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.038,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.038
+    },
+    "damaged_label": {
+     "val_threshold": 0.65,
+     "n_pos": 36,
+     "n_neg": 210,
+     "pos_median": 0.999,
+     "pos_min": 0.976,
+     "neg_p95": 0.688,
+     "neg_max": 0.824,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.062,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.157
+    },
+    "missing_cap": {
+     "val_threshold": 0.05,
+     "n_pos": 7,
+     "n_neg": 239,
+     "pos_median": 0.984,
+     "pos_min": 0.984,
+     "neg_p95": 0.02,
+     "neg_max": 0.034,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "missing_label": {
+     "val_threshold": 0.5,
+     "n_pos": 12,
+     "n_neg": 234,
+     "pos_median": 0.258,
+     "pos_min": 0.203,
+     "neg_p95": 0.034,
+     "neg_max": 0.238,
+     "recall_at_thr": 0.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 0.0,
+     "neg_above_0.10": 0.03
+    },
+    "skewed_bottle": {
+     "val_threshold": 0.35,
+     "n_pos": 32,
+     "n_neg": 214,
+     "pos_median": 0.999,
+     "pos_min": 0.998,
+     "neg_p95": 0.586,
+     "neg_max": 0.81,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.056,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.107
+    },
+    "skewed_label": {
+     "val_threshold": 0.65,
+     "n_pos": 31,
+     "n_neg": 215,
+     "pos_median": 0.986,
+     "pos_min": 0.971,
+     "neg_p95": 0.087,
+     "neg_max": 0.69,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.033,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.037
+    },
+    "tilt_cap": {
+     "val_threshold": 0.55,
+     "n_pos": 22,
+     "n_neg": 224,
+     "pos_median": 0.359,
+     "pos_min": 0.139,
+     "neg_p95": 0.383,
+     "neg_max": 0.972,
+     "recall_at_thr": 0.045,
+     "false_alarm_at_thr": 0.045,
+     "recall_at_0.90": 0.0,
+     "neg_above_0.10": 0.179
+    },
+    "water_level": {
+     "val_threshold": 0.7,
+     "n_pos": 23,
+     "n_neg": 223,
+     "pos_median": 0.995,
+     "pos_min": 0.993,
+     "neg_p95": 0.063,
+     "neg_max": 0.98,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.018,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.049
+    }
+   },
+   "bottle_val_thresholds": {
+    "n_good": 19,
+    "n_defective": 227,
+    "two_zone": {
+     "escaped": 18,
+     "false_reject": 14
+    },
+    "three_zone": {
+     "escaped(PASS)": 0,
+     "false_reject(REJECT)": 10,
+     "unsure": 39,
+     "good_unsure": 9,
+     "defective_unsure": 30,
+     "good_pass": 0,
+     "defective_reject": 197
+    }
+   }
+  },
+  "20261008-083918": {
+   "arch": "mobilenet_v3_small",
+   "n_test": 246,
+   "temperature": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "per_defect": {
+    "damaged_bottle": {
+     "val_threshold": 0.05,
+     "n_pos": 64,
+     "n_neg": 182,
+     "pos_median": 0.999,
+     "pos_min": 0.941,
+     "neg_p95": 0.006,
+     "neg_max": 0.018,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "damaged_label": {
+     "val_threshold": 0.05,
+     "n_pos": 36,
+     "n_neg": 210,
+     "pos_median": 0.997,
+     "pos_min": 0.075,
+     "neg_p95": 0.002,
+     "neg_max": 0.003,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 0.75,
+     "neg_above_0.10": 0.0
+    },
+    "missing_cap": {
+     "val_threshold": 0.05,
+     "n_pos": 7,
+     "n_neg": 239,
+     "pos_median": 0.984,
+     "pos_min": 0.974,
+     "neg_p95": 0.001,
+     "neg_max": 0.002,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "missing_label": {
+     "val_threshold": 0.5,
+     "n_pos": 12,
+     "n_neg": 234,
+     "pos_median": 0.429,
+     "pos_min": 0.224,
+     "neg_p95": 0.002,
+     "neg_max": 0.037,
+     "recall_at_thr": 0.25,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 0.0,
+     "neg_above_0.10": 0.0
+    },
+    "skewed_bottle": {
+     "val_threshold": 0.15,
+     "n_pos": 32,
+     "n_neg": 214,
+     "pos_median": 1.0,
+     "pos_min": 1.0,
+     "neg_p95": 0.967,
+     "neg_max": 0.994,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.056,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.056
+    },
+    "skewed_label": {
+     "val_threshold": 0.05,
+     "n_pos": 31,
+     "n_neg": 215,
+     "pos_median": 0.074,
+     "pos_min": 0.025,
+     "neg_p95": 0.019,
+     "neg_max": 0.062,
+     "recall_at_thr": 0.677,
+     "false_alarm_at_thr": 0.009,
+     "recall_at_0.90": 0.194,
+     "neg_above_0.10": 0.0
+    },
+    "tilt_cap": {
+     "val_threshold": 0.05,
+     "n_pos": 22,
+     "n_neg": 224,
+     "pos_median": 0.981,
+     "pos_min": 0.434,
+     "neg_p95": 0.086,
+     "neg_max": 0.895,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.067,
+     "recall_at_0.90": 0.818,
+     "neg_above_0.10": 0.049
+    },
+    "water_level": {
+     "val_threshold": 0.45,
+     "n_pos": 23,
+     "n_neg": 223,
+     "pos_median": 0.999,
+     "pos_min": 0.998,
+     "neg_p95": 0.37,
+     "neg_max": 0.988,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.031,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.103
+    }
+   },
+   "bottle_val_thresholds": {
+    "n_good": 19,
+    "n_defective": 227,
+    "two_zone": {
+     "escaped": 10,
+     "false_reject": 10
+    },
+    "three_zone": {
+     "escaped(PASS)": 23,
+     "false_reject(REJECT)": 0,
+     "unsure": 21,
+     "good_unsure": 10,
+     "defective_unsure": 11,
+     "good_pass": 9,
+     "defective_reject": 193
+    }
+   }
+  },
+  "20261008-090538": {
+   "arch": "convnext_tiny",
+   "n_test": 246,
+   "temperature": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "per_defect": {
+    "damaged_bottle": {
+     "val_threshold": 0.15,
+     "n_pos": 64,
+     "n_neg": 182,
+     "pos_median": 0.985,
+     "pos_min": 0.906,
+     "neg_p95": 0.08,
+     "neg_max": 0.155,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.005,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.038
+    },
+    "damaged_label": {
+     "val_threshold": 0.15,
+     "n_pos": 36,
+     "n_neg": 210,
+     "pos_median": 0.988,
+     "pos_min": 0.547,
+     "neg_p95": 0.169,
+     "neg_max": 0.301,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.129,
+     "recall_at_0.90": 0.75,
+     "neg_above_0.10": 0.133
+    },
+    "missing_cap": {
+     "val_threshold": 0.05,
+     "n_pos": 7,
+     "n_neg": 239,
+     "pos_median": 0.993,
+     "pos_min": 0.993,
+     "neg_p95": 0.032,
+     "neg_max": 0.048,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.0
+    },
+    "missing_label": {
+     "val_threshold": 0.5,
+     "n_pos": 12,
+     "n_neg": 234,
+     "pos_median": 0.434,
+     "pos_min": 0.407,
+     "neg_p95": 0.03,
+     "neg_max": 0.135,
+     "recall_at_thr": 0.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 0.0,
+     "neg_above_0.10": 0.03
+    },
+    "skewed_bottle": {
+     "val_threshold": 0.5,
+     "n_pos": 32,
+     "n_neg": 214,
+     "pos_median": 0.991,
+     "pos_min": 0.989,
+     "neg_p95": 0.402,
+     "neg_max": 0.461,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.0,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.121
+    },
+    "skewed_label": {
+     "val_threshold": 0.25,
+     "n_pos": 31,
+     "n_neg": 215,
+     "pos_median": 0.971,
+     "pos_min": 0.965,
+     "neg_p95": 0.063,
+     "neg_max": 0.253,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.005,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.033
+    },
+    "tilt_cap": {
+     "val_threshold": 0.35,
+     "n_pos": 22,
+     "n_neg": 224,
+     "pos_median": 0.736,
+     "pos_min": 0.714,
+     "neg_p95": 0.397,
+     "neg_max": 0.468,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.071,
+     "recall_at_0.90": 0.0,
+     "neg_above_0.10": 0.196
+    },
+    "water_level": {
+     "val_threshold": 0.55,
+     "n_pos": 23,
+     "n_neg": 223,
+     "pos_median": 0.986,
+     "pos_min": 0.984,
+     "neg_p95": 0.046,
+     "neg_max": 0.966,
+     "recall_at_thr": 1.0,
+     "false_alarm_at_thr": 0.018,
+     "recall_at_0.90": 1.0,
+     "neg_above_0.10": 0.049
+    }
+   },
+   "bottle_val_thresholds": {
+    "n_good": 19,
+    "n_defective": 227,
+    "two_zone": {
+     "escaped": 1,
+     "false_reject": 19
+    },
+    "three_zone": {
+     "escaped(PASS)": 0,
+     "false_reject(REJECT)": 0,
+     "unsure": 58,
+     "good_unsure": 19,
+     "defective_unsure": 39,
+     "good_pass": 0,
+     "defective_reject": 188
+    }
+   }
+  }
+ },
+ "detectors": {
+  "stage2_best (configured active)": {
+   "weights": "models/stage2_yolo/stage2_best.pt",
+   "n_images": 52,
+   "per_class": {
+    "bottle": {
+     "n_gt": 121,
+     "tp_conf_median": 0.843,
+     "tp_conf_min": 0.566,
+     "recall@0.2": 1.0,
+     "false_boxes@0.2": 0,
+     "recall@0.25": 1.0,
+     "false_boxes@0.25": 0,
+     "recall@0.4": 1.0,
+     "false_boxes@0.4": 0,
+     "recall@0.55": 1.0,
+     "false_boxes@0.55": 0,
+     "recall@0.7": 0.893,
+     "false_boxes@0.7": 0,
+     "recall@0.8": 0.661,
+     "false_boxes@0.8": 0
+    },
+    "cap": {
+     "n_gt": 120,
+     "tp_conf_median": 0.238,
+     "tp_conf_min": 0.197,
+     "recall@0.2": 0.033,
+     "false_boxes@0.2": 130,
+     "recall@0.25": 0.008,
+     "false_boxes@0.25": 121,
+     "recall@0.4": 0.0,
+     "false_boxes@0.4": 121,
+     "recall@0.55": 0.0,
+     "false_boxes@0.55": 121,
+     "recall@0.7": 0.0,
+     "false_boxes@0.7": 121,
+     "recall@0.8": 0.0,
+     "false_boxes@0.8": 8
+    },
+    "label": {
+     "n_gt": 97,
+     "tp_conf_median": 0.776,
+     "tp_conf_min": 0.108,
+     "recall@0.2": 0.928,
+     "false_boxes@0.2": 8,
+     "recall@0.25": 0.928,
+     "false_boxes@0.25": 8,
+     "recall@0.4": 0.928,
+     "false_boxes@0.4": 8,
+     "recall@0.55": 0.928,
+     "false_boxes@0.55": 8,
+     "recall@0.7": 0.804,
+     "false_boxes@0.7": 6,
+     "recall@0.8": 0.309,
+     "false_boxes@0.8": 3
+    }
+   }
+  },
+  "YOLOv8n v3 candidate": {
+   "weights": "models/stage2_yolo/bench_yolov8n_v3/weights/best.pt",
+   "n_images": 52,
+   "per_class": {
+    "bottle": {
+     "n_gt": 121,
+     "tp_conf_median": 0.874,
+     "tp_conf_min": 0.792,
+     "recall@0.2": 1.0,
+     "false_boxes@0.2": 0,
+     "recall@0.25": 1.0,
+     "false_boxes@0.25": 0,
+     "recall@0.4": 1.0,
+     "false_boxes@0.4": 0,
+     "recall@0.55": 1.0,
+     "false_boxes@0.55": 0,
+     "recall@0.7": 1.0,
+     "false_boxes@0.7": 0,
+     "recall@0.8": 0.926,
+     "false_boxes@0.8": 0
+    },
+    "cap": {
+     "n_gt": 120,
+     "tp_conf_median": 0.967,
+     "tp_conf_min": 0.917,
+     "recall@0.2": 1.0,
+     "false_boxes@0.2": 1,
+     "recall@0.25": 1.0,
+     "false_boxes@0.25": 1,
+     "recall@0.4": 1.0,
+     "false_boxes@0.4": 1,
+     "recall@0.55": 1.0,
+     "false_boxes@0.55": 1,
+     "recall@0.7": 1.0,
+     "false_boxes@0.7": 1,
+     "recall@0.8": 1.0,
+     "false_boxes@0.8": 1
+    },
+    "label": {
+     "n_gt": 97,
+     "tp_conf_median": 0.828,
+     "tp_conf_min": 0.357,
+     "recall@0.2": 0.948,
+     "false_boxes@0.2": 16,
+     "recall@0.25": 0.948,
+     "false_boxes@0.25": 13,
+     "recall@0.4": 0.938,
+     "false_boxes@0.4": 11,
+     "recall@0.55": 0.897,
+     "false_boxes@0.55": 11,
+     "recall@0.7": 0.897,
+     "false_boxes@0.7": 6,
+     "recall@0.8": 0.825,
+     "false_boxes@0.8": 6
+    }
+   }
+  },
+  "YOLOv8s v3 candidate": {
+   "weights": "models/stage2_yolo/bench_yolov8s_v3/weights/best.pt",
+   "n_images": 52,
+   "per_class": {
+    "bottle": {
+     "n_gt": 121,
+     "tp_conf_median": 0.865,
+     "tp_conf_min": 0.805,
+     "recall@0.2": 1.0,
+     "false_boxes@0.2": 0,
+     "recall@0.25": 1.0,
+     "false_boxes@0.25": 0,
+     "recall@0.4": 1.0,
+     "false_boxes@0.4": 0,
+     "recall@0.55": 1.0,
+     "false_boxes@0.55": 0,
+     "recall@0.7": 1.0,
+     "false_boxes@0.7": 0,
+     "recall@0.8": 1.0,
+     "false_boxes@0.8": 0
+    },
+    "cap": {
+     "n_gt": 120,
+     "tp_conf_median": 0.96,
+     "tp_conf_min": 0.904,
+     "recall@0.2": 1.0,
+     "false_boxes@0.2": 1,
+     "recall@0.25": 1.0,
+     "false_boxes@0.25": 1,
+     "recall@0.4": 1.0,
+     "false_boxes@0.4": 1,
+     "recall@0.55": 1.0,
+     "false_boxes@0.55": 1,
+     "recall@0.7": 1.0,
+     "false_boxes@0.7": 1,
+     "recall@0.8": 1.0,
+     "false_boxes@0.8": 1
+    },
+    "label": {
+     "n_gt": 97,
+     "tp_conf_median": 0.837,
+     "tp_conf_min": 0.791,
+     "recall@0.2": 1.0,
+     "false_boxes@0.2": 6,
+     "recall@0.25": 1.0,
+     "false_boxes@0.25": 6,
+     "recall@0.4": 1.0,
+     "false_boxes@0.4": 6,
+     "recall@0.55": 1.0,
+     "false_boxes@0.55": 6,
+     "recall@0.7": 1.0,
+     "false_boxes@0.7": 6,
+     "recall@0.8": 0.907,
+     "false_boxes@0.8": 6
+    }
+   }
+  }
+ },
+ "real_camera": {
+  "classifier": {
+   "20261008-081732": {
+    "arch": "efficientnet_b0",
+    "frames": 33,
+    "confident_pass(all<=0.10)": 0,
+    "confident_reject(any>=0.90)": 33,
+    "unsure": 0,
+    "median_max_score": 1.0
+   },
+   "20261008-082510": {
+    "arch": "resnet18",
+    "frames": 33,
+    "confident_pass(all<=0.10)": 0,
+    "confident_reject(any>=0.90)": 25,
+    "unsure": 8,
+    "median_max_score": 0.96
+   },
+   "20261008-083257": {
+    "arch": "efficientnet_b1",
+    "frames": 33,
+    "confident_pass(all<=0.10)": 0,
+    "confident_reject(any>=0.90)": 20,
+    "unsure": 13,
+    "median_max_score": 0.916
+   },
+   "20261008-083918": {
+    "arch": "mobilenet_v3_small",
+    "frames": 33,
+    "confident_pass(all<=0.10)": 0,
+    "confident_reject(any>=0.90)": 8,
+    "unsure": 25,
+    "median_max_score": 0.791
+   },
+   "20261008-090538": {
+    "arch": "convnext_tiny",
+    "frames": 33,
+    "confident_pass(all<=0.10)": 0,
+    "confident_reject(any>=0.90)": 0,
+    "unsure": 33,
+    "median_max_score": 0.442
+   }
+  },
+  "detector": {
+   "v8s_v3": {
+    "frames": 33,
+    "bottle_conf_median": 0.38,
+    "frames_bottle>=0.80": 4,
+    "frames_bottle>=0.25": 19,
+    "cap_conf_median": 0.0,
+    "frames_cap>=0.70": 5
+   },
+   "v8n_v3": {
+    "frames": 33,
+    "bottle_conf_median": 0.47,
+    "frames_bottle>=0.80": 8,
+    "frames_bottle>=0.25": 25,
+    "cap_conf_median": 0.0,
+    "frames_cap>=0.70": 0
+   },
+   "stage2_best(v1, old active)": {
+    "frames": 33,
+    "bottle_conf_median": 0.56,
+    "frames_bottle>=0.80": 1,
+    "frames_bottle>=0.25": 22,
+    "cap_conf_median": 0.0,
+    "frames_cap>=0.70": 0
+   }
+  }
+ },
+ "settings_det_min_conf": {
+  "bottle": 0.2,
+  "cap": 0.2,
+  "label": 0.4
+ }
+}

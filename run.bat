@@ -10,7 +10,7 @@ where python >nul 2>nul
 if errorlevel 1 (
     echo.
     echo   Python was not found on PATH.
-    echo   Install Python 3.10+ from python.org and tick "Add python.exe to PATH".
+    echo   Install Python 3.8 64-bit from python.org and tick "Add python.exe to PATH".
     echo.
     pause
     exit /b 1
@@ -53,7 +53,9 @@ if errorlevel 1 (
 python -c "import torch;print('   Torch',torch.__version__,'| CUDA',('yes - '+torch.cuda.get_device_name(0)) if torch.cuda.is_available() else 'no (CPU only, training will be slow)')"
 
 rem ------------------------------------------- migrate the old single-project layout
-if exist "All Datasets" (
+rem Only for a checkout that has never been migrated: an "All Datasets" folder unpacked again from the zip
+rem next to an existing projects\om_bottle is a copy of the raw images, not something to move.
+if exist "All Datasets" if not exist "projects\om_bottle\labels.csv" (
     echo.
     echo   Moving the old layout into projects\ ...
     python -m tools.migrate "OM Bottle" --run
@@ -63,7 +65,7 @@ if exist "All Datasets" (
 rem ------------------------------------------------------------ first run
 rem The crop region must be measured before anything can train. Which project is
 rem active is Python's business, so ask it rather than guessing a path here.
-python -c "import dataset as D,sys; sys.exit(0 if D.CONFIG_JSON.exists() or not D.scan_images() else 1)"
+python -c "from vision import dataset as D;import sys; sys.exit(0 if D.CONFIG_JSON.exists() or not D.scan_images() else 1)"
 if errorlevel 1 (
     echo.
     echo   First run - measuring the crop region from your images...

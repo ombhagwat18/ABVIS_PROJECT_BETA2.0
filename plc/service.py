@@ -33,6 +33,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
+from line import clock
 from . import address_map as AM
 from .client import CONNECTED, DISCONNECTED, FAULT, PLCClient
 from .protocol import PLCError
@@ -69,12 +70,26 @@ class PLCLink(Protocol):
 @dataclass
 class Trigger:
     id: int
-    seen_mono: float
+    seen_mono: float                   # reply of the read that first saw M2 = 1: the edge is never LATER than this
     seen_wall: float
     after_reconnect: bool = False      # first observation was right after (re)connect: M2 may be stale
     state: str = T_PENDING
     overdue: bool = False
     note: str = ""
+    # The edge happened after the previous read that still saw M2 = 0 was sent (edge_lo) and before seen_mono.
+    # None = no earlier reading to bound it (first poll after connect).
+    edge_lo: Optional[float] = None
+
+    @property
+    def uncertainty_s(self) -> Optional[float]:
+        """Half the interval the M2 edge is known to lie in (PLC scan + poll gap + serial transaction)."""
+        return None if self.edge_lo is None else max(0.0, self.seen_mono - self.edge_lo) / 2
+
+    @property
+    def est_mono(self) -> float:
+        """Best estimate of the edge: the middle of the bracket. Used to schedule the reject; frame windows keep
+        the conservative seen_mono, so a frame of the previous bottle can never be taken for this one."""
+        return self.seen_mono if self.edge_lo is None else (self.edge_lo + self.seen_mono) / 2
 
 
 @dataclass
@@ -98,7 +113,7 @@ class CommandResult:
 
 @dataclass
 class PLCEvent:
-    ts: float                          # time.monotonic()
+    ts: float                          # clock.now()
     wall: float                        # time.time(), display only
     event: str
     device: str = ""
@@ -144,6 +159,15 @@ class PLCService:
         self._m2_rose = False                          # M2 rose since the last observation that read X0
         self.untriggered = 0
         self.operator_controls = False                 # real-PLC operator test buttons (operator_write); opt-in
+        # Trigger timing. _obs_t0: when the read now being observed was SENT; _prev_obs_t0: the same for the
+        # previous observation. An M2 edge lies between the two (see Trigger.edge_lo).
+        self._obs_t0: Optional[float] = None
+        self._prev_obs_t0: Optional[float] = None
+        # While the line runs (watch_x0) the fast poll also reads these outputs and reports their changes itself,
+        # so the slow full status read (6+ transactions, ~250 ms at 9600 baud, during which no trigger can be
+        # seen) only needs to run every line_status_period_s.
+        self.fast_outputs = ("Y0",)
+        self.line_status_period_s = 1.0
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -199,7 +223,7 @@ class PLCService:
                 done.set()
             # Back-to-back jobs must not starve trigger polling: an M2 fall/rise missed here would
             # hide the next trigger (found on the simulator, 2026-10-03).
-            if time.monotonic() - self._last_poll >= self.poll_s:
+            if clock.now() - self._last_poll >= self.poll_s:
                 self._poll_cycle()
         # fail anything still queued so no caller hangs
         while True:
@@ -212,7 +236,7 @@ class PLCService:
 
     # ------------------------------------------------------------------ events
     def _event(self, event: str, **kw) -> PLCEvent:
-        ev = PLCEvent(time.monotonic(), time.time(), event, **kw)
+        ev = PLCEvent(clock.now(), time.time(), event, **kw)
         with self._lock:
             self._events.append(ev)
         for fn in list(self._listeners):
@@ -256,7 +280,7 @@ class PLCService:
         if snap is None or self.client.state != CONNECTED:
             return None
         out = dict(snap)
-        out["age_s"] = time.monotonic() - ts
+        out["age_s"] = clock.now() - ts
         return out
 
     # ------------------------------------------------------------------ connection
@@ -368,6 +392,8 @@ class PLCService:
         "plc_operator_controls"), the PLC is in RUN, and -- for TRIGGER -- M2 = M0 = M1 = 0 read fresh.
           START / STOP : pulse M10 / M11 (1, ~0.3 s, 0); the ladder must OR them with X1 / X2.
           TRIGGER      : M2 <- 1, the "virtual bottle" (what X0 does); the ladder clears it on M0/M1.
+          PASS / REJECT: M0 / M1 <- 1 once (manual mode); the ladder clears them. REJECT runs the reject cycle:
+                         Y0 fires T0 after the write, for T1 -- the cylinder strokes.
         Never retried. On the real machine a REJECT answer to a virtual bottle still fires Y0."""
         action = action.strip().upper()
         if not self.operator_controls:
@@ -379,16 +405,17 @@ class PLCService:
         def job():
             if not self._guard(self.client.heartbeat)["plc_run"]:
                 raise PLCError(f"operator {action} refused: PLC is not in RUN")
-            if action == "TRIGGER":
-                bits = self._guard(lambda: self.client.read_many([AM.TRIGGER_BIT, AM.PASS_BIT, AM.REJECT_BIT]))
+            if action in ("TRIGGER", "PASS", "REJECT"):
+                names = [AM.TRIGGER_BIT, AM.PASS_BIT, AM.REJECT_BIT] if action == "TRIGGER" else [AM.PASS_BIT, AM.REJECT_BIT]
+                bits = self._guard(lambda: self.client.read_many(names))
                 busy = [n for n, v in bits.items() if v]
                 if busy:
-                    raise PLCError(f"virtual bottle refused: {', '.join(busy)} already ON (bottle still being handled)")
+                    raise PLCError(f"operator {action} refused: {', '.join(busy)} already ON (bottle still being handled)")
             t0 = time.perf_counter()
             self._event("OPERATOR_WRITE", device=dev, ack=f"operator test: {action} ({dev})")
             with AM.sim_test_allow(dev):
                 self._guard(lambda: self.client.write_bit(dev, True))
-                if action != "TRIGGER":
+                if action not in AM.LATCHED_OPERATOR:
                     time.sleep(0.3)                    # long enough for any scan; the ladder sees the rising edge
                     self._guard(lambda: self.client.write_bit(dev, False))
             ms = (time.perf_counter() - t0) * 1000
@@ -414,8 +441,8 @@ class PLCService:
         snap["m2"] = bool(self.client.read_bit(AM.TRIGGER_BIT)) if AM.TRIGGER_BIT not in snap["internal"] \
             else bool(snap["internal"][AM.TRIGGER_BIT])
         with self._lock:
-            self._snapshot, self._snapshot_mono = snap, time.monotonic()
-        self._last_status = time.monotonic()
+            self._snapshot, self._snapshot_mono = snap, clock.now()
+        self._last_status = clock.now()
         self._device_changes(snap)
         self._observe(dict(snap["internal"], X0=snap["inputs"]["X0"]) if self.watch_x0 else snap["internal"])
         return snap
@@ -450,7 +477,11 @@ class PLCService:
         """Feed one reading of M0/M1/M2 (and X0, when watched) into the trigger state machine
         (service thread only)."""
         m2 = bool(internal.get(AM.TRIGGER_BIT, 0))
-        now = time.monotonic()
+        now = clock.now()
+        sent = self._obs_t0 if self._obs_t0 is not None and self._obs_t0 <= now else now
+        edge_lo = self._prev_obs_t0                   # the previous reading was sent here and still saw M2 = 0
+        self._obs_t0 = None
+        self._prev_obs_t0 = sent
         with self._lock:
             tr = self._trigger
         rose_now = bool(m2 and not self._m2_prev)
@@ -471,7 +502,8 @@ class PLCService:
             self._x0_prev = bool(x0)
         if m2:
             if not self._m2_prev:                     # rising edge (or first reading after connect)
-                trig = Trigger(next(self._ids), now, time.time(), after_reconnect=bool(self._after_reconnect))
+                trig = Trigger(next(self._ids), now, time.time(), after_reconnect=bool(self._after_reconnect),
+                               edge_lo=None if self._m2_prev is None else edge_lo)
                 if self._unresolved_command:
                     trig.note = "a command from before the fault had an unknown outcome"
                 with self._lock:
@@ -509,16 +541,34 @@ class PLCService:
         self._x0_prev = None
 
     def _poll_cycle(self) -> None:
-        self._last_poll = time.monotonic()
+        self._last_poll = clock.now()
         if self.client.state != CONNECTED:
             return
         try:
-            if time.monotonic() - self._last_status >= self.status_period_s:
+            period = max(self.status_period_s, self.line_status_period_s) if self.watch_x0 else self.status_period_s
+            self._obs_t0 = clock.now()
+            if clock.now() - self._last_status >= period:
                 self._read_status_now()
             else:
-                self._observe(self.client.read_many((["X0"] if self.watch_x0 else []) + [AM.TRIGGER_BIT, *self._cmd_bits]))
+                names = (["X0"] if self.watch_x0 else []) + [AM.TRIGGER_BIT, *self._cmd_bits]
+                if self.watch_x0:
+                    names += [n for n in self.fast_outputs if n not in names]
+                vals = self.client.read_many(names)
+                if self.watch_x0:
+                    self._fast_changes(vals)
+                self._observe(vals)
         except PLCError as e:
             self._on_link_error(e)
+
+    def _fast_changes(self, vals: dict) -> None:
+        """DEVICE_CHANGE events from a fast poll, so a short Y0 pulse is seen between two slow status reads. Shares
+        _prev_dev with _device_changes: a change is reported once, by whichever read sees it first."""
+        for n, v in vals.items():
+            old = self._prev_dev.get(n)
+            if old is not None and old != v:
+                self._event("DEVICE_CHANGE", device=n, ack="ON" if v else "OFF")
+            if old is not None or n in self.fast_outputs:
+                self._prev_dev[n] = v
 
     def current_trigger(self) -> Optional[Trigger]:
         with self._lock:
@@ -527,13 +577,13 @@ class PLCService:
     def wait_for_trigger(self, timeout: Optional[float] = None) -> Optional[Trigger]:
         """Block until a NEW inspection trigger is observed (M2 rising). Each trigger is delivered
         once. Returns None on timeout. A trigger that has already been cancelled/lost is skipped."""
-        end = None if timeout is None else time.monotonic() + timeout
+        end = None if timeout is None else clock.now() + timeout
         while True:
-            left = None if end is None else max(0.0, end - time.monotonic())
+            left = None if end is None else max(0.0, end - clock.now())
             try:
                 trig = self._delivered.get(timeout=left if left is not None else 0.5)
             except queue.Empty:
-                if end is not None and time.monotonic() >= end:
+                if end is not None and clock.now() >= end:
                     return None
                 if self._stop.is_set():
                     return None
@@ -609,7 +659,7 @@ class PLCService:
         res.write_ms = (time.perf_counter() - t0) * 1000
         self._event("COMMAND_WRITTEN", device=dev, command=v, trigger_id=trigger_id, latency_ms=res.write_ms)
         # ---- acknowledgement: the PLC must consume the command (bit and M2 go back to 0)
-        deadline = time.monotonic() + self.ack_timeout_s
+        deadline = clock.now() + self.ack_timeout_s
         while True:
             try:
                 st = self.client.read_many([AM.TRIGGER_BIT, *self._cmd_bits])
@@ -634,7 +684,7 @@ class PLCService:
                             latency_ms=res.ack_ms)
                 self._observe(st)
                 return res
-            if time.monotonic() >= deadline:
+            if clock.now() >= deadline:
                 res.status = NOT_ACKED
                 res.detail = (f"PLC did not consume the command within {self.ack_timeout_s:g}s "
                               f"(M2={st[AM.TRIGGER_BIT]}, {dev}={st[dev]}); NOT retried")

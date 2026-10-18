@@ -5,7 +5,7 @@ Three different things are tracked separately, and must not be confused:
   1. ADDRESSING -- device name -> Modbus address/function. Verified against the running DVP-SS2
      simulator by reading it (details in `verification`).
   2. MEANING    -- what the device DOES in the machine. The ladder (`plc file/final_year/final_year.isp`)
-     is a compressed text project (see docs/roadmap/PLC_COMMUNICATION.md section 0 for the decoded
+     is a compressed text project (see FINAL_YEAR_BLACKBOOK/23_Project_Documentation/roadmap/PLC_COMMUNICATION.docx section 0 for the decoded
      networks). Meanings were stated by the user and agree with the file's device comments. Python-side
      proof is the handshake test in `plc/handshake_test.py`. Anything not in that contract stays UNKNOWN.
   3. WRITE SAFETY -- whether Python may write it. X inputs and Y outputs are never writable. The ONLY
@@ -25,7 +25,7 @@ UNKNOWN = "UNKNOWN"
 
 # kind -> (Modbus base address, read-bit function or None, octal numbering?, bit/word capability)
 # Bases follow the Delta DVP convention; each one marked VERIFIED was confirmed by reading the
-# running simulator (see Device.verification / docs/roadmap/PLC_COMMUNICATION.md).
+# running simulator (see Device.verification / FINAL_YEAR_BLACKBOOK/23_Project_Documentation/roadmap/PLC_COMMUNICATION.docx).
 KINDS = {
     "X": dict(base=0x0400, bit_fc=FC_READ_INPUTS, octal=True,  words=False, direction="input"),
     "Y": dict(base=0x0500, bit_fc=FC_READ_COILS,  octal=True,  words=False, direction="output"),
@@ -63,7 +63,10 @@ WRITE_ALLOWLIST: frozenset = frozenset(COMMAND_BITS.values())
 # written on a real PLC (the scan reloads it from the terminals) and Y stays never-writable, so the conveyor is
 # started/stopped through HMI bits the ladder must contain: M10 in parallel with X1 (START), M11 in parallel
 # with X2 (STOP). M2 = "virtual bottle" (what X0 does). Written only via PLCService.operator_* (one shot each).
-OPERATOR_BITS = {"START": "M10", "STOP": "M11", "TRIGGER": TRIGGER_BIT}
+# PASS / REJECT (manual mode, 2026-10-17): the same command bits the line answers with (M0 / M1). The ladder clears them
+# itself (net 4 RST M0; net 7 RST M1 after T0 + T1), so they are written once and not pulsed. REJECT = fire the cylinder.
+OPERATOR_BITS = {"START": "M10", "STOP": "M11", "TRIGGER": TRIGGER_BIT, "PASS": PASS_BIT, "REJECT": REJECT_BIT}
+LATCHED_OPERATOR = frozenset({"TRIGGER", "PASS", "REJECT"})      # written once; the ladder resets them
 
 # SIMULATOR-ONLY test stimulus. Never used by production code. Only these bits may ever be opened up,
 # only for the duration of one write, only on the service thread, and X/Y are never among them.

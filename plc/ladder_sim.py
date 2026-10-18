@@ -21,7 +21,7 @@ SET / RST / OUT as named. The decoder (plc.ladder_check) reads each network's co
 series/parallel wiring: several contacts in one network are simulated as AND (series). A ladder that uses
 OR branches (e.g. "X1 OR M10") is therefore flagged, and the scenarios it affects are SKIPped, not guessed.
 
-The ladder is never written. docs/hardware/PLC_LADDER_REQUIREMENTS.md explains the requirements behind each check.
+The ladder is never written. FINAL_YEAR_BLACKBOOK/23_Project_Documentation/hardware/PLC_LADDER_REQUIREMENTS.docx explains the requirements behind each check.
 """
 from __future__ import annotations
 

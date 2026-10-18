@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 
+from line import clock
 from . import address_map as AM
 from . import protocol as P
 from .client import CONNECTED, DISCONNECTED, FAULT, PLCClient, PLCWriteNotAllowed, TcpTransport
@@ -138,7 +139,7 @@ class FakePLC:
 
 class FakeLadder:
     """FAKE PLC program: a scan-by-scan emulation of the ladder decoded from `final_year.isp` (saved
-    2026-10-03 09:06; docs/roadmap/PLC_COMMUNICATION.md section 0). Every scan runs, in order:
+    2026-10-03 09:06; FINAL_YEAR_BLACKBOOK/23_Project_Documentation/roadmap/PLC_COMMUNICATION.docx section 0). Every scan runs, in order:
 
         1  X1          -> SET Y1                 conveyor start
         2  X2          -> RST Y1                 conveyor stop
@@ -192,7 +193,7 @@ class FakeLadder:
         t0_start = t1_start = None
         while not self._stop:
             time.sleep(self.scan_s)
-            now = time.monotonic()
+            now = clock.now()
             # trigger()'s pulse ends only after a scan has seen it ON (Windows sleeps ~15 ms, not scan_s)
             if self._x0_until and now >= self._x0_until and x0_prev:
                 self._x0_until = 0.0
@@ -287,8 +288,8 @@ def write_readback_test(plc, cmd, expects, settle=1.0, poll=0.01):
         t0 = time.perf_counter()
         plc.write_bit(cmd, not original)
         t_write = (time.perf_counter() - t0) * 1000
-        deadline = time.monotonic() + settle
-        while time.monotonic() < deadline and len(result["changed"]) < len(expects):
+        deadline = clock.now() + settle
+        while clock.now() < deadline and len(result["changed"]) < len(expects):
             now = plc.read_many(expects)
             for e in expects:
                 if e not in result["changed"] and now[e] != before[e]:
@@ -393,9 +394,9 @@ def unit_tests():
 
         # ---- timeout -> FAULT, link closed, no further commands, explicit reconnect recovers
         fake.mode = "silent"
-        t0 = time.monotonic()
+        t0 = clock.now()
         _expect(PLCTimeoutError, lambda: plc.read_bit("M0"), "silent PLC")
-        assert 0.4 <= time.monotonic() - t0 < 1.5, "timeout not honoured"
+        assert 0.4 <= clock.now() - t0 < 1.5, "timeout not honoured"
         assert plc.state == FAULT and not plc.is_connected() and "Timeout" in (plc.last_error or "")
         c0 = fake.count
         _expect(PLCConnectionError, lambda: plc.read_bit("M0"), "command while FAULT")

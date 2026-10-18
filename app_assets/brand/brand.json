@@ -1,0 +1,18 @@
+{
+  "name": "NexaInspect",
+  "name_parts": ["Nexa", "Inspect"],
+  "descriptor": "Industrial Vision Inspection Platform",
+  "tagline": "Inspect. Decide. Trace.",
+  "application": "Bottle Defect Detection System",
+  "version": "0.9.0",
+  "version_note": "1.0.0 is reserved for the release that passes the physical commissioning and model acceptance gates (FINAL_YEAR_BLACKBOOK/21_Production_Software_Plan).",
+  "assets": {
+    "logo_svg": "nexainspect_logo.svg",
+    "logo_dark_svg": "nexainspect_logo_dark.svg",
+    "mark_svg": "nexainspect_mark.svg",
+    "logo_png": "nexainspect_logo.png",
+    "logo_dark_png": "nexainspect_logo_dark.png",
+    "mark_png": "nexainspect_mark.png",
+    "icon_ico": "nexainspect.ico"
+  }
+}

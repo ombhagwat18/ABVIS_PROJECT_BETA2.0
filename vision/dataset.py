@@ -197,8 +197,36 @@ def load_settings() -> dict:
     return s
 
 
+# Audit trail: the application installs a callable(changes) here (ui/app.py -> logs/app.log); every settings write
+# then records which keys changed, old -> new. Left None by self-tests, so a test never writes into the real logs/.
+settings_audit = None
+
+# Keys whose change alters what the line decides or does physically: logged at WARNING level.
+SAFETY_SETTINGS = ("fault_action", "monitor_only", "decision_rules", "threshold_shift", "threshold_overrides",
+                   "detector_weights", "detector_conf", "plc_operator_controls", "plc_t0_s", "plc_t1_s",
+                   "inspection_to_reject_mm", "conveyor_mm_s", "reject_travel_s", "estop_device", "line_cameras")
+
+
+def settings_changes(old: dict, new: dict) -> dict:
+    """{key: (old value, new value)} for every key that differs (added and removed keys included)."""
+    return {k: (old.get(k), new.get(k)) for k in sorted(set(old) | set(new)) if old.get(k) != new.get(k)}
+
+
 def save_settings(s: dict) -> None:
+    old = None
+    if settings_audit is not None:
+        try:
+            old = json.loads(SETTINGS_JSON.read_text())
+        except (OSError, ValueError):
+            old = {}
     SETTINGS_JSON.write_text(json.dumps(s, indent=2))
+    if old is not None:
+        changes = settings_changes(old, s)
+        if changes:
+            try:
+                settings_audit(changes)
+            except Exception:                                    # noqa: BLE001 - the audit must never block a save
+                pass
 
 
 def imread(path: Path) -> np.ndarray | None:
@@ -1198,6 +1226,7 @@ def demo():
     print(f"ok  train={len(tr)} val={len(va)}  scenes kept whole  "
           f"input={INPUT_WH}  fill={fill:.0%}")
     project_demo()
+    settings_audit_demo()
 
 
 def project_demo():
@@ -1360,6 +1389,29 @@ def project_demo():
         if was[2]:
             use_project(was[2])
     print("ok  projects isolated, folder->csv correct, hand labels survive rescan")
+
+
+def settings_audit_demo():
+    """Every settings write records what changed (once); an unchanged save is silent; a broken audit never blocks it."""
+    global SETTINGS_JSON, settings_audit
+    import tempfile
+    assert settings_changes({"a": 1, "b": 2}, {"a": 1, "b": 3, "c": 4}) == {"b": (2, 3), "c": (None, 4)}
+    was = (SETTINGS_JSON, settings_audit)
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            SETTINGS_JSON = Path(td) / "settings.json"
+            SETTINGS_JSON.write_text(json.dumps({"fault_action": "PASS"}))
+            got = []
+            settings_audit = got.append
+            save_settings({"fault_action": "REJECT", "font_scale": 1.0})
+            save_settings({"fault_action": "REJECT", "font_scale": 1.0})
+            assert got == [{"fault_action": ("PASS", "REJECT"), "font_scale": (None, 1.0)}], got
+            settings_audit = lambda c: 1 / 0                       # noqa: E731
+            save_settings({"x": 1})
+            assert json.loads(SETTINGS_JSON.read_text()) == {"x": 1}
+    finally:
+        SETTINGS_JSON, settings_audit = was
+    print("ok  settings audit trail: changed keys recorded once, unchanged save silent, never blocks a save")
 
 
 _boot()          # importing this module always leaves a project bound

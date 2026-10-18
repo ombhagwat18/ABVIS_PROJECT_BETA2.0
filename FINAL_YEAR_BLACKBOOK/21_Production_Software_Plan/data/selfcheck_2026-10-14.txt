@@ -1,0 +1,23 @@
+ok   Inspection clock                             0.1s
+ok   Decision engine                             20.2s
+ok   Machine cycle                               18.3s
+ok   Time tracking                                0.1s
+ok   Machine state                                0.1s
+ok   Alarms                                       0.1s
+ok   Production record                            2.8s
+ok   Event logs                                   0.1s
+ok   Model registry                               0.3s
+ok   PLC protocol                                 2.4s
+ok   PLC service                                 11.5s
+ok   PLC commissioning window                     4.3s
+ok   Ladder decoder                               0.1s
+ok   Ladder simulator                             4.7s
+ok   Active learning                              2.6s
+ok   Stable verdict                               0.1s
+ok   Production export                            2.8s
+ok   Threshold calibration                        0.3s
+ok   Model activation gates                       1.5s
+ok   Defect box bootstrap                         2.7s
+ok   Model archive                                0.1s
+ok   Annotation export                            0.1s
+22/22 passed

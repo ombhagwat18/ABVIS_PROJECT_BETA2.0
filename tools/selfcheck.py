@@ -5,7 +5,7 @@
 
 Each test is a software check with fakes (fake PLC emulating the decoded ladder, fake cameras, fake models).
 A pass is NOT a hardware test. A failure prints the last lines of that test's output.
-The ladder is checked separately: python -m plc.ladder_sim (docs/hardware/PLC_LADDER_REQUIREMENTS.md).
+The ladder is checked separately: python -m plc.ladder_sim (FINAL_YEAR_BLACKBOOK/23_Project_Documentation/hardware/PLC_LADDER_REQUIREMENTS.docx).
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # (label, argv after python, what it proves)
 QUICK = (
+    ("Inspection clock", ["-m", "line.clock"], "one high-resolution monotonic clock for frames, triggers and deadlines"),
     ("Decision engine", ["-m", "line.decision"], "recipe rules, frame vote, camera fusion, every failure -> FAULT"),
     ("Machine cycle", ["-m", "line.machine_cycle"], "trigger -> inspection -> FIFO -> M0/M1 against a fake PLC running the decoded ladder; "
                                             "staggered cameras, association fault, late reject, halt latch, record"),
@@ -37,6 +38,11 @@ QUICK = (
     ("Production export", ["-m", "line.production_export"], "plain-word rows, CSV for Excel, printable report"),
     ("Threshold calibration", ["-m", "vision.calibrate_thresholds", "--selftest"], "validation-chosen thresholds, recall guard"),
     ("Model activation gates", ["-m", "registry.model_checks", "--selftest"], "real-camera limits, background-shortcut check"),
+    ("Defect box bootstrap", ["-m", "vision.defect_bootstrap"], "defect-state boxes from labels + detector, proposals only"),
+    ("Model archive", ["-m", "tools.archive_models", "--selftest"], "archive by training data, active models never moved, restore"),
+    ("Annotation export", ["-m", "vision.annotate"], "only reviewed / annotated images become training labels"),
+    ("Brand assets", ["-m", "ui.brand"], "brand.json readable, logo / mark / icon present (local files only)"),
+    ("System report", ["-m", "tools.system_report", "--selftest"], "spec check rules; no device opened without asking, settings untouched"),
 )
 FULL = (
     ("Dataset / split", ["-m", "vision.dataset"], "labels, crop pipeline, scene split"),
@@ -45,6 +51,7 @@ FULL = (
     ("Detector runtime", ["-m", "vision.detect"], "detector contract + real-checkpoint sanity check"),
     ("Segmentation interface", ["-m", "vision.segment"], "fake model"),
     ("Stage 2 split v3", ["stage2_dataset/split_v3.py", "--selftest"], "missing-cap scene in train"),
+    ("Annotation Studio", ["-m", "ui.annotation_studio"], "review states, background generation (fake detector), cancel, bulk, undo, approved-only export, project switch"),
     ("GUI (all pages, fake PLC, fake cameras)", ["-m", "ui.app", "--selftest"], "builds the real window and runs the line"),
 )
 

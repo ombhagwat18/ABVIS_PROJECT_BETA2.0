@@ -57,7 +57,35 @@ class BottleDS(Dataset):
         img = img[my:my + self.th, mx:mx + self.tw]
         img = np.clip(img.astype(np.float32) * np.random.uniform(0.8, 1.2)
                       + np.random.uniform(-18, 18), 0, 255).astype(np.uint8)
-        return img
+        return robustness_aug(img)
+
+
+def robustness_aug(img, rng=np.random):
+    """What a production camera does to a picture that a studio photo never shows: slight perspective (mounting
+    angle), defocus / motion blur (moving bottle, autofocus), sensor noise, and a small white-balance / saturation
+    drift. Each is applied with some probability and kept small enough not to change a label: no flip (mirrors label
+    text, inverts skew), no rotation beyond the +-5 deg above (tilt and skew ARE defects)."""
+    h, w = img.shape[:2]
+    if rng.rand() < 0.3:                                          # perspective: corners moved <= 3 % of the size
+        d = 0.03
+        src = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+        dst = src + np.float32(rng.uniform(-d, d, (4, 2)) * [w, h])
+        img = cv2.warpPerspective(img, cv2.getPerspectiveTransform(src, dst), (w, h), borderMode=cv2.BORDER_REPLICATE)
+    if rng.rand() < 0.25:                                         # defocus or vertical motion blur
+        if rng.rand() < 0.5:
+            img = cv2.GaussianBlur(img, (0, 0), rng.uniform(0.4, 1.2))
+        else:
+            k = int(rng.choice([3, 5]))
+            kern = np.zeros((k, k), np.float32); kern[:, k // 2] = 1.0 / k
+            img = cv2.filter2D(img, -1, kern)
+    if rng.rand() < 0.3:                                          # white balance / saturation drift
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
+        hsv[..., 0] = (hsv[..., 0] + rng.uniform(-3, 3)) % 180     # OpenCV hue is 0..179: +-3 = +-6 deg
+        hsv[..., 1] = np.clip(hsv[..., 1] * rng.uniform(0.85, 1.15), 0, 255)
+        img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+    if rng.rand() < 0.3:                                          # sensor noise
+        img = np.clip(img.astype(np.float32) + rng.normal(0, rng.uniform(2, 6), img.shape), 0, 255).astype(np.uint8)
+    return img
 
 
 DEFAULT_ARCH = "efficientnet_b0"
@@ -149,6 +177,52 @@ def _pr(prob: np.ndarray, truth: np.ndarray, thr: float):
     return p, r, f, tp, fp, fn
 
 
+THRESHOLD_GRID = np.round(np.arange(0.05, 0.96, 0.05), 2)
+
+
+def _best_threshold(prob, truth):
+    """((p, r, f1, tp, fp, fn), threshold) maximising F1, taking the MIDDLE of the best band.
+
+    When validation separates a class perfectly, every threshold from 0.05 to ~0.9 scores F1 = 1.0. Taking the first
+    of them (what max() did) always picked 0.05, the edge of the band: the smallest shift on a new camera then flips
+    the decision, and the classifier fires on anything unfamiliar. The middle of the longest run of best thresholds
+    is the value with the most margin on both sides."""
+    scored = [(_pr(prob, truth, float(t)), float(t)) for t in THRESHOLD_GRID]
+    best_f = max(s[0][2] for s in scored)
+    runs, cur = [], []
+    for s in scored:
+        if s[0][2] >= best_f - 1e-9:
+            cur.append(s)
+        elif cur:
+            runs.append(cur); cur = []
+    if cur:
+        runs.append(cur)
+    run = max(runs, key=len)
+    return run[(len(run) - 1) // 2]
+
+
+def fit_temperature(logits, truth, grid=None) -> list:
+    """One temperature per output so that sigmoid(logit / T) is calibrated (Guo et al. 2017, applied per class),
+    fitted by minimising binary cross-entropy on the VALIDATION logits. A class with no positive or no negative
+    validation example cannot be calibrated and keeps T = 1. T > 1 softens an over-confident output."""
+    grid = np.exp(np.linspace(np.log(0.25), np.log(8.0), 61)) if grid is None else grid
+    logits, truth = np.asarray(logits, np.float64), np.asarray(truth, np.float64)
+    out = []
+    for i in range(logits.shape[1]):
+        z, y = logits[:, i], truth[:, i]
+        if y.sum() == 0 or y.sum() == len(y):
+            out.append(1.0)
+            continue
+        best_t, best_nll = 1.0, None
+        for t in grid:
+            p = np.clip(1.0 / (1.0 + np.exp(-z / t)), 1e-7, 1 - 1e-7)
+            nll = -np.mean(y * np.log(p) + (1 - y) * np.log(1 - p))
+            if best_nll is None or nll < best_nll - 1e-12:
+                best_t, best_nll = float(t), nll
+        out.append(round(best_t, 4))
+    return out
+
+
 def evaluate(probs, truths, defects, n_train_pos=None):
     """Per-defect precision/recall, plus the threshold that maximises F1.
 
@@ -173,9 +247,7 @@ def evaluate(probs, truths, defects, n_train_pos=None):
                                if tp == 0 else
                                f"{tp} training images but none in validation - unscored")}
             continue
-        best = max(((_pr(pr, tr, t), t) for t in np.arange(0.05, 0.96, 0.05)),
-                   key=lambda z: z[0][2])
-        (p, r, f, tp, fp, fn), thr = best
+        (p, r, f, tp, fp, fn), thr = _best_threshold(pr, tr)
         out[d] = {"n_pos": n_pos, "threshold": round(float(thr), 2),
                   "precision": round(p, 3), "recall": round(r, 3), "f1": round(f, 3),
                   "tp": tp, "fp": fp, "fn": fn}
@@ -348,6 +420,7 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
     scaler = torch.amp.GradScaler(dev, enabled=dev == "cuda")
 
     best_f1, best_state, best_metrics, best_probs, best_epoch = -1.0, None, None, None, 0
+    best_vloss, best_logits = float("inf"), None
     no_improve = 0                # consecutive epochs without a validation macro-F1 gain
     history = []                  # per-epoch, so the curves can be drawn later
     for ep in range(1, epochs + 1):
@@ -365,21 +438,25 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
         sched.step()
 
         model.eval()
-        P, T = [], []
+        L, T, vtot = [], [], 0.0
         with torch.no_grad():
             for x, y in va:
                 with torch.amp.autocast(dev, enabled=dev == "cuda"):
-                    P.append(torch.sigmoid(model(x.to(dev))).float().cpu().numpy())
+                    z = model(x.to(dev)).float()
+                vtot += float(crit(z, y.to(dev))) * len(x)
+                L.append(z.cpu().numpy())
                 T.append(y.numpy())
-        probs, truths = np.concatenate(P), np.concatenate(T)
+        logits, truths = np.concatenate(L), np.concatenate(T)
+        probs = 1.0 / (1.0 + np.exp(-logits))
+        val_loss = vtot / max(1, len(va_paths))
         met = evaluate(probs, truths, defects, train_pos)
         trainable = [m for m in met.values() if m["n_pos"]]
         mf1 = float(np.mean([m["f1"] for m in trainable])) if trainable else 0.0
         ep_loss = tot / max(1, len(tr_paths))
-        log(f"epoch {ep:>3}/{epochs}  loss={ep_loss:.4f}  "
+        log(f"epoch {ep:>3}/{epochs}  loss={ep_loss:.4f}  val_loss={val_loss:.4f}  "
             f"macro-F1={mf1:.3f}  ({time.time() - t0:.1f}s)")
         history.append({
-            "epoch": ep, "loss": round(ep_loss, 5), "macro_f1": round(mf1, 4),
+            "epoch": ep, "loss": round(ep_loss, 5), "val_loss": round(val_loss, 5), "macro_f1": round(mf1, 4),
             "seconds": round(time.time() - t0, 2),
             "lr": round(float(opt.param_groups[0]["lr"]), 8),
             # per-defect too: a macro average hides one class collapsing while
@@ -388,10 +465,13 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
             "precision": {d: met[d]["precision"] for d in defects}})
         if on_epoch:
             on_epoch(history[-1])
-        if mf1 > best_f1:
-            best_f1 = mf1
+        # Best epoch: highest validation macro-F1, and among equal F1 the lowest validation loss. Validation F1
+        # saturates at 1.000 on this data within a few epochs; taking the FIRST perfect epoch kept the weights with
+        # the thinnest margins. Loss keeps improving as the classes separate further, so it breaks the tie.
+        if mf1 > best_f1 + 1e-9 or (abs(mf1 - best_f1) <= 1e-9 and val_loss < best_vloss):
+            best_f1, best_vloss = mf1, val_loss
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-            best_metrics, best_probs, best_epoch = met, probs, ep
+            best_metrics, best_probs, best_logits, best_epoch = met, probs, logits, ep
             no_improve = 0
         else:
             no_improve += 1
@@ -406,13 +486,23 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
                 f"stopping early at epoch {ep} (best was epoch {best_epoch})")
             break
 
+    # Calibration: one temperature per defect fitted on the best epoch's validation logits, so a score of 0.9 means
+    # about 90 % (needed for the three-zone pass_max / threshold rule). Thresholds are then chosen on the calibrated
+    # scores, which is what infer.Model will output. The held-out test set is not touched.
+    temperature = fit_temperature(best_logits, truths)
+    best_probs = 1.0 / (1.0 + np.exp(-best_logits / np.array(temperature, np.float64)))
+    best_metrics = evaluate(best_probs, truths, defects, train_pos)
+    scored_now = [m for m in best_metrics.values() if m["n_pos"]]
+    best_f1 = float(np.mean([m["f1"] for m in scored_now])) if scored_now else 0.0
+    log("temperature: " + ", ".join(f"{d}={t:g}" for d, t in zip(defects, temperature)))
+
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out = D.MODELS / stamp
     out.mkdir(parents=True, exist_ok=True)
     torch.save({"arch": arch, "defects": defects, "input_wh": list(D.input_wh(cfg)),
                 "cache_wh": list(D.cache_wh(cfg)), "project": D.PROJECT,
                 "roi": cfg.get("roi"), "roi_frame": cfg.get("roi_frame"),
-                "state_dict": best_state}, out / "model.pt")
+                "temperature": temperature, "state_dict": best_state}, out / "model.pt")
     model_size_mb = round((out / "model.pt").stat().st_size / (1024 * 1024), 2)
     infer_ms, fps = _bench_speed(model, dev, D.input_wh(cfg))
 
@@ -469,7 +559,10 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
                # training or for picking the best epoch/threshold. Scored only
                # by evaluate_test(), on request, not as part of this run.
                "n_test": len(test_paths), "test_paths": test_paths,
-               "per_defect": best_metrics, "mistakes": mistakes[:300], "sampling": sampling}
+               "per_defect": best_metrics, "mistakes": mistakes[:300], "sampling": sampling,
+               "temperature": dict(zip(defects, temperature)), "best_val_loss": round(best_vloss, 5),
+               "selection": "max val macro-F1, tie -> min val loss; thresholds = middle of best F1 band on "
+                            "temperature-calibrated val scores"}
     (out / "metrics.json").write_text(json.dumps(summary, indent=2))
 
     if activate:
@@ -516,6 +609,22 @@ def demo():
 
     m = evaluate(prob, truth, ["x"])["x"]
     assert m["threshold"] <= 0.4 and m["recall"] == 1.0, m  # sweep finds the perfect split
+    # perfectly separable validation: the threshold is the MIDDLE of the perfect band, not its 0.05 edge
+    sep_p = np.array([[0.97], [0.93], [0.03], [0.02]], np.float32)
+    sep = evaluate(sep_p, truth, ["x"])["x"]
+    assert sep["f1"] == 1.0 and 0.4 <= sep["threshold"] <= 0.6, sep
+    # temperature scaling recovers how over-confident an output is (logits scaled x3 -> T ~ 3), and leaves an
+    # uncalibratable class (no positives) at 1
+    rs = np.random.RandomState(0)
+    true_logit = rs.normal(0, 2, 4000)
+    y = (rs.rand(4000) < 1 / (1 + np.exp(-true_logit))).astype(np.float32)
+    temps = fit_temperature(np.stack([true_logit * 3.0, true_logit], 1), np.stack([y, np.zeros_like(y)], 1))
+    assert 2.5 < temps[0] < 3.6 and temps[1] == 1.0, temps
+    # robustness augmentation keeps shape and type, and changes the picture
+    im = (rs.rand(448, 192, 3) * 255).astype(np.uint8)
+    outs = [robustness_aug(im, rs) for _ in range(20)]
+    assert all(o.shape == im.shape and o.dtype == np.uint8 for o in outs)
+    assert any(not np.array_equal(o, im) for o in outs)
 
     # a column with no validation positives must not report a fake score, and
     # must say WHICH of the two problems it is

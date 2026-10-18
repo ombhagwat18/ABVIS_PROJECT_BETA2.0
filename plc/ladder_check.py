@@ -16,7 +16,7 @@ reconstructed, so a network's condition is reported as the list of its contacts.
 below only rely on which contacts and which outputs a network has.
 
 Each requirement is PRESENT / ABSENT / MISMATCH / INFO, and says which software feature depends on it.
-docs/hardware/PLC_LADDER_REQUIREMENTS.md explains every one of them and gives the recommended rungs.
+FINAL_YEAR_BLACKBOOK/23_Project_Documentation/hardware/PLC_LADDER_REQUIREMENTS.docx explains every one of them and gives the recommended rungs.
 """
 from __future__ import annotations
 

@@ -54,7 +54,10 @@ Standard library only -- no new dependency.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import time
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -92,11 +95,15 @@ def load_annotations(path: Path) -> dict:
 
 def save_annotations(path: Path, data: dict) -> None:
     """Validate, then write. A caller can never persist an invalid file
-    through this function."""
+    through this function. The write is atomic (temporary file in the same
+    folder, then os.replace): an interrupted save leaves the previous file
+    intact instead of a half-written one."""
     validate_annotations(data)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(str(tmp), str(path))
 
 
 # -------------------------------------------------------------------- validate
@@ -162,8 +169,11 @@ def validate_annotations(data: dict) -> None:
     for rel, entry in images.items():
         if not isinstance(entry, dict):
             raise AnnotationError(f"image entry for {rel!r} is not an object")
-        for box in entry.get("boxes", []):
-            _validate_box(box, classes)
+        # model proposals (pending) and rejected proposals use the box schema too: a malformed one is refused
+        # on save like a malformed accepted box, so nothing broken can be accepted later
+        for key in ("boxes", "proposals", "rejected"):
+            for box in entry.get(key) or []:
+                _validate_box(box, classes)
         for poly in entry.get("polygons", []):
             _validate_polygon(poly, classes)
 
@@ -250,6 +260,51 @@ def _label_stem(rel: str) -> str:
     return Path(rel).stem + ".txt"
 
 
+def exportable(entry: dict, key: str) -> bool:
+    """May this image become a training label file? Only if a person marked it reviewed (then an empty file is a
+    TRUE background image) or it carries at least one accepted box / polygon. An unreviewed image with nothing
+    accepted (not annotated yet, or holding only model proposals) is skipped: its empty label file would teach the
+    model "nothing is in this picture" -- a false negative for every bottle, cap or defect in it.
+    An image that still holds UNDECIDED proposals is skipped as well: its label file would contain the accepted
+    boxes only, so every object still waiting for a decision would be taught as background."""
+    if entry.get("proposals"):
+        return False
+    return bool(entry.get("reviewed")) or bool(entry.get(key))
+
+
+def export_summary(data: dict, key: str = "boxes") -> dict:
+    """What an export would contain, before writing anything: images in / out (and why), objects per class."""
+    out = {"exported": 0, "background": 0, "objects": {c: 0 for c in data["classes"]},
+           "skipped_pending": 0, "skipped_unannotated": 0}
+    for entry in data["images"].values():
+        if exportable(entry, key):
+            out["exported"] += 1
+            items = entry.get(key) or []
+            out["background"] += not items
+            for b in items:
+                out["objects"][b["cls"]] = out["objects"].get(b["cls"], 0) + 1
+        elif entry.get("proposals"):
+            out["skipped_pending"] += 1
+        else:
+            out["skipped_unannotated"] += 1
+    return out
+
+
+def write_export_manifest(out_dir: Path, data: dict, written: list, source: Path | None = None,
+                          key: str = "boxes") -> Path:
+    """export_manifest.json next to the label files: when, from which annotations file (sha256), class ids,
+    what was exported and what was left out. The record that ties a training set to its annotations."""
+    out_dir = Path(out_dir)
+    m = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "task": data["task"], "classes": list(data["classes"]),
+         "class_ids": _class_ids(data["classes"]), "label_files": len(written), "summary": export_summary(data, key)}
+    if source is not None and Path(source).is_file():
+        m["annotations_file"] = str(source)
+        m["annotations_sha256"] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
+    p = out_dir / "export_manifest.json"
+    p.write_text(json.dumps(m, indent=2), encoding="utf-8")
+    return p
+
+
 def export_yolo_detection(data: dict, out_dir: Path) -> list[str]:
     """One `<image-stem>.txt` per image, each line `class_id x y w h`
     (YOLO detection format). Returns the list of relative image paths
@@ -266,6 +321,8 @@ def export_yolo_detection(data: dict, out_dir: Path) -> list[str]:
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     for rel, entry in data["images"].items():
+        if not exportable(entry, "boxes"):
+            continue
         lines = []
         for box in entry.get("boxes", []):
             if box["cls"] not in ids:
@@ -291,6 +348,8 @@ def export_yolo_segmentation(data: dict, out_dir: Path) -> list[str]:
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     for rel, entry in data["images"].items():
+        if not exportable(entry, "polygons"):
+            continue
         lines = []
         for poly in entry.get("polygons", []):
             if poly["cls"] not in ids:

@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 import torch
 
+from line import clock
 from vision import dataset as D
 from vision import detect
 from ui import theme
@@ -40,7 +41,7 @@ def list_models() -> list[str]:
     return sorted((p.name for p in D.MODELS.iterdir() if (p / "model.pt").exists()), reverse=True)
 
 
-def open_capture(src, size=None, fourcc=None):
+def open_capture(src, size=None, fourcc=None, fps=None):
     """Open a webcam index or a file/URL.
 
     Integer sources go through DirectShow on Windows. The default MSMF backend
@@ -61,6 +62,8 @@ def open_capture(src, size=None, fourcc=None):
         if size:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(size[0]))
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(size[1]))
+        if fps:                                              # after size + FOURCC: the rate belongs to the mode
+            cap.set(cv2.CAP_PROP_FPS, float(fps))
         ctl = camera_controls(src)
         if ctl:
             applied_controls[str(int(src))] = apply_controls(cap, ctl)
@@ -79,7 +82,10 @@ def open_capture(src, size=None, fourcc=None):
 CAMERA_PROPS = {"auto_exposure": cv2.CAP_PROP_AUTO_EXPOSURE, "exposure": cv2.CAP_PROP_EXPOSURE,
                 "autofocus": cv2.CAP_PROP_AUTOFOCUS, "focus": cv2.CAP_PROP_FOCUS,
                 "gain": cv2.CAP_PROP_GAIN, "brightness": cv2.CAP_PROP_BRIGHTNESS,
-                "auto_wb": cv2.CAP_PROP_AUTO_WB, "wb_temperature": cv2.CAP_PROP_WB_TEMPERATURE}
+                "auto_wb": cv2.CAP_PROP_AUTO_WB, "wb_temperature": cv2.CAP_PROP_WB_TEMPERATURE,
+                "contrast": cv2.CAP_PROP_CONTRAST, "saturation": cv2.CAP_PROP_SATURATION,
+                "sharpness": cv2.CAP_PROP_SHARPNESS, "gamma": cv2.CAP_PROP_GAMMA,
+                "zoom": cv2.CAP_PROP_ZOOM, "backlight": cv2.CAP_PROP_BACKLIGHT}
 _AUTO_FIRST = ("auto_exposure", "autofocus", "auto_wb")   # a manual value is ignored while auto is on
 ROTATIONS = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}
 applied_controls: dict = {}        # str(index) -> {control: [requested, read back]} at the last open
@@ -169,6 +175,20 @@ def camera_names() -> list:
 _PROBE_LOCK = threading.Lock()
 
 
+def camera_filter() -> list:
+    """Name parts a camera must contain to be offered (settings.json "camera_name_filter", default EMEET: this
+    system is built for the two EMEET Nova cameras only). [] = offer every camera."""
+    f = D.load_settings().get("camera_name_filter", ["EMEET"])
+    return [str(x).upper() for x in (f if isinstance(f, list) else [f]) if str(x).strip()]
+
+
+def camera_allowed(name: str) -> bool:
+    if "VIRTUAL" in str(name).upper():              # EMEET Studio's software output, not a physical camera
+        return False
+    flt = camera_filter()
+    return not flt or any(x in str(name).upper() for x in flt)
+
+
 def list_cameras(max_index: int = 5) -> list[dict]:
     """Probe indices 0..max_index-1 for a camera that actually delivers a frame.
 
@@ -188,7 +208,9 @@ def _list_cameras(max_index: int) -> list[dict]:
         pass                                     # noisy probe logs, not fatal
     found = []
     names = camera_names()
-    for i in range(max_index):
+    # Only the allowed (EMEET) devices are opened: other webcams are never touched. Names unknown -> no filter.
+    scan = [i for i in range(max(max_index, len(names)) if max_index > 0 else 0) if not names or (i < len(names) and camera_allowed(names[i]))]
+    for i in scan:
         cap = open_capture(i)
         try:
             if cap.isOpened():
@@ -228,6 +250,11 @@ class Model:
         m = train.build(self.arch, len(self.defects), pretrained=False)
         m.load_state_dict(ck["state_dict"])
         self.net = m.eval().to(self.dev)
+        # Per-defect temperature fitted on validation (train.fit_temperature): scores are sigmoid(logit / T), so the
+        # thresholds chosen on calibrated validation scores apply unchanged. Older checkpoints have none: T = 1.
+        temp = ck.get("temperature") or [1.0] * len(self.defects)
+        self.temperature = [float(t) for t in temp]
+        self._temp = torch.tensor(self.temperature, dtype=torch.float32, device=self.dev)
 
     def predict_view(self, view: np.ndarray) -> dict[str, float]:
         """Score a view that is already exactly the model's input size.
@@ -239,7 +266,7 @@ class Model:
         x = (view[:, :, ::-1].astype(np.float32) / 255.0 - _MEAN) / _STD
         t = torch.from_numpy(x.transpose(2, 0, 1)[None].copy()).to(self.dev)
         with torch.no_grad():
-            p = torch.sigmoid(self.net(t))[0].float().cpu().numpy()
+            p = torch.sigmoid(self.net(t).float() / self._temp)[0].cpu().numpy()
         return {d: float(v) for d, v in zip(self.defects, p)}
 
     def predict(self, bgr: np.ndarray) -> dict[str, float]:
@@ -268,7 +295,7 @@ RECENT_FRAMES = 12
 class Frame(NamedTuple):
     """One captured frame plus the metadata every later stage keys on.
 
-    ts is time.monotonic() taken the instant read() returned; seq counts captured
+    ts is clock.now() taken the instant read() returned; seq counts captured
     frames within one camera session, from 1. The image is shared, not copied:
     treat it as read-only.
     """
@@ -381,6 +408,7 @@ class Camera:
         # default. frame_wh is what the camera actually delivers (the request is not a promise).
         self.capture_wh: tuple | None = None
         self.fourcc: str | None = None
+        self.capture_fps: float | None = None      # requested frame rate; the driver may refuse
         self.frame_wh: tuple | None = None
         self.rotate = 0                # degrees clockwise, from settings "camera_controls" at start()
         self._pending_ctl = None       # driver controls to apply to the RUNNING capture (set_controls)
@@ -501,7 +529,7 @@ class Camera:
         attached and cannot vouch for the current frame (failed, nothing detected yet,
         stale) the whole inspection is FAULT -- a camera we cannot fully see is not PASS.
         """
-        now = time.monotonic() if now is None else now
+        now = clock.now() if now is None else now
         with self.lock:
             state, hits, fault = self.state, list(self.hits), self.fault
             fts, rts = self.frame_ts, self.result_ts
@@ -587,7 +615,7 @@ class Camera:
 
     def _run(self, stop):
         src = self.source
-        cap = open_capture(src, self.capture_wh, self.fourcc)
+        cap = open_capture(src, self.capture_wh, self.fourcc, self.capture_fps)
         if not cap.isOpened():
             self.error = f"cannot open camera source {src!r}"
             return
@@ -617,7 +645,7 @@ class Camera:
             t_frame = time.time()
             t_read = time.perf_counter()
             got, frame = cap.read()
-            t_grab = time.monotonic()          # the capture instant: stamped before any bookkeeping
+            t_grab = clock.now()          # the capture instant: stamped before any bookkeeping
             self.read_ms = (time.perf_counter() - t_read) * 1000
             self.grabbed += 1
             if not got:
@@ -722,7 +750,7 @@ class Camera:
                 self.det_frame, self.det_fault = det_frame, det_fault
             self._feed_tracker(state, hits, fault, model, detector, det_result, det_fault, probs,
                                (D.load_config().get("thresholds", {}) if model is not None else None))
-            self.latency_ms = (time.monotonic() - fts) * 1000    # capture -> result
+            self.latency_ms = (clock.now() - fts) * 1000    # capture -> result
 
     def _feed_tracker(self, state, hits, fault, model, detector, det_result, det_fault, probs=None, thresholds=None):
         """One call per scored frame: what this frame says about THIS bottle, for the stable verdict."""
@@ -754,7 +782,7 @@ class Camera:
         if present is False:
             defects = []                                      # nothing to judge: scores on an empty belt are noise
         self.tracker.update(valid, defects, present, why)
-        self.verdict_ts = time.monotonic()
+        self.verdict_ts = clock.now()
 
     def display_verdict(self) -> "V.Verdict":
         """The stable verdict, or FAULT when this camera is not producing results (stopped, dead, stale)."""
@@ -764,7 +792,7 @@ class Camera:
             return V.Verdict(V.FAULT, reason=self.error)
         if not self.alive:
             return V.Verdict(V.FAULT, reason="camera not running")
-        if self.verdict_ts and time.monotonic() - self.verdict_ts > max(2.0, self.max_age * 2):
+        if self.verdict_ts and clock.now() - self.verdict_ts > max(2.0, self.max_age * 2):
             return V.Verdict(V.FAULT, reason="no new result")
         return self.tracker.current()
 
@@ -1021,9 +1049,9 @@ def _selftest_tri_state():
             return {"a": {"pass": 0.1, "reject": 0.9, "nan": float("nan")}[kind]}
 
     def wait(cond, what, timeout=3.0):
-        t0 = time.monotonic()
+        t0 = clock.now()
         while not cond():
-            assert time.monotonic() - t0 < timeout, f"timed out waiting for: {what}"
+            assert clock.now() - t0 < timeout, f"timed out waiting for: {what}"
             time.sleep(0.01)
 
     def fresh(mode):
@@ -1061,9 +1089,9 @@ def _selftest_tri_state():
         assert cam.result()[1] == ["a"] and cs.combined() == (REJECT, {"t": ["a"]})
 
         # -- stale score -> FAULT (clock injected: no sleeping)
-        st, _, why = cam.result(now=time.monotonic() + 10)
+        st, _, why = cam.result(now=clock.now() + 10)
         assert st == FAULT and "stale" in why, (st, why)
-        assert cs.combined(now=time.monotonic() + 10)[0] == FAULT
+        assert cs.combined(now=clock.now() + 10)[0] == FAULT
 
         # -- inference exception -> FAULT, thread survives, scores dropped, then recovers
         box["infer"] = "raise"
@@ -1105,17 +1133,17 @@ def _selftest_tri_state():
 
         # -- frame metadata: camera_id / monotonic ts / sequence number
         cam, cs = fresh("ok")
-        t_lo = time.monotonic()
+        t_lo = clock.now()
         wait(lambda: cam.latest_frame() is not None, "first frame")
         f0 = cam.latest_frame()
         assert isinstance(f0, Frame) and f0.camera_id == "0" and isinstance(f0.ts, float)
-        assert t_lo <= f0.ts <= time.monotonic(), "ts must be on the monotonic clock"
+        assert t_lo <= f0.ts <= clock.now(), "ts must be on the monotonic clock"
         assert f0.seq >= 1 and int(f0.image[0, 0, 0]) == f0.seq % 256,             "seq must count captured frames 1:1, starting at 1"
         seen = [f0]
         for _ in range(30):
             wait(lambda: cam.latest_frame().seq > seen[-1].seq, "next frame")
             f = cam.latest_frame()
-            # time.monotonic() ticks every ~15.6 ms on Windows, so neighbouring frames
+            # clock.now() ticks every ~15.6 ms on Windows, so neighbouring frames
             # can share a stamp; it must never go backwards. seq is the strict order.
             assert f.ts >= seen[-1].ts, "timestamps must never go backwards"
             assert int(f.image[0, 0, 0]) == f.seq % 256
@@ -1131,7 +1159,7 @@ def _selftest_tri_state():
         box["infer"] = "reject"
         wait(lambda: cam.result()[0] == REJECT, "reject with metadata")
         assert cam.inspection().hits == ["a"]
-        stale = cam.inspection(now=time.monotonic() + 10)       # stale still FAULTs, keeps its ids
+        stale = cam.inspection(now=clock.now() + 10)       # stale still FAULTs, keeps its ids
         assert stale.state == FAULT and "stale" in stale.reason and stale.frame_seq >= 1, stale
         assert stale.infer_ms is None, "a FAULT must not carry a timing for a score it disowns"
         box["infer"] = "pass"
@@ -1174,7 +1202,7 @@ def _selftest_tri_state():
             c = Camera(name); c.model, c.armed = FakeModel(), True
             c._thread = threading.current_thread()
             c.state, c.hits = state, list(hits)
-            c.frame_ts = c.result_ts = time.monotonic()
+            c.frame_ts = c.result_ts = clock.now()
             return c
         cs = CameraSet()
         a, b = armed_cam("front", PASS), armed_cam("side", PASS)
@@ -1182,7 +1210,7 @@ def _selftest_tri_state():
         assert cs.combined() == (PASS, {})
         b.state, b.hits = REJECT, ["tilt_cap"]
         assert cs.combined() == (REJECT, {"side": ["tilt_cap"]})
-        a.result_ts = time.monotonic() - 60           # front goes stale
+        a.result_ts = clock.now() - 60           # front goes stale
         st, by = cs.combined()
         assert st == FAULT and "FAULT" in by["front"][0] and by["side"] == ["tilt_cap"], (st, by)
         for c in (a, b):
@@ -1235,9 +1263,9 @@ def _selftest_detector():
         return detect.YoloDetector(model=detect.FakeYolo(yolo_out), warmup=False)
 
     def wait(cond, what, timeout=3.0):
-        t0 = time.monotonic()
+        t0 = clock.now()
         while not cond():
-            assert time.monotonic() - t0 < timeout, f"timed out waiting for: {what}"
+            assert clock.now() - t0 < timeout, f"timed out waiting for: {what}"
             time.sleep(0.01)
 
     def cam_with(name, source, clf=True, det=True):
@@ -1292,14 +1320,14 @@ def _selftest_detector():
         wait(lambda: c.result()[0] == PASS and c.inspection().detector_state == DET_OK, "recovery")
 
         # -- stale detections -> FAULT (clock injected)
-        future = time.monotonic() + 10
+        future = clock.now() + 10
         i = c.inspection(now=future)
         assert i.state == FAULT and i.detector is None and "stale" in i.reason, i
         c.stop()
         # ...and the detection age on its own: a FRESH frame with OLD detections (hand-built,
         # thread stopped so nothing refreshes them) must not read as current boxes
         c.armed, c._thread, c.model = True, threading.current_thread(), Clf()
-        c.frame_ts = c.result_ts = time.monotonic()
+        c.frame_ts = c.result_ts = clock.now()
         c.state, c.result_seq, c.frame_seq = PASS, 1, 1          # a fresh, valid Stage 1 PASS
         c.det_ts = c.frame_ts - 5.0
         c.det_result = detect.DetectionResult("0", 1, c.det_ts, (), (64, 36), 1.0, "fake", 0.25)
@@ -1368,10 +1396,10 @@ def _selftest_controls():
             return self.v.get(p, -1.0)
 
     cap = Prop()
-    got = apply_controls(cap, {"focus": 40, "autofocus": 0, "exposure": -6, "rotate": 90, "zoom": 2})
+    got = apply_controls(cap, {"focus": 40, "autofocus": 0, "exposure": -6, "rotate": 90, "bogus": 2})
     assert cap.order.index(cv2.CAP_PROP_AUTOFOCUS) < cap.order.index(cv2.CAP_PROP_FOCUS), cap.order
     assert got["focus"] == [40, -1.0] and got["exposure"] == [-6, -6.0], got
-    assert got["zoom"] == [2, None] and "rotate" not in got, got
+    assert got["bogus"] == [2, None] and "rotate" not in got, got
     f = np.zeros((36, 64, 3), np.uint8)
     assert orient(f, 90).shape == (64, 36, 3) and orient(f, 0) is f and orient(f, 45) is f
 
@@ -1401,9 +1429,9 @@ def _selftest_controls():
     try:
         c = Camera("portrait")
         c.start(7)
-        t0 = time.monotonic()
+        t0 = clock.now()
         while len(c.recent) < 5:
-            assert time.monotonic() - t0 < 3.0, "no frames from the rotated camera"
+            assert clock.now() - t0 < 3.0, "no frames from the rotated camera"
             time.sleep(0.01)
         c.stop()
         seqs = [fr.seq for fr in c.recent]

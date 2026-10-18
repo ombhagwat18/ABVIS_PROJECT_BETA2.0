@@ -30,7 +30,7 @@ Every bottle ends with exactly ONE final result (PASS / REJECT / FAULT):
     bottle or nothing): the handshake is answered with M0, the bottle is a FAULT and an alarm
     says it must be removed by hand.
 
-Ladder limits this code works around rather than hides (docs/roadmap/PLC_COMMUNICATION.md section 0):
+Ladder limits this code works around rather than hides (FINAL_YEAR_BLACKBOOK/23_Project_Documentation/roadmap/PLC_COMMUNICATION.docx section 0):
   * While M1 is ON (T0 + T1 after every REJECT) net 5 resets M2 on every scan, so a bottle reaching
     X0 in that window raises no trigger; the same happens if X0 rises while M2 is still ON. PLCService
     (watch_x0=True) reports every such X0 edge as BOTTLE_UNTRIGGERED and the bottle is recorded here as
@@ -65,6 +65,7 @@ import queue
 import math
 import threading
 import time
+from concurrent.futures import Future
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
@@ -73,6 +74,7 @@ import numpy as np
 
 from line import alarms as AL
 from line import applog
+from line import clock
 from vision import dataset as D
 from line import decision as DEC
 from line import tracking as TR
@@ -87,6 +89,7 @@ LINE_DEFAULTS = {
     "line_cameras": [],                  # camera sources (DirectShow indices) watching the station
     "line_capture_wh": [1920, 1080],     # requested capture mode for the line cameras
     "line_fourcc": "MJPG",
+    "line_fps": 60,                      # requested frame rate (EMEET Nova: 1080p 60 fps over MJPG); 0 = driver default
     "inspect_frames": 3,                 # frames per camera per bottle
     "inspect_window_s": 0.6,             # how long the bottle is watched (from the moment it reaches the camera)
     "monitor_only": False,               # commissioning: judge and record every bottle but NEVER fire the reject (REJECT -> M0)
@@ -102,7 +105,7 @@ LINE_DEFAULTS = {
     "estop_device": "",                  # optional PLC input wired to the hardware E-stop status, e.g. "X3" ("" = none)
     "estop_active_high": False,          # False: the contact is NC, so the bit reads 0 when the E-stop is pressed
     "fault_latch_after": 3,              # this many consecutive FAULT bottles halt the line until an operator reset
-    "decision_rules": {},
+    "decision_rules": {},                # merged OVER PRODUCTION_RULES (line_settings), so these stay on by default
     "evidence_policy": "REJECT_AND_FAULT",   # production_store.EVIDENCE_POLICIES
     "job_id": "",                        # production job / batch, recorded with every bottle
     "product": "",
@@ -110,10 +113,28 @@ LINE_DEFAULTS = {
 }
 
 
+# Decision rules the production line uses unless settings.json "decision_rules" overrides a key (decision.RULES
+# itself keeps them off, so bench / display paths and older tests behave as before):
+#   pass_max 0.10          three-zone rule: a PASS needs every defect score <= 0.10; between that and the threshold
+#                          is UNSURE -> FAULT -> rejected and counted, never passed
+#   min_bottle_frames_frac a camera must see the bottle in >= 60 % of its frames for this bottle, else FAULT
+PRODUCTION_RULES = {"pass_max": 0.10, "min_bottle_frames_frac": 0.6}
+
+
 def line_settings(settings: dict) -> dict:
     s = dict(LINE_DEFAULTS)
     s.update({k: settings[k] for k in LINE_DEFAULTS if k in settings})
+    s["decision_rules"] = {**PRODUCTION_RULES, **(s.get("decision_rules") or {})}
     return s
+
+
+def safety_problem(cfg: dict) -> str | None:
+    """A FAULT bottle is one nobody could vouch for. Letting it through is allowed only while commissioning in
+    monitor-only mode (where nothing is ever rejected anyway); in production it blocks Start."""
+    if str(cfg.get("fault_action") or "REJECT").upper() != "REJECT" and not cfg.get("monitor_only"):
+        return ("FAULT bottles would be PASSED (fault_action PASS): an uninspected bottle must be rejected. Set "
+                "FAULT -> REJECT (or use MONITOR ONLY while commissioning).")
+    return None
 
 
 # What one frame costs the models on this PC (measured 2026-10-07: classifier ~70 ms + YOLO ~80 ms), rounded up and
@@ -184,7 +205,7 @@ def suggest_timing(cfg: dict, fixed_t0: float | None = None) -> tuple:
 
 def line_problems(cfg: dict, cameras=()) -> list:
     """Everything that blocks Start: line timing, camera-station layout, saved speed calibration."""
-    out = [p for p in (timing_problem(cfg), fit_problem(cfg), TR.calibration_problem(cfg)) if p]
+    out = [p for p in (safety_problem(cfg), timing_problem(cfg), fit_problem(cfg), TR.calibration_problem(cfg)) if p]
     return out + TR.station_problems(cfg, cameras)
 
 
@@ -229,8 +250,9 @@ def timing_problem(cfg: dict) -> str | None:
 class Bottle:
     inspection_id: str
     seq: int
-    t_trigger: float                          # monotonic: when Python saw M2 (<= one poll after X0)
+    t_trigger: float                          # clock.now(): when Python saw M2 (<= one poll after X0)
     wall: float                               # epoch seconds, display only
+    trigger_unc_ms: float | None = None       # +- on the M2 edge time (half its bracket); None = not bounded
     trigger_id: int | None = None
     after_reconnect: bool = False
     monitored: bool = False                   # monitor-only line: a REJECT decision was recorded but not fired
@@ -240,6 +262,7 @@ class Bottle:
     defects: list = field(default_factory=list)
     reason: str = ""
     confidence: float | None = None
+    locations: list = field(default_factory=list)   # where each defect is: [camera, frame seq, finding, conf, box]
     per_camera: dict = field(default_factory=dict)
     frames: int = 0
     infer_ms: float | None = None
@@ -271,6 +294,8 @@ class Bottle:
         out = {f.name: getattr(self, f.name) for f in fields(self) if f.name not in self._NOT_LOGGED}
         out["timings"] = ";".join(f"{k}={v:.1f}" for k, v in self.timings.items() if v is not None)
         out["defects"] = ";".join(self.defects)
+        out["locations"] = ";".join(f"{c}:{n}@{cf:.2f}[{','.join(str(round(v)) for v in bx)}]"
+                                    for c, _s, n, cf, bx in self.locations)
         out["wall"] = _wall(self.wall)
         out["scheduled_wall"] = _wall(self.scheduled_wall)
         for k in ("t_trigger", "decided_mono", "scheduled_mono", "dispatch_mono", "sent_mono", "y0_on_mono",
@@ -278,7 +303,7 @@ class Bottle:
             v = out[k]
             out[k] = None if v is None else round(v - self.t_trigger, 4)      # relative to the trigger
         out["t_trigger"] = round(self.t_trigger, 4)
-        for k in ("confidence", "infer_ms", "travel_s", "lateness_ms", "ack_ms", "y0_error_ms"):
+        for k in ("confidence", "infer_ms", "travel_s", "lateness_ms", "ack_ms", "y0_error_ms", "trigger_unc_ms"):
             if out[k] is not None:
                 out[k] = round(out[k], 3)
         out["per_camera"] = "; ".join(f"{k}={v[0]}:{v[1] if isinstance(v[1], str) else ','.join(v[1]) or 'ok'}"
@@ -304,6 +329,8 @@ class CamCollect:
     frames: dict = field(default_factory=dict)    # seq -> infer.Frame
     slots: set = field(default_factory=set)       # window slots already filled (spread sampling)
     fes: dict = field(default_factory=dict)       # seq -> decision.FrameEvidence, scored as each frame arrives
+    jobs: dict = field(default_factory=dict)      # seq -> Future of a FrameEvidence still on the AI worker
+    collected: bool = False                       # frame window closed; waiting only for the AI results
     fault: str | None = None
     done: bool = False
     evidence: object = None                       # decision.CameraEvidence once done
@@ -351,6 +378,12 @@ class Inspector:
         self.camera_rules: dict = {}
         # one model run at a time: the per-bottle decision and the live display share the same models
         self._model_lock = threading.RLock()
+        # The per-bottle AI runs on its own worker thread, so the machine-cycle thread (triggers, REJECT deadlines,
+        # PLC events) never waits ~150-300 ms for a model: a REJECT due while frames are being scored still goes out
+        # on time. False = score inline (the old behaviour; kept for callers that want it).
+        self.async_ai = True
+        self._ai_q: "queue.Queue" = queue.Queue()
+        self._ai_thread: threading.Thread | None = None
 
     def _tuned_thresholds(self) -> dict:
         """The project's thresholds with the operator's live tuning on top. A disabled defect (threshold > 1) stays
@@ -407,7 +440,7 @@ class Inspector:
                         got[cid].setdefault(f.seq, f)
             if all(cid in faults or len(v) >= self.frames for cid, v in got.items()):
                 break
-            if time.monotonic() >= deadline:
+            if clock.now() >= deadline:
                 break
             self._wake.wait(0.004)              # frames arrive every ~33 ms; this is a bounded wait for data
         out = {}
@@ -444,14 +477,14 @@ class Inspector:
             rules["per_camera"] = {**(rules.get("per_camera") or {}), **self.camera_rules}
         if self.live_info is None:
             self.live_info = {}
-        self.live_info[cam.camera_id] = {"t": time.monotonic(), "probs": dict(fe.probs or {}),
+        self.live_info[cam.camera_id] = {"t": clock.now(), "probs": dict(fe.probs or {}),
                                          "det": [(d.class_name, d.confidence) for d in (fe.det.detections if fe.det else ())]}
         if self.live_boxes is None:
             self.live_boxes = {}
         # boxes for the Production preview: ONLY the gated ones (a bottle-shaped, confident box and its parts); with
         # no bottle in view this is () and the preview draws nothing. (time, (frame w, h), boxes)
         if fe.det is not None:
-            self.live_boxes[cam.camera_id] = (time.monotonic(), tuple(fe.det.frame_wh),
+            self.live_boxes[cam.camera_id] = (clock.now(), tuple(fe.det.frame_wh),
                                               DEC.gate_detections(fe.det, {**DEC.RULES, **rules}), fe.det.detections)
         else:
             self.live_boxes[cam.camera_id] = None
@@ -510,9 +543,13 @@ class Inspector:
         return Collection(t_trigger, cams, sensed or (lambda: ()))
 
     def poll(self, coll: "Collection", now: float) -> bool:
-        """Take any new frames; run a camera's AI as soon as its frames are complete. True = all done."""
+        """Take any new frames and hand each to the AI as it arrives. True = every camera's window is closed and
+        every frame is scored. Never blocks on a model when async_ai is on."""
         for cid, cc in coll.cams.items():
             if cc.done:
+                continue
+            if cc.collected:                                    # window closed earlier: only waiting for the AI
+                self._finish_camera(cid, cc, coll)
                 continue
             c = cc.cam
             if c.error or not c.alive:
@@ -533,7 +570,7 @@ class Inspector:
                     cc.frames.setdefault(f.seq, f)
                 if cc.fault is None:
                     for seq in sorted(cc.frames):               # score each frame as it arrives, not all at the end:
-                        if seq not in cc.fes:                   # after the window only the last one is left to do
+                        if seq not in cc.fes and seq not in cc.jobs:   # after the window only the last is left
                             self._score(cc, coll, cc.frames[seq], cid)
                 if len(cc.frames) < self.frames and now < cc.end:
                     continue
@@ -549,25 +586,60 @@ class Inspector:
             self._finish_camera(cid, cc, coll)
         return all(cc.done for cc in coll.cams.values())
 
-    def _score(self, cc, coll, f, cid):
+    def _score_now(self, coll, f, cid):
+        """Run the AI on one frame (on whichever thread calls it) and account for it in the collection."""
         t0 = time.perf_counter()
-        fe = self.frame_evidence(cid, f.seq, f.ts, f.image, coll.timing)
+        try:
+            fe = self.frame_evidence(cid, f.seq, f.ts, f.image, coll.timing)
+        except Exception as e:                                       # noqa: BLE001 - FAULT evidence, never a crash
+            why = f"inspection worker failed: {type(e).__name__}: {e}"
+            fe = DEC.FrameEvidence(cid, f.seq, f.ts, cls_error=why, det_error=why, seg_error=why)
         coll.ms += (time.perf_counter() - t0) * 1000
         coll.n += 1
-        cc.fes[f.seq] = fe
         if coll.first is None:
             coll.first = (f.image, fe)
+        return fe
+
+    def _score(self, cc, coll, f, cid):
+        if not self.async_ai:
+            cc.fes[f.seq] = self._score_now(coll, f, cid)
+            return
+        fut: Future = Future()
+        cc.jobs[f.seq] = fut
+        self._ai_q.put((fut, coll, f, cid))
+        if self._ai_thread is None or not self._ai_thread.is_alive():
+            self._ai_thread = threading.Thread(target=self._ai_worker, name="inspector-ai", daemon=True)
+            self._ai_thread.start()
+
+    def _ai_worker(self):
+        """Scores queued frames in order, one at a time (the models are shared and serialised anyway)."""
+        while True:
+            fut, coll, f, cid = self._ai_q.get()
+            if fut.set_running_or_notify_cancel():
+                fut.set_result(self._score_now(coll, f, cid))
 
     def _finish_camera(self, cid, cc, coll):
-        cc.done = True
-        cc.wait_ms = (time.monotonic() - cc.start) * 1000
+        """Called once the camera's frame window is closed, then on every poll until its AI results are all in."""
+        if not cc.collected:
+            cc.collected = True
+            cc.wait_ms = (clock.now() - cc.start) * 1000
+            if cc.fault is None:
+                for seq in sorted(cc.frames):
+                    if seq not in cc.fes and seq not in cc.jobs:
+                        self._score(cc, coll, cc.frames[seq], cid)
+        if cc.fault is None and any(not j.done() for j in cc.jobs.values()):
+            return                                                   # still on the AI worker: poll again later
+        for seq, j in cc.jobs.items():
+            if j.done():
+                cc.fes[seq] = j.result()
+            else:
+                j.cancel()                                           # camera FAULT: its pending scores are not needed
+        cc.jobs.clear()
         ce = DEC.CameraEvidence(cid, fault=cc.fault)
         if cc.fault is None:
-            for seq in sorted(cc.frames):
-                if seq not in cc.fes:
-                    self._score(cc, coll, cc.frames[seq], cid)
-                ce.frames.append(cc.fes[seq])
+            ce.frames.extend(cc.fes[seq] for seq in sorted(cc.frames))
         cc.evidence = ce
+        cc.done = True
 
     def evaluate(self, coll: "Collection"):
         """All cameras done -> (decision.Decision, overlay thumb, first full frame, inference ms, frames)."""
@@ -582,7 +654,30 @@ class Inspector:
         dec = DEC.decide(self.task, [cc.evidence for cc in coll.cams.values()], thr, rules)
         coll.timing["decision_ms"] = (time.perf_counter() - t0) * 1000
         first = coll.first
-        return dec, (self._thumb(*first, dec) if first else None), (first[0] if first else None), coll.ms, coll.n
+        pic = self.bottle_picture(coll, dec)
+        thumb = pic if pic is not None else (self._thumb(*first, dec) if first else None)
+        return dec, thumb, (first[0] if first else None), coll.ms, coll.n
+
+    def bottle_picture(self, coll: "Collection", dec, width=480):
+        """ONE picture of the bottle that was just judged: a tile per camera side by side, each the frame that shows
+        the defect (else the middle frame of that camera's window), with the detector boxes, the defect in red and the
+        verdict banner. Shown on the Production page the moment the decision exists. None = no frame to show."""
+        tiles = []
+        for cid, cc in coll.cams.items():
+            seqs = sorted(s for s in cc.frames if s in cc.fes)
+            if not seqs:
+                continue
+            at_defect = [s for cam, s, *_ in getattr(dec, "locations", ()) if cam == cid and s in seqs]
+            seq = at_defect[0] if at_defect else seqs[len(seqs) // 2]
+            tile = self._thumb(cc.frames[seq].image, cc.fes[seq], dec, width=width)
+            cv2.putText(tile, f"camera {cid}", (8, tile.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                        (255, 255, 255), 2)
+            tiles.append(tile)
+        if not tiles:
+            return None
+        h = max(t.shape[0] for t in tiles)
+        tiles = [cv2.copyMakeBorder(t, 0, h - t.shape[0], 0, 4, cv2.BORDER_CONSTANT, value=(30, 30, 30)) for t in tiles]
+        return np.hstack(tiles)
 
     def inspect(self, t_from: float):
         """(decision.Decision, evidence image or None, total inference ms, frames used)."""
@@ -624,6 +719,14 @@ class Inspector:
         if fe.seg is not None:
             for sg in fe.seg.segments:
                 cv2.polylines(out, [np.round(sg.polygon * s).astype(np.int32)], True, (255, 0, 255), 2)
+        # where the defects are (this camera, the frame shown): a thick red box and the finding's name
+        for cam, _seq, name, conf, (x1, y1, x2, y2) in getattr(dec, "locations", ()):
+            if cam != fe.camera:
+                continue
+            p1, p2 = (round(x1 * s), round(y1 * s)), (round(x2 * s), round(y2 * s))
+            cv2.rectangle(out, p1, p2, (0, 0, 255), 3)
+            cv2.putText(out, f"{name} {conf:.2f}", (p1[0], max(44, p1[1] - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                        (0, 0, 255), 2)
         colour = {PASS: (60, 160, 40), REJECT: (40, 40, 210)}.get(dec.state, (0, 140, 230))
         cv2.rectangle(out, (0, 0), (out.shape[1], 30), colour, -1)
         cv2.putText(out, f"{dec.state}  {dec.defect_text}"[:60], (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
@@ -635,7 +738,7 @@ class Inspector:
 class MachineCycle:
     """Owns the per-bottle loop and the FIFO. Talks to the PLC only through PLCService."""
 
-    def __init__(self, plc, inspector: Inspector, cfg: dict, log_dir: Path | None = None, clock=time.monotonic,
+    def __init__(self, plc, inspector: Inspector, cfg: dict, log_dir: Path | None = None, clock=clock.now,
                  alarms: "AL.AlarmManager | None" = None, store=None, run_info: dict | None = None):
         self.plc, self.inspector, self.cfg = plc, inspector, dict(cfg)
         self.inspector._rules = dict(self.cfg.get("decision_rules") or {})
@@ -658,7 +761,8 @@ class MachineCycle:
         self._ids = itertools.count(1)
         self._coll: dict = {}                    # inspection_id -> Collection while INSPECTING
         self._sensed: "collections.deque" = collections.deque(maxlen=256)   # monotonic times bottles were sensed
-        self.counts = {"total": 0, PASS: 0, REJECT: 0, FAULT: 0, "not_inspected": 0, "missed_reject": 0}
+        self.counts = {"total": 0, PASS: 0, REJECT: 0, FAULT: 0, "not_inspected": 0, "missed_reject": 0,
+                       "unsure": 0}              # unsure: FAULT because a score sat between pass_max and its threshold
         self.alarms: "collections.deque" = collections.deque(maxlen=200)    # (wall, text)
         self.alarm_mgr = alarms if alarms is not None else AL.AlarmManager()
         self.store = store                       # production_store.ProductionStore (optional)
@@ -831,6 +935,14 @@ class MachineCycle:
 
     def _on_trigger(self, trig):
         b = self._new_bottle(trig.seen_mono, trig.seen_wall, trigger_id=trig.id, after_reconnect=trig.after_reconnect)
+        # The reject is scheduled from the best estimate of the M2 edge (middle of its bracket), not from the moment
+        # the reply arrived: a 9600-baud poll can see the edge 100+ ms late. Frame windows keep t_trigger (the
+        # conservative bound), so no frame from before the edge is ever used.
+        est = getattr(trig, "est_mono", trig.seen_mono)
+        unc = getattr(trig, "uncertainty_s", None)
+        b.scheduled_mono = est + self.travel_s
+        b.scheduled_wall = trig.seen_wall - (trig.seen_mono - est) + self.travel_s
+        b.trigger_unc_ms = None if unc is None else unc * 1000
         if self.halted:                                              # never answer while halted
             b.decision, b.command, b.reason = FAULT, "", f"line halted: {self.halted}"
             b.plc_status = "NOT ANSWERED (halted): remove bottle by hand"
@@ -888,14 +1000,18 @@ class MachineCycle:
 
     def _decided(self, b: Bottle, dec, thumb, first, ms, n):
         b.decision, b.defects, b.reason, b.confidence = dec.state, list(dec.defects), dec.reason, dec.confidence
+        b.locations = [list(x) for x in getattr(dec, "locations", ())]
         b.per_camera, b.thumb, b.evidence, b.infer_ms, b.frames = dec.per_camera, thumb, first, ms, n
         b.decided_mono = self.clock()
         b.timings["trigger_to_decision_ms"] = (b.decided_mono - b.t_trigger) * 1000
         with self._lock:
             self.last = b
             self.cycle_ms.append(b.timings["trigger_to_decision_ms"])
+        if dec.state == FAULT and "unsure:" in dec.reason:
+            self.counts["unsure"] += 1                               # the model was not confident: KPI, rejected
         if dec.state == FAULT:
-            code = ("NO_BOTTLE" if "no bottle" in dec.reason else
+            code = ("NO_BOTTLE" if "no bottle" in dec.reason or "bottle seen in only" in dec.reason else
+                    "UNSURE_RESULT" if "unsure:" in dec.reason else
                     "CAMERA_DISCONNECTED" if "camera fault" in dec.reason or "frame timeout" in dec.reason else
                     "MODEL_RUNTIME_ERROR" if "failed" in dec.reason or "crashed" in dec.reason else None)
             if code:
@@ -1133,6 +1249,15 @@ def demo():
 
     # the verdict must be ready before the REJECT has to be sent (travel - T0)
     assert fit_problem(T(reject_travel_s=4.5, plc_t0_s=1.5, inspect_window_s=1.5)) is None
+    # production decision rules are on by default; a settings key overrides only itself
+    assert line_settings({})["decision_rules"] == PRODUCTION_RULES
+    r = line_settings({"decision_rules": {"pass_max": 0.2, "vote": "any"}})["decision_rules"]
+    assert r == {"pass_max": 0.2, "vote": "any", "min_bottle_frames_frac": 0.6}, r
+    # FAULT -> PASS blocks Start, except in monitor-only commissioning
+    assert safety_problem(line_settings({})) is None
+    assert "PASSED" in safety_problem(line_settings({"fault_action": "PASS"}))
+    assert safety_problem(line_settings({"fault_action": "PASS", "monitor_only": True})) is None
+    assert any("PASSED" in p for p in line_problems(line_settings({"fault_action": "pass"})))
     assert "ready" in fit_problem(T(reject_travel_s=4.5, plc_t0_s=4.0, inspect_window_s=1.5))
     assert fit_problem(T()) is None                                         # travel unmeasured: nothing to compare
 
@@ -1160,6 +1285,51 @@ def demo():
     ins.poll(Collection(10.0, {"c": co}, lambda: ()), 12.0)
     ts = sorted(f.ts - 10.0 for f in co.frames.values())
     assert len(ts) == 4 and ts[-1] > 1.0 and all(b - a > 0.2 for a, b in zip(ts, ts[1:])), ts
+
+    # the AI never blocks the machine-cycle thread: with a 0.25 s model, poll() still returns at once, and the
+    # bottle is decided only when every frame's score is in
+    class _FI(_F):
+        def __init__(self, seq, ts):
+            super().__init__(seq, ts)
+            self.image = np.zeros((40, 20, 3), np.uint8)
+    class _CI(_C):
+        def frames_since(self, t):
+            return [_FI(i, 10.0 + i * 0.033) for i in range(1, 60)]
+    class _Slow:
+        stamp = "slow"
+        def predict(self, img):
+            time.sleep(0.25)
+            return {"tilt_cap": 0.9}
+    ins = Inspector([], "classification", classifier=_Slow(), thresholds=lambda: {"tilt_cap": 0.5}, frames=3,
+                    window_s=0.2)
+    co = CamCollect(_CI(), 10.0, 10.2, 0.0, 0.0)
+    coll = Collection(10.0, {"c": co}, lambda: ())
+    t_end, worst, polls = clock.now() + 5.0, 0.0, 0
+    while True:
+        t = clock.now()
+        done = ins.poll(coll, 11.0)
+        worst, polls = max(worst, clock.now() - t), polls + 1
+        if done:
+            break
+        assert clock.now() < t_end, "async AI never finished"
+        time.sleep(0.005)
+    assert worst < 0.05, f"poll() blocked {worst * 1000:.0f} ms on the model"
+    assert polls > 10 and coll.n == 3, (polls, coll.n)          # scored in the background while polls went on
+    dec = ins.evaluate(coll)[0]
+    assert dec.state == REJECT and dec.defects == ["tilt_cap"], dec
+    # a model that raises is FAULT evidence, not a crash of the cycle thread
+    class _Boom:
+        stamp = "boom"
+        def predict(self, img):
+            raise RuntimeError("cuda gone")
+    ins = Inspector([], "classification", classifier=_Boom(), thresholds=lambda: {"tilt_cap": 0.5}, frames=2,
+                    window_s=0.2)
+    coll = Collection(10.0, {"c": CamCollect(_CI(), 10.0, 10.2, 0.0, 0.0)}, lambda: ())
+    t_end = clock.now() + 3.0
+    while not ins.poll(coll, 11.0):
+        assert clock.now() < t_end
+        time.sleep(0.005)
+    assert ins.evaluate(coll)[0].state == FAULT
 
     scale = 0.2                                     # 100 ms timer base -> 20 ms: T0 = 0.3 s, T1 = 0.1 s
     t0_s, t1_s = 15 * 0.1 * scale, 5 * 0.1 * scale
@@ -1221,9 +1391,9 @@ def demo():
     mc.start()
 
     def wait(cond, what, timeout=5.0):
-        t_end = time.monotonic() + timeout
+        t_end = clock.now() + timeout
         while not cond():
-            assert time.monotonic() < t_end, f"timed out waiting for: {what}"
+            assert clock.now() < t_end, f"timed out waiting for: {what}"
             time.sleep(0.01)
 
     def bottle(kind, settle=None):
@@ -1242,6 +1412,11 @@ def demo():
         assert [b.final for b in got] == [PASS, REJECT, PASS, REJECT, REJECT, PASS], [b.final for b in got]
         assert [b.inspection_id for b in got] == [f"{i:06d}" for i in range(1, 7)]
         assert got[1].defects == ["missing_cap"] and got[3].defects == ["missing_label"], got[1].defects
+        # each REJECT says WHERE: the missing cap is located at the cap zone above the bottle, in the record too
+        assert got[1].locations and {l[2] for l in got[1].locations} == {"missing_cap"}, got[1].locations
+        assert all(len(l[4]) == 4 and min(l[4]) >= 0 for l in got[1].locations), got[1].locations      # clamped to frame
+        assert "missing_cap@" in got[1].row()["locations"], got[1].row()["locations"]
+        assert got[0].locations == [] and got[0].row()["locations"] == ""
         assert len({b.trigger_id for b in got}) == 6, "a trigger was reused"
         cmd_writes = [a for a, v in fake.writes if v == 1]
         from plc import address_map as AM
@@ -1344,11 +1519,11 @@ def demo():
         assert res5["nolabel"].final == REJECT and res5["nolabel"].per_camera["1"][0] == PASS     # cap camera: label n/a
         assert res5["nocap"].final == REJECT and res5["nocap"].per_camera["1"][0] == REJECT
         # a neighbour sensed 0.1 s after this bottle cannot be separated at the downstream camera
-        t = time.monotonic()
+        t = clock.now()
         coll = mc5.inspector.begin(t, 0.0, sensed=lambda: [t, t + 0.1])
-        t_end = time.monotonic() + 3.0
-        while not mc5.inspector.poll(coll, time.monotonic()):
-            assert time.monotonic() < t_end, "association collection never finished"
+        t_end = clock.now() + 3.0
+        while not mc5.inspector.poll(coll, clock.now()):
+            assert clock.now() < t_end, "association collection never finished"
             time.sleep(0.01)
         dec = mc5.inspector.evaluate(coll)[0]
         assert dec.state == FAULT and "CAMERA_ASSOCIATION_FAULT" in dec.reason, dec
@@ -1502,7 +1677,7 @@ def bench_inspect(label: str, sources, task: str = "classification+detection", f
             info["size"] = f"{img.shape[1]}x{img.shape[0]}"
             cv2.imwrite(str(out / f"{cid}_f{k}.png"), img)
             t0 = time.perf_counter()
-            fe = insp.frame_evidence(cid, k, time.monotonic(), img)
+            fe = insp.frame_evidence(cid, k, clock.now(), img)
             fr = {"ms": round((time.perf_counter() - t0) * 1000, 1)}
             if fe.probs is not None:
                 fr["probs"] = {d: round(p, 3) for d, p in fe.probs.items()}

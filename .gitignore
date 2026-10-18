@@ -80,6 +80,12 @@ vision_dataset/manifests/hash_cache.json
 # archived models (moved out before retraining)
 models_archive/
 
+# Windows shortcuts hold this computer's absolute paths (python -m tools.make_shortcut)
+*.lnk
+
+# measured system reports (python -m tools.system_report): machine-specific output
+reports/
+
 # Claude Code context: local only, not published
 CLAUDE.md
 .claude/

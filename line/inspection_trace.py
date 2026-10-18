@@ -20,6 +20,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, fields
 
+from line import clock
 from vision import dataset as D
 from vision import infer
 from vision.infer import FAULT, PASS, REJECT           # the one definition of the safety states
@@ -58,7 +59,7 @@ class InspectionRecord:
     camera_id: str
     session_id: int | None              # Camera.session: counts start()s of that camera
     frame_seq: int | None               # newest frame captured when this was taken
-    frame_ts: float | None              # ...its time.monotonic() stamp
+    frame_ts: float | None              # ...its clock.now() stamp
     result_seq: int | None              # the frame that was actually scored
     result_ts: float | None
     reasons: tuple = ()                 # why FAULT (empty otherwise)
@@ -343,9 +344,9 @@ def _integration():
             return {"a": 0.9 if box["infer"] == "reject" else 0.1}
 
     def wait(cond, what):
-        t0 = time.monotonic()
+        t0 = clock.now()
         while not cond():
-            assert time.monotonic() - t0 < 3, f"timed out: {what}"
+            assert clock.now() - t0 < 3, f"timed out: {what}"
             time.sleep(0.01)
 
     real_open, real_cfg = infer.open_capture, D.load_config

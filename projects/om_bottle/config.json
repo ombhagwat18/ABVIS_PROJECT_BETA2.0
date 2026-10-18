@@ -1,13 +1,13 @@
 {
   "roi": [
-    826,
     0,
-    841,
-    1927
+    0,
+    1920,
+    1080
   ],
   "roi_frame": [
-    2537,
-    1927
+    1920,
+    1080
   ],
   "input_wh": [
     192,
@@ -25,7 +25,7 @@
     "missing_label": 0.5,
     "skewed_bottle": 0.5,
     "skewed_label": 0.4,
-    "tilt_cap": 0.75,
+    "tilt_cap": 1.01,
     "water_level": 0.55
   },
   "active_model": "20260919-164511",

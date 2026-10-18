@@ -30,6 +30,7 @@ import json
 import math
 import threading
 import time
+from line import clock
 from pathlib import Path
 from typing import NamedTuple
 
@@ -71,7 +72,7 @@ class DetectionResult(NamedTuple):
     """All detections for one frame, with where they came from."""
     camera_id: str
     frame_seq: int | None               # Camera's per-session sequence number of the frame
-    frame_ts: float | None              # that frame's time.monotonic() stamp
+    frame_ts: float | None              # that frame's clock.now() stamp
     detections: tuple                   # tuple[Detection, ...], highest confidence first
     frame_wh: tuple                     # (width, height) of the frame the boxes refer to
     infer_ms: float                     # detect() duration, perf_counter clock

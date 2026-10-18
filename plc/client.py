@@ -5,7 +5,7 @@
 
 Only the Transport differs between the two; PLCClient, the address map, plc.service.PLCService and
 everything above them stay the same. (A serial Transport is NOT implemented: the physical port,
-baud rate, parity and ASCII/RTU are UNKNOWN -- see docs/roadmap/PLC_COMMUNICATION.md.)
+baud rate, parity and ASCII/RTU are UNKNOWN -- see FINAL_YEAR_BLACKBOOK/23_Project_Documentation/roadmap/PLC_COMMUNICATION.docx.)
 PLCClient is low level: application code should use plc.service.PLCService, the single owner.
 
 Behaviour that matters for safety:
@@ -16,7 +16,7 @@ Behaviour that matters for safety:
   * After a timeout/protocol error the connection is closed (the stream may be out of step).
   * Writes are refused by policy (address_map.is_writable: only M0/M1, never X/Y) before any bytes
     are sent. A write is never retried by this class.
-  * Latency uses time.perf_counter(); freshness uses time.monotonic().
+  * Latency uses time.perf_counter(); freshness uses clock.now().
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ import threading
 import time
 from typing import Protocol
 
+from line import clock
 from . import address_map as AM
 from . import protocol as P
 from .protocol import (PLCConnectionError, PLCError, PLCExceptionResponse, PLCProtocolError,  # noqa: F401
@@ -86,10 +87,10 @@ class TcpTransport:
     def recv_frame(self, timeout: float) -> bytes:
         if self._sock is None:
             raise PLCConnectionError("transport is not open")
-        deadline = time.monotonic() + timeout
+        deadline = clock.now() + timeout
         buf = b""
         while b"\r\n" not in buf:
-            left = deadline - time.monotonic()
+            left = deadline - clock.now()
             if left <= 0:
                 raise PLCTimeoutError(f"no complete response within {timeout:g}s")
             self._sock.settimeout(left)
@@ -169,89 +170,10 @@ class SerialTransport:
     def recv_frame(self, timeout: float) -> bytes:
         if self._ser is None:
             raise PLCConnectionError("transport is not open")
-        deadline = time.monotonic() + timeout
+        deadline = clock.now() + timeout
         buf = b""
         while b"\r\n" not in buf:
-            if time.monotonic() >= deadline:
-                raise PLCTimeoutError(f"no complete response within {timeout:g}s")
-            try:
-                chunk = self._ser.read(256)
-            except Exception as e:                  # noqa: BLE001
-                raise PLCConnectionError(f"receive failed: {e}") from e
-            buf += chunk
-            if len(buf) > P.MAX_FRAME:
-                raise PLCProtocolError(f"response longer than {P.MAX_FRAME} bytes without CRLF")
-        line = buf.split(b"\r\n", 1)[0]
-        start = line.rfind(b":")                    # line noise before the frame start is not part of it
-        return (line[start:] if start >= 0 else line) + b"\r\n"
-
-SERIAL_FORMATS = {"7E1": (7, "E", 1), "7O1": (7, "O", 1), "7N2": (7, "N", 2),
-                  "8N1": (8, "N", 1), "8E1": (8, "E", 1), "8O1": (8, "O", 1)}
-
-
-def serial_ports() -> list:
-    """[(device, description)] for the COM ports Windows currently has. Empty if pyserial is missing."""
-    try:
-        from serial.tools import list_ports
-    except ImportError:
-        return []
-    return [(p.device, p.description) for p in sorted(list_ports.comports(), key=lambda p: p.device)]
-
-
-class SerialTransport:
-    """Modbus ASCII over a serial COM port (the wired Delta PLC: RS-232 programming port or RS-485).
-
-    NOT TESTED ON HARDWARE. Framing is identical to TcpTransport (':' ... CR LF), so everything above
-    the transport is unchanged. Port, baud rate and data format must match the PLC's COM settings;
-    Delta's factory default is 9600 7E1 ASCII, station 1 -- verify on the actual unit, do not assume.
-    A COM port can be open in ONE program: while ISPSoft/COMMGR is online on it, open() fails here."""
-
-    def __init__(self, port: str, baudrate: int = 9600, fmt: str = "7E1", write_timeout: float = 1.0):
-        if fmt not in SERIAL_FORMATS:
-            raise ValueError(f"serial format must be one of {sorted(SERIAL_FORMATS)}")
-        self.port, self.baudrate, self.fmt, self.write_timeout = port, int(baudrate), fmt, write_timeout
-        self._ser = None
-        self.description = f"SERIAL {port} {self.baudrate} {fmt}"
-
-    def open(self) -> None:
-        self.close()
-        try:
-            import serial
-        except ImportError as e:
-            raise PLCConnectionError("pyserial is not installed (pip install pyserial)") from e
-        bits, parity, stop = SERIAL_FORMATS[self.fmt]
-        try:
-            self._ser = serial.serial_for_url(self.port, baudrate=self.baudrate, bytesize=bits, parity=parity,
-                                              stopbits=stop, timeout=0.02, write_timeout=self.write_timeout)
-        except Exception as e:                      # noqa: BLE001 - SerialException / OSError / ValueError
-            raise PLCConnectionError(f"cannot open {self.port}: {e} (is another program, e.g. ISPSoft/COMMGR, "
-                                     f"holding the port?)") from e
-
-    def close(self) -> None:
-        s, self._ser = self._ser, None
-        if s is not None:
-            try:
-                s.close()
-            except Exception:                       # noqa: BLE001
-                pass
-
-    def send(self, data: bytes) -> None:
-        if self._ser is None:
-            raise PLCConnectionError("transport is not open")
-        try:
-            self._ser.reset_input_buffer()          # drop anything stale: one request, one reply
-            self._ser.write(data)
-            self._ser.flush()
-        except Exception as e:                      # noqa: BLE001
-            raise PLCConnectionError(f"send failed: {e}") from e
-
-    def recv_frame(self, timeout: float) -> bytes:
-        if self._ser is None:
-            raise PLCConnectionError("transport is not open")
-        deadline = time.monotonic() + timeout
-        buf = b""
-        while b"\r\n" not in buf:
-            if time.monotonic() >= deadline:
+            if clock.now() >= deadline:
                 raise PLCTimeoutError(f"no complete response within {timeout:g}s")
             try:
                 chunk = self._ser.read(256)
@@ -274,7 +196,7 @@ class PLCClient:
         self._lock = threading.Lock()
         self.state = DISCONNECTED
         # health
-        self.last_ok: float | None = None          # time.monotonic() of the last good reply
+        self.last_ok: float | None = None          # clock.now() of the last good reply
         self.last_ok_wall: float | None = None     # time.time(), for display only
         self.last_latency_ms: float | None = None
         self.last_error: str | None = None
@@ -320,7 +242,7 @@ class PLCClient:
 
     def age_s(self) -> float | None:
         """Seconds since the last good reply (monotonic), or None if there has never been one."""
-        return None if self.last_ok is None else time.monotonic() - self.last_ok
+        return None if self.last_ok is None else clock.now() - self.last_ok
 
     # ----- one transaction --------------------------------------------------------------
     def _fail(self, e: Exception) -> None:
@@ -360,7 +282,7 @@ class PLCClient:
     def _ok(self, latency_ms: float) -> None:
         self.n_ok += 1
         self.consecutive_errors = 0
-        self.last_ok, self.last_ok_wall = time.monotonic(), time.time()
+        self.last_ok, self.last_ok_wall = clock.now(), time.time()
         self.last_latency_ms = latency_ms
 
     # ----- reads ------------------------------------------------------------------------

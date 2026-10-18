@@ -27,6 +27,7 @@ import shutil
 import sqlite3
 import threading
 import time
+from line import clock
 from pathlib import Path
 
 import cv2
@@ -191,8 +192,8 @@ class ProductionStore:
                 self._q.task_done()
 
     def flush(self, timeout: float = 5.0):
-        t_end = time.monotonic() + timeout
-        while self._q.unfinished_tasks and time.monotonic() < t_end:
+        t_end = clock.now() + timeout
+        while self._q.unfinished_tasks and clock.now() < t_end:
             time.sleep(0.01)
 
     # ------------------------------------------------------------------ alarms

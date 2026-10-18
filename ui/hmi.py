@@ -18,6 +18,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
+from line import clock
 from line import alarms as AL
 from ui import charts
 from vision import dataset as D
@@ -49,6 +50,42 @@ def listbox(parent, height=12):
 
 def _f(v, fmt="{:.3f}", none="--"):
     return none if v is None else fmt.format(v)
+
+
+def model_results_lines() -> list:
+    """The active classifier's and detector's results, read from metrics.json / MODEL_PROVENANCE.json, for the
+    History page (what the examiner sees). Anything missing is said, not invented."""
+    import json
+    out = []
+    try:
+        stamp = D.load_config().get("active_model")
+        mdir = D.MODELS / str(stamp)
+        m = json.loads((mdir / "metrics.json").read_text(encoding="utf-8"))
+        try:                                                           # the held-out test set is the honest number
+            t = json.loads((mdir / "test_metrics.json").read_text(encoding="utf-8"))["test"]
+            out.append(f"CLASSIFIER {stamp}: HELD-OUT TEST ({t['n_images']} images) macro-F1 {t['macro_f1']:.3f}  "
+                       f"recall {t['macro_recall']:.3f}  precision {t['macro_precision']:.3f}  "
+                       f"pass/reject accuracy {t['pass_reject_accuracy']:.3f}  |  defective passed as good: "
+                       f"{t['false_pass']}  good rejected: {t['false_reject']}  |  {m['infer_ms']:.0f} ms per frame")
+            none = [d for d, v in (t.get("per_defect") or {}).items() if not v.get("n_pos")]
+        except Exception:                                              # noqa: BLE001
+            out.append(f"CLASSIFIER {stamp}: validation macro-F1 {m['macro_f1']:.3f} (no held-out test file)  |  "
+                       f"{m['infer_ms']:.0f} ms per frame")
+            none = [d for d, v in (m.get("per_defect") or {}).items() if not v.get("n_pos")]
+        if none:
+            out.append("  no test example of: " + ", ".join(V.pretty(d) for d in none) +
+                       " (not scored; the detector's part rules cover missing parts)")
+    except Exception:                                                  # noqa: BLE001
+        out.append("CLASSIFIER: no results file for the active model")
+    try:
+        prov = json.loads((D.ROOT / "models" / "stage2_yolo" / "MODEL_PROVENANCE.json").read_text(encoding="utf-8"))
+        t, b = prov["test"], prov["benchmark"]["gpu"]
+        out.append(f"DETECTOR {prov['model']['architecture']}: held-out test mAP50 {t['map50']:.3f}  mAP50-95 "
+                   f"{t['map50_95']:.3f}  precision {t['precision']:.3f}  recall {t['recall']:.3f}  |  "
+                   f"{b['latency_ms_mean']:.0f} ms per frame on the GPU  |  {t['images']} test images")
+    except Exception:                                                  # noqa: BLE001
+        out.append("DETECTOR: no provenance file")
+    return out
 
 
 # =============================================================================== dialogs
@@ -111,13 +148,13 @@ class SpeedCalibrationDialog(ctk.CTkToplevel):
         self.after(100, self.lift)
 
     def start_watch(self):
-        self._t0 = time.monotonic()
+        self._t0 = clock.now()
         self.b_go.configure(state="disabled")
         self.b_stop.configure(state="normal", fg_color=GOOD, text_color=ACC_T)
 
     def stop_watch(self):
         if self._t0 is not None:
-            self.times.append(round(time.monotonic() - self._t0, 3))
+            self.times.append(round(clock.now() - self._t0, 3))
         self._t0 = None
         self.b_go.configure(state="normal")
         self.b_stop.configure(state="disabled", fg_color=PANEL_2, text_color=INK)
@@ -344,6 +381,10 @@ class HistoryTab:
         ctk.CTkButton(bar, text="Refresh", width=80, command=self.refresh).pack(side="left", padx=8)
         ctk.CTkButton(bar, text="Open evidence", width=120, command=self.open_evidence).pack(side="left")
         ctk.CTkButton(bar, text="Export day CSV", width=120, command=self.export).pack(side="left", padx=8)
+        ctk.CTkButton(bar, text="Printable report", width=130, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
+                      command=self.report).pack(side="left")
+        ctk.CTkButton(bar, text="All records...", width=110, fg_color="transparent", border_width=1, text_color=INK,
+                      command=lambda: self.app.tabs.set("Database")).pack(side="left", padx=8)
         self.where = ctk.CTkLabel(bar, text="", text_color=DIM, font=theme.TINY)
         self.where.pack(side="right", padx=12)
         top = ctk.CTkFrame(parent, fg_color="transparent")
@@ -360,6 +401,9 @@ class HistoryTab:
             ctk.CTkLabel(cell, text=title, text_color=DIM, font=theme.CAPS).pack()
         self.c_def = self._chart(top, "DEFECTS (this day)")
         self.c_hour = self._chart(top, "BOTTLES PER HOUR")
+        mbox = box(parent, "MODEL RESULTS (read from the models' own result files)")
+        self.model_lbl = ctk.CTkLabel(mbox, text="", font=MONO, justify="left", anchor="w", text_color=INK)
+        self.model_lbl.pack(fill="x", padx=12, pady=(0, 8))
         low = ctk.CTkFrame(parent, fg_color="transparent")
         low.pack(fill="both", expand=True)
         left = box(low, "INSPECTIONS (newest first)", side="left", fill="both", expand=True, padx=(0, 8))
@@ -368,8 +412,13 @@ class HistoryTab:
         self.list = listbox(left, 16)
         self.list.pack(fill="both", expand=True, padx=12, pady=(0, 10))
         self.list.bind("<Double-Button-1>", lambda e: self.open_evidence())
-        right = box(low, "ALARMS (this day)", side="left", fill="both", padx=0)
-        self.alarm_list = listbox(right, 16)
+        right = box(low, "PICTURE OF THE SELECTED BOTTLE  /  ALARMS (this day)", side="left", fill="both", padx=0)
+        self.preview = ctk.CTkLabel(right, text="select an inspection to see its picture", text_color=OFF,
+                                    fg_color=theme.VIDEO_BG, height=230, corner_radius=6)
+        self.preview.pack(fill="x", padx=12, pady=(0, 6))
+        self._pv = None
+        self.list.bind("<<ListboxSelect>>", lambda e: self.show_preview())
+        self.alarm_list = listbox(right, 8)
         self.alarm_list.configure(width=58)
         self.alarm_list.pack(fill="both", expand=True, padx=12, pady=(0, 10))
 
@@ -424,6 +473,45 @@ class HistoryTab:
                                           f"{a['code']:<26}{a['cause'][:60]}")
             self.alarm_list.itemconfig("end", fg=SEV_COLOUR.get(a["severity"], DIM) if a["state"] == "ACTIVE" else DIM)
         self.where.configure(text=f"{st.path}")
+        self.model_lbl.configure(text=chr(10).join(model_results_lines()))
+
+    def show_preview(self):
+        """The evidence picture of the selected bottle, inside the page (no external viewer)."""
+        sel = self.list.curselection()
+        if not sel:
+            return
+        r = self.rows[sel[0]]
+        p = self.app.store().folder / r["evidence"] if r["evidence"] else None
+        if p is None or not p.exists():
+            self._pv = None
+            return self.preview.configure(image="", text=f"no picture kept for bottle {r['inspection_id']}")
+        try:
+            import cv2
+            from PIL import Image
+            img = cv2.imread(str(p))
+            im = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            im.thumbnail((520, 230))
+            self._pv = ctk.CTkImage(light_image=im, dark_image=im, size=im.size)
+            self.preview.configure(image=self._pv, text="")
+        except Exception as e:                                         # noqa: BLE001
+            self.preview.configure(image="", text=f"cannot show {p.name}: {e}")
+
+    def report(self):
+        """A printable HTML report of the selected day / shift (counts, defects, bottles, alarms)."""
+        from line import production_export as PX
+        day = self.day.get()
+        span = self.span(day)
+        if span is None:
+            t = time.mktime(time.strptime(day, "%Y-%m-%d"))
+            span = (t, t + 86400)
+        out = filedialog.asksaveasfilename(defaultextension=".html", initialfile=f"report_{day}.html")
+        if not out:
+            return
+        PX.export_report(self.app.store(), out, span, title=f"Production report {day}", label=f"{day} {self.shift.get()}")
+        try:
+            os.startfile(out)                                          # noqa: S606 - local file, default browser
+        except (AttributeError, OSError):
+            messagebox.showinfo("Report", out)
 
     def open_evidence(self):
         sel = self.list.curselection()
@@ -575,7 +663,7 @@ class HealthTab:
         cams = self.app.cams.running()
         lines, lvl = [], "HEALTHY" if cams else "WARNING"
         for c in cams:
-            age = None if c.frame_ts is None else time.monotonic() - c.frame_ts
+            age = None if c.frame_ts is None else clock.now() - c.frame_ts
             bad = bool(c.error) or not c.alive or age is None or age > 1.0
             lvl = "FAULT" if bad else lvl
             wh = "x".join(map(str, c.frame_wh)) if c.frame_wh else "--"
@@ -751,6 +839,8 @@ class RecipeDialog(ctk.CTkToplevel):
         self.geometry("1000x520")
         self.transient(app)
         cur = D.load_config().get("inspection") or DEC.default_recipe(DEC.RULES)
+        # defect classes (decision.recipe_defects) are not edited here, but must survive a save of this form
+        self._defects = cur.get("defects") or None
         f = box(self, "PRODUCT", fill="x", padx=12, pady=(12, 6))
         row = ctk.CTkFrame(f, fg_color="transparent")
         row.pack(fill="x", padx=12, pady=(0, 10))
@@ -825,7 +915,10 @@ class RecipeDialog(ctk.CTkToplevel):
             if w["misplaced"].get().strip():
                 p["misplaced"] = w["misplaced"].get().strip()
             parts.append(p)
-        return {"anchor": self.anchor.get().strip(), "parts": parts}
+        out = {"anchor": self.anchor.get().strip(), "parts": parts}
+        if self._defects:
+            out["defects"] = self._defects
+        return out
 
     def problems(self, r) -> list:
         out = self.DEC.recipe_problems(r)
@@ -967,7 +1060,7 @@ class SimulationCheckDialog(ctk.CTkToplevel):
             lines.append((f"        {r.detail}", "DIM"))
             if r.status in ("FAIL", "WARN", "LIMIT") and r.impact:
                 lines.append((f"        why it matters: {r.impact}", "DIM"))
-        lines += [("", "DIM"), ("What to do: docs/hardware/PLC_LADDER_REQUIREMENTS.md lists the rung for every FAIL / WARN.",
+        lines += [("", "DIM"), ("What to do: FINAL_YEAR_BLACKBOOK/23_Project_Documentation/hardware/PLC_LADDER_REQUIREMENTS.docx lists the rung for every FAIL / WARN.",
                                  "DIM")]
         self._put(lines)
 
@@ -1618,7 +1711,10 @@ class CameraControlsDialog(ctk.CTkToplevel):
 
     FIELDS = (("focus", "Focus", "autofocus", 0, 255), ("exposure", "Exposure", "auto_exposure", -13, 0),
               ("wb_temperature", "White balance (K)", "auto_wb", 2800, 6500), ("gain", "Gain", None, 0, 255),
-              ("brightness", "Brightness", None, 0, 255))
+              ("brightness", "Brightness", None, 0, 255), ("contrast", "Contrast", None, 0, 255),
+              ("saturation", "Saturation", None, 0, 255), ("sharpness", "Sharpness", None, 0, 255),
+              ("gamma", "Gamma", None, 0, 500), ("zoom", "Zoom", None, 100, 500),
+              ("backlight", "Backlight comp. (0/1)", None, 0, 1))
     AUTO_ON = {"autofocus": 1, "auto_exposure": 0.75, "auto_wb": 1}          # OpenCV: 0.75 = auto, 0.25 = manual
     AUTO_OFF = {"autofocus": 0, "auto_exposure": 0.25, "auto_wb": 0}
 
@@ -1626,7 +1722,7 @@ class CameraControlsDialog(ctk.CTkToplevel):
         super().__init__(app)
         self.app, self.srcs, self.on_saved = app, list(srcs), on_saved
         self.title("Camera settings (live)")
-        self.geometry("640x580")
+        self.geometry("700x760")
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=12, pady=(12, 4))
         ctk.CTkLabel(row, text="Camera").pack(side="left")
@@ -1663,7 +1759,8 @@ class CameraControlsDialog(ctk.CTkToplevel):
         self.msg.pack(fill="x", padx=12, pady=4)
         ctk.CTkLabel(self, text="Tip: for inspection use manual focus (autofocus off) and a fixed exposure as short as the "
                                 "light allows; turn focus until the sharpness number stops growing. A blank field leaves "
-                                "that control as it is.", wraplength=600, justify="left",
+                                "that control as it is. Close the EMEET software first: only one program can hold the camera. "
+                                "Ranges are typical; the 'driver:' column shows what the camera really accepted.", wraplength=600, justify="left",
                      text_color=DIM).pack(fill="x", padx=12)
         self._q_at = 0.0
         self._fill()
@@ -1759,9 +1856,9 @@ class CameraControlsDialog(ctk.CTkToplevel):
             return
         cam = self._cam()
         f = cam.latest_frame() if cam is not None else None
-        if f is not None and time.monotonic() - self._q_at > 0.5:
+        if f is not None and clock.now() - self._q_at > 0.5:
             from vision import bench
-            self._q_at = time.monotonic()
+            self._q_at = clock.now()
             q = bench.frame_quality(f.image)
             self.q.configure(text=f"sharpness {q['sharpness']:.0f}   brightness {q['brightness']:.0f}   "
                                   f"contrast {q['contrast']:.0f}   clipped {q['clipped']:.1f}%")
@@ -1870,7 +1967,7 @@ class TuningDialog(ctk.CTkToplevel):
         else:
             thr = ins.thresholds()
             for cid, d in info.items():
-                if time.monotonic() - d["t"] > 2.0:
+                if clock.now() - d["t"] > 2.0:
                     continue
                 lines.append(f"{cid}")
                 best = {}

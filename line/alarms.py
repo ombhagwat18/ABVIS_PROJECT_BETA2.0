@@ -44,6 +44,8 @@ CATALOG = {
     "MODEL_NOT_FOUND": (MAJOR, "Inspection model missing", "Activate a model (engineer: Models / Train)."),
     "MODEL_RUNTIME_ERROR": (MAJOR, "Inspection model failed", "Stop the line and check the GPU / model files."),
     "NO_BOTTLE": (WARNING, "No bottle seen after a trigger", "Check the sensor position and the camera view."),
+    "UNSURE_RESULT": (WARNING, "Model not confident about a bottle (rejected)",
+                      "Occasional: normal. Frequent: collect these bottles for labelling and retrain the model."),
     "TRIGGER_MISSED": (WARNING, "Inspection trigger lost", "Check the PLC link; remove the bottle by hand."),
     "BOTTLE_UNTRIGGERED": (MAJOR, "Bottle passed without inspection",
                            "Remove the bottle by hand. Bottles are too close (one-bottle PLC handshake)."),

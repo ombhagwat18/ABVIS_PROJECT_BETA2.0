@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 
+from line import clock
 from . import address_map as AM
 from .client import CONNECTED, DISCONNECTED, FAULT
 from .protocol import PLCConnectionError, PLCError
@@ -222,6 +223,21 @@ def test_operator_write_is_opt_in_and_narrow():
         close(fake, lad, svc)
 
 
+def test_operator_manual_reject_and_pass():
+    """Manual mode: REJECT / PASS write M1 / M0 once (the ladder clears them) and are refused while one is still ON."""
+    fake, lad, svc = rig()
+    try:
+        svc.operator_controls = True
+        svc.operator_write("REJECT")
+        assert writes(fake, "M1") == [(M("M1"), 1)], fake.writes          # written once, never pulsed back to 0
+        _expect(PLCError, lambda: svc.operator_write("REJECT"), "second REJECT while M1 is held")
+        _expect(PLCError, lambda: svc.operator_write("PASS"), "PASS while M1 is held")
+        assert not AM.is_writable("M10"), "operator opening was not closed again"
+        assert not any(w[0] in (M("Y0"), M("Y1")) for w in fake.writes), "Y was written"
+    finally:
+        close(fake, lad, svc)
+
+
 def test_job_traffic_does_not_hide_triggers():
     """Regression (simulator, 2026-10-03): continuous sample() jobs starved polling, the service never saw
     M2 fall, and the next M2 = 1 produced no trigger."""
@@ -276,8 +292,8 @@ def test_ladder_reject_cycle_and_masking():
         assert svc.read_bit("M1"), "M1 must be held through T0"
         lad.trigger(hold_s=0.08)                             # second bottle while the reject cycle runs
         assert svc.wait_for_trigger(0.12) is None, "a trigger got through while M1 was ON"
-        t_end = time.monotonic() + 1.0
-        while (svc.read_bit("M1") or len(lad.y0_log) < 2) and time.monotonic() < t_end:
+        t_end = clock.now() + 1.0
+        while (svc.read_bit("M1") or len(lad.y0_log) < 2) and clock.now() < t_end:
             pass                                             # M1 drops one scan before Y0 (net 7, then net 6)
         assert not svc.read_bit("M1") and [v for _, v in lad.y0_log] == [1, 0], lad.y0_log
         pulse = lad.y0_log[1][0] - lad.y0_log[0][0]
@@ -287,6 +303,39 @@ def test_ladder_reject_cycle_and_masking():
         assert svc.untriggered == 1 and len(ev) == 1 and "net 5" in ev[0].error, [e.error for e in ev]
         lad.trigger()                                        # after the cycle: triggers work again
         assert svc.wait_for_trigger(1.0) is not None
+    finally:
+        close(fake, lad, svc)
+
+
+def test_trigger_bracket_and_fast_outputs():
+    """Trigger timing: the M2 edge is bracketed (edge_lo <= est <= seen_mono, uncertainty about one poll). While the
+    line runs the slow status read is rare, yet a REJECT's Y0 pulse is still reported by the fast poll."""
+    fake, lad, svc = rig(watch_x0=True)
+    try:
+        svc.line_status_period_s = 30.0                    # no status read during this test: Y0 must come from the fast poll
+        status_reads = []
+        real = svc._read_status_now
+        svc._read_status_now = lambda: (status_reads.append(1), real())[1]
+        time.sleep(0.15)
+        t0 = clock.now()
+        lad.trigger(); t = svc.wait_for_trigger(1.0)
+        assert t is not None and t.edge_lo is not None, t
+        assert t0 - 0.05 <= t.edge_lo <= t.est_mono <= t.seen_mono, (t0, t.edge_lo, t.est_mono, t.seen_mono)
+        assert 0.0 <= t.uncertainty_s < 0.1, f"bracket wider than a few polls: {t.uncertainty_s * 1000:.1f} ms"
+        assert svc.send_reject(t.id).ok
+        t_end = clock.now() + 1.5
+        while len([e for e in svc.events() if e.event == "DEVICE_CHANGE" and e.device == "Y0"]) < 2 \
+                and clock.now() < t_end:
+            time.sleep(0.01)
+        y0 = [e.ack for e in svc.events() if e.event == "DEVICE_CHANGE" and e.device == "Y0"]
+        assert y0[:2] == ["ON", "OFF"], f"Y0 pulse not reported by the fast poll: {y0}"
+        assert not status_reads, f"{len(status_reads)} slow status read(s) while the line ran"
+        # the line stops: status reads come back at status_period_s
+        svc.watch_x0 = False
+        t_end = clock.now() + 1.0
+        while not status_reads and clock.now() < t_end:
+            time.sleep(0.01)
+        assert status_reads, "status reads did not resume after the line stopped"
     finally:
         close(fake, lad, svc)
 
