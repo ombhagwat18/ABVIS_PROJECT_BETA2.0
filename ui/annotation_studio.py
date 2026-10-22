@@ -62,7 +62,8 @@ STATE_FILTERS = (("All images", "all"), ("Pending proposals", "pending"), ("Acce
                  ("Corrected", "corrected"), ("Rejected", "rejected"), ("Failed", "failed"),
                  ("Skipped for later", "skipped"), ("Unreviewed", "unreviewed"), ("Reviewed", "reviewed"),
                  ("Not proposed yet", "not_proposed"))
-QUEUES = ("Dataset order", "Least confident", "Missing-part candidates", "Doubtful part / hard negatives")
+QUEUES = ("Dataset order", "Least confident", "Missing-part candidates", "Doubtful part / hard negatives",
+          "Seeded masks: weakest first")
 SCOPES = ("Images not proposed yet", "Failed images (retry)", "Current list (replaces pending proposals)")
 STATE_COL = {"failed": BAD, "pending": WARN, "skipped": MUTED, "corrected": INFO, "accepted": GOOD,
              "rejected": BAD, "reviewed": GOOD, "annotated": GOOD}
@@ -299,6 +300,20 @@ class AnnotationTab:
         right.pack_propagate(False)
         inner = ctk.CTkScrollableFrame(right, fg_color="transparent")
         inner.pack(fill="both", expand=True)
+        C.section(inner, "Guide")
+        self.guide_lbl = ctk.CTkLabel(inner, text=GUIDE_TEXT, text_color=INK, font=theme.TINY, justify="left",
+                                      anchor="w", wraplength=262)
+        self.guide_lbl.pack(fill="x", padx=12)
+        self.guide_prog = ctk.CTkLabel(inner, text="", text_color=ACC, font=(theme.UI, 13, "bold"), justify="left",
+                                       anchor="w", wraplength=262)
+        self.guide_prog.pack(fill="x", padx=12, pady=(4, 0))
+        gb = ctk.CTkFrame(inner, fg_color="transparent")
+        gb.pack(fill="x", padx=12, pady=(4, 0))
+        C.button(gb, "Review wall  (W)", self.open_wall, "primary", 124,
+                 tip="Look at 20 auto-masked images at once, click the wrong ones, approve the rest in one go.").grid(
+            row=0, column=0, padx=(0, 4), sticky="ew")
+        C.button(gb, "Approve + next  (V)", self.approve_and_next, "success", 124,
+                 tip="Mark this image reviewed and open the next unreviewed one.").grid(row=0, column=1, sticky="ew")
         C.section(inner, "Inspector")
         self.insp_state = ctk.CTkLabel(inner, text="nothing selected", font=(theme.UI, 14, "bold"), anchor="w")
         self.insp_state.pack(fill="x", padx=12)
@@ -553,6 +568,10 @@ class AnnotationTab:
             order = AA.doubtful_part_queue(self.data, self.images)
             note = ("A cap / label proposed at 0.25-0.80: often a hard negative (e.g. a tamper ring read as a cap). "
                     "Reject what is not the part.")
+        elif q == "Seeded masks: weakest first":
+            order = self._seed_order()
+            note = ("Images whose auto-drawn masks (vision.autoseed) nobody has approved yet: flagged first, "
+                    "then the lowest geometry score. W = review wall: approve the good ones 20 at a time.")
         else:
             order, note = list(self.images), ""
         self.view = [r for r in order if AA.matches(self.data["images"].get(r), state, cls, lo, hi)]
@@ -679,6 +698,7 @@ class AnnotationTab:
                       "failed": BAD if v else INK}.get(k, INK)
             card.set(f"{v:.0f}%" if k == "decided_pct" else v, colour if v else INK)
         self._update_progress_label()
+        self._update_guide()
         if self.job is None and self.pill.state not in ("ERROR", "EXPORTING"):
             self.pill.set("REVIEWING" if c["pending"] else "IDLE")
 
@@ -1408,7 +1428,8 @@ class AnnotationTab:
                "n": self.next_image, "p": self.prev_image, "f": self.fit, "plus": lambda: self.zoom_by(1.25),
                "equal": lambda: self.zoom_by(1.25), "kp_add": lambda: self.zoom_by(1.25),
                "minus": lambda: self.zoom_by(1 / 1.25), "kp_subtract": lambda: self.zoom_by(1 / 1.25),
-               "escape": self._escape, "delete": self.delete_selected}.get(k)
+               "escape": self._escape, "delete": self.delete_selected, "v": self.approve_and_next,
+               "w": self.open_wall}.get(k)
         if act is None:
             return None
         act()
@@ -1417,6 +1438,55 @@ class AnnotationTab:
     def _escape(self):
         self.selected, self.drag, self.poly_points = None, None, []
         self._redraw()
+
+    # ================================================================== seeded masks: fast review
+    def _seed_entries(self):
+        """rel -> weakest seed score, for unreviewed images that carry auto-seeded polygons."""
+        out = {}
+        for r in self.images:
+            e = (self.data or {}).get("images", {}).get(r) or {}
+            polys = [p for p in e.get("polygons") or [] if p.get("auto")]
+            if polys and not e.get("reviewed"):
+                out[r] = min([float(p.get("score", 1.0)) for p in polys] + [0.0 if e.get("needs_fix") else 1.0])
+        return out
+
+    def _seed_order(self):
+        sc = self._seed_entries()
+        return sorted(sc, key=lambda r: (sc[r], r)) + [r for r in self.images if r not in sc]
+
+    def _update_guide(self):
+        if not hasattr(self, "guide_prog") or self.data is None:
+            return
+        total = len(self.images)
+        reviewed = sum(1 for r in self.images if (self.data["images"].get(r) or {}).get("reviewed"))
+        seeds = self._seed_entries()
+        weak = sum(1 for v in seeds.values() if v < 0.8)
+        self.guide_prog.configure(text=f"Reviewed {reviewed} / {total}  |  auto-masked, waiting: {len(seeds)}  |  "
+                                       f"weak or flagged: {weak}")
+
+    def approve_and_next(self):
+        """V: vouch for this image's masks and go to the next unreviewed one."""
+        if not self.rel or self.data is None:
+            return
+        if self._entry().get("proposals"):
+            messagebox.showinfo("Undecided proposals", "Decide the box proposals first (A / R).")
+            return
+        self._push_undo("approve", [self.rel])
+        AA.mark_reviewed(self.data, self.rel)
+        self._entry().pop("needs_fix", None)
+        self._commit("mark_reviewed", [self.rel], via="V")
+        seq = self.view or self.images
+        i = seq.index(self.rel) if self.rel in seq else -1
+        for k in range(1, len(seq) + 1):
+            r = seq[(i + k) % len(seq)]
+            if not (self.data["images"].get(r) or {}).get("reviewed"):
+                return self.goto_image(r)
+        messagebox.showinfo("Approve + next", "Every image in this list is reviewed.")
+
+    def open_wall(self):
+        if self.data is None:
+            return
+        ReviewWallDialog(self)
 
     # ================================================================== proposal generation (background)
     def _line_running(self) -> bool:
@@ -1726,6 +1796,121 @@ class AnnotationTab:
 
 
 # ====================================================================== bulk dialog
+GUIDE_TEXT = (
+    "1. Queue (left) = 'Seeded masks: weakest first'.\n"
+    "2. W opens the REVIEW WALL: 20 images with the auto outlines. Click only the WRONG ones (they turn red), "
+    "then 'Approve the rest'.\n"
+    "3. Open a red image: fix the outline (Del = delete a wrong mask, then draw the polygon with the mouse, "
+    "double-click closes). Then V = approve + next.\n"
+    "4. Colours: bottle red, cap yellow, label magenta. No cap / label on a missing-part or damaged image can be "
+    "CORRECT: do not draw one.\n"
+    "5. Defects: draw a polygon (damaged_label / damaged_bottle / water_level / tilt_cap ...) only on the "
+    "damaged spot.\n"
+    "6. When Reviewed = all: Train page -> train the segmentation model."
+)
+
+
+class ReviewWallDialog(ctk.CTkToplevel):
+    """20 auto-masked images at a glance. Click a tile = 'needs fixing' (red). Approve the rest = reviewed in one step
+    (one undo). Flagged images stay unreviewed and come first in the 'weakest first' queue."""
+    COLS, ROWS, TW, TH = 5, 4, 300, 169
+
+    def __init__(self, tab: AnnotationTab):
+        super().__init__(tab.parent)
+        self.tab = tab
+        self.title("Review wall - click the WRONG ones, approve the rest")
+        self.geometry(f"{self.COLS * (self.TW + 12) + 24}x{self.ROWS * (self.TH + 12) + 150}")
+        self.transient(tab.parent.winfo_toplevel())
+        self.flag: set = set()
+        self.rels: list = []
+        self.skipped: set = set()
+        self._photos: list = []
+        self.head = ctk.CTkLabel(self, text="", font=(theme.UI, 14, "bold"), anchor="w")
+        self.head.pack(fill="x", padx=12, pady=(8, 2))
+        ctk.CTkLabel(self, text="Bottle = red outline, cap = yellow, label = magenta. A missing cap / label on a "
+                                "missing-part or damaged image is correct. Click = mark wrong (red). "
+                                "Double-click = open it in the editor.",
+                     text_color=DIM, font=theme.TINY, anchor="w", wraplength=1400, justify="left").pack(fill="x", padx=12)
+        self.grid_f = tk.Frame(self, bg=BG)
+        self.grid_f.pack(padx=8, pady=6)
+        bar = ctk.CTkFrame(self, fg_color="transparent")
+        bar.pack(fill="x", padx=12, pady=(0, 8))
+        C.button(bar, "Approve the rest  (Enter)", self.approve, "success", 220).pack(side="left")
+        C.button(bar, "Skip this wall", self.skip, "ghost", 120).pack(side="left", padx=6)
+        C.button(bar, "Fix the red ones now", self.fix_now, "primary", 170).pack(side="left")
+        C.button(bar, "Close", self.destroy, "ghost", 80).pack(side="right")
+        self.bind("<Return>", lambda _e: self.approve())
+        self.load()
+
+    def _next_rels(self):
+        sc = self.tab._seed_entries()
+        order = sorted(sc, key=lambda r: (sc[r], r))
+        return [r for r in order if r not in self.skipped][:self.COLS * self.ROWS]
+
+    def load(self):
+        for w in self.grid_f.winfo_children():
+            w.destroy()
+        self.flag.clear()
+        self._photos.clear()
+        self.rels = self._next_rels()
+        left = len(self.tab._seed_entries())
+        self.head.configure(text=f"{left} auto-masked images waiting  -  this wall: {len(self.rels)}")
+        root = self.tab.image_root or D.IMAGE_ROOT
+        import numpy as np
+        for i, rel in enumerate(self.rels):
+            im = cv2.imread(str(Path(root) / rel), cv2.IMREAD_REDUCED_COLOR_4)
+            if im is None:
+                continue
+            im = cv2.resize(im, (self.TW, self.TH))
+            for p in (self.tab.data["images"].get(rel) or {}).get("polygons") or []:
+                pts = np.array([(int(p["points"][j] * self.TW), int(p["points"][j + 1] * self.TH))
+                                for j in range(0, len(p["points"]), 2)], dtype=np.int32)
+                col = {"bottle": (60, 60, 255), "cap": (0, 230, 255), "label": (255, 0, 255)}.get(p["cls"], (0, 255, 0))
+                cv2.polylines(im, [pts], True, col, 2)
+            ph = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(im, cv2.COLOR_BGR2RGB)))
+            self._photos.append(ph)
+            lab = tk.Label(self.grid_f, image=ph, bd=4, relief="flat", bg=BG, highlightthickness=0)
+            lab.grid(row=i // self.COLS, column=i % self.COLS, padx=2, pady=2)
+            lab.bind("<Button-1>", lambda _e, r=rel, w=lab: self.toggle(r, w))
+            lab.bind("<Double-Button-1>", lambda _e, r=rel: self.open_one(r))
+        if not self.rels:
+            self.head.configure(text="Nothing left to review in the wall.")
+
+    def toggle(self, rel, w):
+        if rel in self.flag:
+            self.flag.discard(rel)
+            w.configure(bg=BG)
+        else:
+            self.flag.add(rel)
+            w.configure(bg=theme.REJECT)
+
+    def approve(self):
+        t = self.tab
+        good = [r for r in self.rels if r not in self.flag]
+        if self.rels:
+            t._push_undo("review wall", self.rels)
+            for r in good:
+                AA.mark_reviewed(t.data, r)
+                t.data["images"][r].pop("needs_fix", None)
+            for r in self.flag:
+                t.data["images"][r]["needs_fix"] = True
+            t._commit("review_wall", list(self.rels), approved=len(good), flagged=len(self.flag))
+            t.apply_filter()
+        self.skipped.update(self.flag)
+        self.load()
+
+    def skip(self):
+        self.skipped.update(self.rels)
+        self.load()
+
+    def open_one(self, rel):
+        self.tab.goto_image(rel)
+
+    def fix_now(self):
+        if self.flag:
+            self.open_one(sorted(self.flag)[0])
+
+
 class BulkDialog(ctk.CTkToplevel):
     """Bulk accept / reject of PENDING proposals by class, confidence range, model and scope. Shows the exact count
     before anything changes and asks once more; one undo step."""

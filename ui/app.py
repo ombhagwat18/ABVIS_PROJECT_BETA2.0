@@ -44,12 +44,14 @@ from line import machine_state as MS
 from line import production_store
 from vision import segment
 from ui import brand
+from ui.components import Flow
 from ui import theme
 from line import tracking as TR
 from vision import verdict as VD
 from plc import (CONNECTED as PLC_CONNECTED, DEGRADED as PLC_DEGRADED, FAULT as PLC_FAULT, SERIAL_FORMATS, PLCClient,
                  PLCService, SerialTransport, TcpTransport, serial_ports)
 from plc import address_map as PLC_AM
+from plc.service import HeartbeatPump
 
 theme.apply_ctk(ctk)
 brand.install_icon(ctk)          # product icon on the main window and every dialog
@@ -202,6 +204,17 @@ class ScrollHost(ctk.CTkFrame):
         self._busy = False
         self.canvas.bind("<Configure>", self._fit)
         self.inner.bind("<Configure>", self._fit)
+        self.after(600, self._poll)
+
+    def _poll(self):
+        """The content's requested size can shrink without any event reaching the page (a table settles, a row wraps):
+        re-fit while the page is on screen so a stale width never leaves a scroll bar or a clipped edge."""
+        try:
+            if self.winfo_ismapped():
+                self._fit()
+        except tk.TclError:
+            return
+        self.after(600, self._poll)
 
     def _vset(self, a, b):
         self.vbar.set(a, b)
@@ -246,8 +259,12 @@ class NavShell(ctk.CTkFrame):
         self.rail.pack_propagate(False)
         self.body = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
         self.body.pack(side="left", fill="both", expand=True)
-        self.title = ctk.CTkLabel(self.body, text="", font=theme.H1, text_color=INK, anchor="w")
-        self.title.pack(fill="x", padx=18, pady=(10, 4))
+        head = ctk.CTkFrame(self.body, fg_color="transparent")
+        head.pack(fill="x", padx=18, pady=(10, 4))
+        self.title = ctk.CTkLabel(head, text="", font=theme.H1, text_color=INK, anchor="w")
+        self.title.pack(side="left")
+        self.subtitle = ctk.CTkLabel(head, text="", font=theme.SMALL, text_color=DIM, anchor="w")
+        self.subtitle.pack(side="left", padx=(14, 0), pady=(6, 0))
         self.area = ctk.CTkFrame(self.body, fg_color="transparent", corner_radius=0)
         self.area.pack(fill="both", expand=True, padx=(14, 14), pady=(0, 10))
         self.area.grid_rowconfigure(0, weight=1)
@@ -269,6 +286,16 @@ class NavShell(ctk.CTkFrame):
         self.current: str | None = None
         self.visible: set | None = None              # None = every page (engineer mode)
 
+    ICONS = {"Production": "▶", "History": "◷", "Health": "✚", "Label": "✎", "Defects": "⚑", "Annotate": "▭",
+             "Train": "⚙", "Analysis": "◔", "Models": "❖", "Simulation testing": "⟳", "Camera": "◉", "Settings": "☰"}
+    SUBTITLE = {"Production": "Run the line, watch both cameras, handle faults",
+                "History": "Shift reports and past bottles", "Health": "Logs, alarms and system checks",
+                "Label": "Review and label training images", "Defects": "Defect classes of this product",
+                "Annotate": "Boxes and outlines for the detector", "Train": "Train a new candidate model",
+                "Analysis": "How well a model performs on held-out images",
+                "Models": "Validate, approve and activate models", "Simulation testing": "Bench-test the PLC link",
+                "Camera": "Measure what each camera really delivers", "Settings": "Text size, theme, PLC and line options"}
+
     HIDDEN = ("Live", "Data health", "Database")     # built (other pages call into them) but not in the menu
 
     MIN_SIZE = {"Production": (1180, 880), "Live": (1180, 760), "Simulation testing": (1180, 820), "Health": (1100, 760),
@@ -284,7 +311,7 @@ class NavShell(ctk.CTkFrame):
                 self.set(name)
             return page
         holder = self._group_frames.get(self._group_of.get(name)) or self.rail
-        b = ctk.CTkButton(holder, text="   " + name, anchor="w", height=34, corner_radius=4,
+        b = ctk.CTkButton(holder, text=f" {self.ICONS.get(name, '•')}   {name}", anchor="w", height=34, corner_radius=4,
                           fg_color="transparent", hover_color=NAV_HOVER, text_color=NAV_TEXT,
                           font=theme.BODY, border_spacing=0, command=lambda n=name: self.set(n))
         b.pack(fill="x", padx=8, pady=1)
@@ -328,7 +355,8 @@ class NavShell(ctk.CTkFrame):
         self.hosts[name].grid(row=0, column=0, sticky="nsew")
         if name in self.buttons:
             self.buttons[name].configure(fg_color=ACC, text_color=ACC_T)
-        self.title.configure(text=name.upper())
+        self.title.configure(text=name)
+        self.subtitle.configure(text=self.SUBTITLE.get(name, ""))
         if self.on_show:
             self.on_show(name)
 
@@ -337,7 +365,7 @@ class App(ctk.CTk):
     def __init__(self, plc_autoconnect=None):
         super().__init__()
         self.title(brand.window_title())
-        self.geometry("1500x950")
+        self.geometry(self._saved_geometry())
         self.minsize(1150, 700)
 
         self._stale: set = set()
@@ -432,6 +460,13 @@ class App(ctk.CTk):
         self.tab_settings = SettingsTab(self, self.tabs.tab("Settings"))
 
         self.bind_all("<MouseWheel>", self._page_wheel, add="+")
+        # keyboard: F11 full screen (Esc leaves it), Ctrl+1..9 jump to the pages in the rail. Nothing here ever
+        # acts on the machine: no shortcut starts the line, writes the PLC or fires the reject cylinder.
+        self.bind_all("<F11>", lambda e: self.toggle_fullscreen(), add="+")
+        self.bind_all("<Escape>", lambda e: self.attributes("-fullscreen", False) if self.attributes("-fullscreen") else None,
+                      add="+")
+        for n in range(1, 10):
+            self.bind_all(f"<Control-Key-{n}>", lambda e, n=n: self.goto_page(n - 1), add="+")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.set_mode(self.ui_mode, save=False)
         self.reload()
@@ -490,7 +525,7 @@ class App(ctk.CTk):
         self.tabs.show_only(None if eng else self.OPERATOR_PAGES)
         if not eng and self.tabs.get() not in self.OPERATOR_PAGES:
             self.tabs.set("Production")
-        self.mode_btn.configure(text="ENGINEER MODE" if eng else "OPERATOR MODE",
+        self.mode_btn.configure(text="⚙  ENGINEER" if eng else "◉  OPERATOR",
                                 text_color=WARN if eng else INK, border_color=WARN if eng else LINE)
         self.tab_production.set_mode(self.ui_mode)
         if save:
@@ -732,7 +767,34 @@ class App(ctk.CTk):
         import os
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    def _saved_geometry(self) -> str:
+        """The size and place the window had when it was last closed, kept on screen (a monitor may have gone)."""
+        try:
+            w, h, x, y = (int(v) for v in D.load_settings()["window_geometry"])
+            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+            w, h = max(1150, min(w, sw)), max(700, min(h, sh))
+            x, y = max(0, min(x, sw - 200)), max(0, min(y, sh - 120))
+            return f"{w}x{h}+{x}+{y}"
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return "1500x950"
+
+    def toggle_fullscreen(self):
+        self.attributes("-fullscreen", not self.attributes("-fullscreen"))
+
+    def goto_page(self, i: int):
+        """Ctrl+N: the N-th page of the rail as it is shown now (operator mode lists fewer)."""
+        names = [n for g, members in self.tabs.groups for n in members
+                 if n in self.tabs.buttons and (self.tabs.visible is None or n in self.tabs.visible)]
+        if i < len(names):
+            self.tabs.set(names[i])
+
     def on_close(self):
+        try:
+            if self.state() == "normal":
+                self.settings["window_geometry"] = [self.winfo_width(), self.winfo_height(), self.winfo_x(), self.winfo_y()]
+                D.save_settings(self.settings)
+        except Exception:                                        # noqa: BLE001 - never block closing
+            pass
         self.tab_production.close()          # stops the machine cycle before the cameras and the PLC link
         self.cams.stop()
         self.tab_machine.close()
@@ -1064,7 +1126,7 @@ class MachineTab:
         self._hold: dict = {}                        # device -> monotonic time until which the switch is not mirrored
         self.hmi = None
 
-        head = ctk.CTkFrame(parent, fg_color=PANEL)
+        head = Flow(parent, fg_color=PANEL)
         head.pack(fill="x", pady=(0, 6))
         self.state = ctk.CTkLabel(head, text="DISCONNECTED", font=("Segoe UI", 18, "bold"), text_color=DIM, width=170)
         self.state.pack(side="left", padx=(12, 8), pady=8)
@@ -1085,7 +1147,7 @@ class MachineTab:
             ctk.CTkButton(head, text="Simulation check", width=130, command=self.open_simcheck).pack(side="right", padx=4)
 
         cfg = app.settings
-        conn = ctk.CTkFrame(parent, fg_color=PANEL)
+        conn = Flow(parent, fg_color=PANEL)
         conn.pack(fill="x", pady=(0, 6))
         ctk.CTkLabel(conn, text="PLC LINK", font=("Segoe UI", 13, "bold"), text_color=DIM).pack(side="left", padx=(12, 8), pady=8)
         self.mode = ctk.CTkOptionMenu(conn, values=list(self.MODES), width=160, command=lambda _=None: self._mode_changed())
@@ -1569,7 +1631,7 @@ class ProductionTab:
         self.state_reason.pack(padx=10, pady=(0, 6))
         info = ctk.CTkFrame(ban, fg_color="transparent")
         info.pack(side="left", fill="both", expand=True, padx=6, pady=6)
-        r1 = ctk.CTkFrame(info, fg_color="transparent")
+        r1 = Flow(info)
         r1.pack(fill="x")
         self.plc_mode_lbl = ctk.CTkLabel(r1, text="", font=theme.CAPS, corner_radius=6, text_color=ACC_T,
                                          fg_color=OFF, width=120)
@@ -1590,8 +1652,8 @@ class ProductionTab:
         self.msg_lbl.pack(fill="x")
 
         # ---- the three operator controls + tests
-        bar = ctk.CTkFrame(parent, fg_color="transparent")
-        bar.pack(fill="x", pady=(0, 6))
+        bar = Flow(parent)
+        bar.pack(fill="x", pady=(0, 2))
         big = ("Segoe UI", 18, "bold")
         self.btn_start = ctk.CTkButton(bar, text="START INSPECTION", width=230, height=54, font=big, fg_color=GOOD,
                                        text_color=ACC_T, hover_color=GOOD, command=self.start_line)
@@ -1610,9 +1672,12 @@ class ProductionTab:
         self.btn_snap = ctk.CTkButton(bar, text="Capture\ntest frame", width=100, height=54, command=self.capture_test)
         self.btn_snap.pack(side="left", padx=6)
 
+        self.start_hint = ctk.CTkLabel(parent, text="", font=theme.SMALL, anchor="w", justify="left", text_color=DIM)
+        self.start_hint.pack(fill="x", padx=4, pady=(0, 6))
+
         # ---- engineer row: task, cameras, simulator, timing, calibration (hidden for the operator)
         self.eng = ctk.CTkFrame(parent, fg_color=PANEL, border_width=1, border_color=WARN)
-        eng1 = ctk.CTkFrame(self.eng, fg_color="transparent")
+        eng1 = Flow(self.eng)
         eng1.pack(fill="x", padx=6, pady=(6, 2))
         ctk.CTkLabel(eng1, text="ENGINEER", font=theme.CAPS, text_color=WARN).pack(side="left", padx=(4, 10))
         ctk.CTkLabel(eng1, text="AI task").pack(side="left", padx=(0, 4))
@@ -1633,7 +1698,7 @@ class ProductionTab:
         self.adv_btn.pack(side="left", padx=4)
         ctk.CTkButton(eng1, text="HALT (latch)", width=100, fg_color="transparent", border_width=1, text_color=BAD,
                       border_color=BAD, command=self.halt_line).pack(side="right", padx=4)
-        eng2 = ctk.CTkFrame(self.adv, fg_color="transparent")
+        eng2 = Flow(self.adv)
         eng2.pack(fill="x", padx=6, pady=(0, 2))
         self.tim = {}
         for key, label, w in self.TIMING:
@@ -1651,7 +1716,7 @@ class ProductionTab:
         if cfg["estop_device"]:
             self.estop_dev.insert(0, str(cfg["estop_device"]))
         self.estop_dev.pack(side="left")
-        eng3 = ctk.CTkFrame(self.adv, fg_color="transparent")
+        eng3 = Flow(self.adv)
         eng3.pack(fill="x", padx=6, pady=(0, 6))
         ctk.CTkButton(eng3, text="Auto-set timing", width=120, fg_color=ACC, text_color=ACC_T, hover_color=ACC_H,
                       command=self.auto_timing).pack(side="left", padx=4)
@@ -1698,7 +1763,7 @@ class ProductionTab:
         self.mid.pack(fill="both", expand=True, pady=(0, 6))
         for c, w in enumerate((4, 4, 5)):
             self.mid.grid_columnconfigure(c, weight=w, uniform="m")
-        self.mid.grid_rowconfigure(0, weight=1)
+        self.mid.grid_rowconfigure(0, weight=1, minsize=400)          # the cameras never shrink below a usable picture
         self.cam_lbl, self.cam_img, self.cam_title, self.live_lbl = {}, {}, {}, {}
         self._live: dict = {}                       # slot -> (shown text, colour) from the live scorer
         self._live_stop = threading.Event()
@@ -1755,7 +1820,7 @@ class ProductionTab:
         # so START / STOP / BOTTLE write the HMI bits M10 / M11 / M2 the ladder ORs with X1 / X2 / X0.
         man = ctk.CTkFrame(parent, fg_color=PANEL, border_width=1, border_color=LINE)
         man.pack(fill="x", pady=(0, 6), before=self.mid)
-        mrow = ctk.CTkFrame(man, fg_color="transparent")
+        mrow = Flow(man)
         mrow.pack(fill="x", padx=6, pady=(6, 2))
         ctk.CTkLabel(mrow, text="MANUAL CONTROL", font=theme.CAPS, text_color=WARN).pack(side="left", padx=(6, 10))
         self.pb_arm = ctk.CTkSwitch(mrow, text="MANUAL MODE (automatic inspection off)", command=self.on_manual)
@@ -1764,7 +1829,7 @@ class ProductionTab:
         for action, label, col in (("START", "START conveyor", GOOD), ("STOP", "STOP conveyor", BAD),
                                    ("TRIGGER", "BOTTLE trigger", ACC), ("PASS", "PASS (M0)", GOOD),
                                    ("REJECT", "FIRE REJECT CYLINDER", BAD)):
-            b = ctk.CTkButton(mrow, text=label, width=150, fg_color=col, text_color=ACC_T, state="disabled",
+            b = ctk.CTkButton(mrow, text=label, width=max(150, 9 * len(label)), fg_color=col, text_color=ACC_T, state="disabled",
                               command=lambda a=action: self.plc_button(a))
             b.pack(side="left", padx=3)
             self.pb_btns[action] = b
@@ -1772,7 +1837,7 @@ class ProductionTab:
         self.pb_clear = ctk.CTkButton(mrow, text="CLEAR STUCK TRIGGER", width=170, fg_color=WARN, text_color=ACC_T,
                                       state="disabled", command=self.clear_stuck_trigger)
         self.pb_clear.pack(side="left", padx=3)
-        lrow = ctk.CTkFrame(man, fg_color="transparent")
+        lrow = Flow(man)
         lrow.pack(fill="x", padx=6, pady=(0, 6))
         self.io_lamps = {}
         for dev, name in (("X0", "X0 sensor"), ("X1", "X1 start"), ("X2", "X2 stop"), ("M2", "M2 trigger"),
@@ -2190,6 +2255,9 @@ class ProductionTab:
         svc.watch_x0 = True                                   # bottle accounting: X0 edges with no trigger
         self.line = line
         self.line.start()
+        if self.app.settings.get("plc_heartbeat", False) and not svc.simulator_mode:
+            self.hb = HeartbeatPump(svc)                      # San_test ladder: M20 about once a second
+            self.hb.start()
         self._start_live(insp, cams)
         self.msg = (f"Line started ({'SIMULATOR' if svc.simulator_mode else 'REAL PLC'}), run {store.run_id}", DIM)
         self._table_sig = None
@@ -2256,6 +2324,9 @@ class ProductionTab:
                 self.line.stop()
                 self.msg = ("Line stopped by the operator.", DIM)
             self.app.plc.watch_x0 = False
+            if getattr(self, "hb", None) is not None:
+                self.hb.stop()
+                self.hb = None
             self.app.cams.stop()
             self._cam_test = False
             self.btn_camtest.configure(text="CAMERA TEST")
@@ -2274,6 +2345,12 @@ class ProductionTab:
                 return messagebox.showwarning("Cannot reset", "The hardware E-stop input still reads pressed.")
         else:
             self.app.alarms.acknowledge_all()
+        if self.app.settings.get("plc_heartbeat", False) and self.app.plc.is_connected():
+            try:
+                self.app.plc.service_write("FAULT_RESET")           # San_test net 13: RST M3
+            except Exception as e:                                # noqa: BLE001
+                self.msg = (f"PLC fault reset failed: {e}", BAD)
+                return
         self.msg = ("Fault reset / alarms acknowledged.", DIM)
 
     def close(self):
@@ -2534,22 +2611,29 @@ class ProductionTab:
         self.line_lbl.configure(text=st.replace("_", " "))
         self.state_reason.configure(text=(MS.LOOK[st][1] if st in (MS.READY, MS.RUNNING) else why)[:150])
         live = self.running or self._warming is not None or self._loading
-        self.btn_start.configure(state="normal" if st == MS.READY else "disabled",
-                                 fg_color=GOOD if st == MS.READY else PANEL_2)
-        self.btn_stop.configure(state="normal" if live or self._cam_test else "disabled",
-                                fg_color=BAD if live or self._cam_test else PANEL_2)
+        # a disabled control is flat and outlined (never a pale copy of its coloured state), so "can press" reads at a glance
         alarm = bool(self.app.alarms.active()) or (self.line is not None and self.line.halted)
-        self.btn_reset.configure(state="normal" if alarm else "disabled", fg_color=WARN if alarm else PANEL_2)
+        for btn, on, col in ((self.btn_start, st == MS.READY, GOOD), (self.btn_stop, live or self._cam_test, BAD),
+                             (self.btn_reset, alarm, WARN)):
+            btn.configure(state="normal" if on else "disabled", fg_color=col if on else "transparent",
+                          border_width=0 if on else 1, border_color=theme.HOVER_2, text_color=ACC_T if on else MUTED,
+                          text_color_disabled=MUTED, hover_color=col)
         idle = not live and not self._testing
         self.btn_test.configure(state="normal" if idle else "disabled")
         self.btn_camtest.configure(state="normal" if idle or self._cam_test else "disabled")
         # the start checklist (or, while running, what the machine is doing)
         if not live:
-            lines = [f"{'OK ' if c.ok else 'NO '} {c.name}: {c.detail}"[:70] for c in MS.readiness(f)]
+            checks = MS.readiness(f)
+            lines = [f"{'✓' if c.ok else '✗'}  {c.name}: {c.detail}"[:90] for c in checks]
             self.ready_lbl.configure(text="START CHECKS\n" + "\n".join(lines),
                                      text_color=INK if st == MS.READY else WARN)
+            todo = [c.name for c in checks if not c.ok]
+            self.start_hint.configure(
+                text=("●  Ready - press START INSPECTION" if not todo else "⚠  Start blocked:  " + "   ·   ".join(todo)),
+                text_color=GOOD if not todo else WARN)
         else:
             self.ready_lbl.configure(text="", text_color=DIM)
+            self.start_hint.configure(text="", text_color=DIM)
 
     RECONNECT_S = 3.0                            # a dead line camera is reopened at most this often
 
@@ -2595,7 +2679,7 @@ class ProductionTab:
         self._show_state(f)
         self._monitor(f)
         real = not svc.simulator_mode
-        self.plc_mode_lbl.configure(text="REAL PLC" if real else "SIMULATOR", fg_color=BAD if real else ACC)
+        self.plc_mode_lbl.configure(text="REAL PLC" if real else "SIMULATOR", fg_color=theme.NAV if real else INFO)
         self.sim_btn.configure(state="normal" if svc.simulator_mode and f["plc_run"] else "disabled")
         manual = bool(self.pb_arm.get())
         if manual and self.busy:                                  # something started the cameras / line: leave manual
@@ -3818,7 +3902,7 @@ class TrainTab:
         self._live_hist: list[dict] = []   # this session's epochs, for the live charts
         self._prev_metrics: dict | None = None  # active model's metrics before this run started
 
-        bar = ctk.CTkFrame(parent, fg_color=PANEL)
+        bar = Flow(parent, fg_color=PANEL)
         bar.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(bar, text="Epochs").pack(side="left", padx=(10, 6), pady=8)
         self.epochs = ctk.CTkEntry(bar, width=60)
@@ -3839,7 +3923,7 @@ class TrainTab:
                      text="Unreviewed images are excluded. The split is by detected scene, never random.",
                      ).pack(side="left", padx=6)
 
-        sel = ctk.CTkFrame(parent, fg_color=PANEL)
+        sel = Flow(parent, fg_color=PANEL)
         sel.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(sel, text="MODEL SELECTION", text_color=DIM,
                      font=("Segoe UI", 13, "bold")).pack(side="left", padx=(10, 10), pady=8)
@@ -3864,9 +3948,9 @@ class TrainTab:
 
         curves = ctk.CTkFrame(left, fg_color="transparent")
         curves.pack(fill="x", pady=(0, 8))
-        self.c_loss = chart_panel(curves, "TRAINING LOSS PER EPOCH", 470, 190,
+        self.c_loss = chart_panel(curves, "TRAINING LOSS PER EPOCH", 400, 190,
                                   "Fills in live while training runs.")
-        self.c_f1 = chart_panel(curves, "VALIDATION MACRO-F1 PER EPOCH", 470, 190,
+        self.c_f1 = chart_panel(curves, "VALIDATION MACRO-F1 PER EPOCH", 400, 190,
                                 "The checkpoint kept is the best epoch, not the last one.")
 
         self.log = ctk.CTkTextbox(left, height=180, font=MONO, fg_color=VIDEO_BG,
@@ -4167,7 +4251,7 @@ class LiveTab:
         self.checks: dict[str, ctk.CTkCheckBox] = {}
         self.sliders: dict[str, ctk.CTkSlider] = {}
 
-        bar = ctk.CTkFrame(parent, fg_color=PANEL)
+        bar = Flow(parent, fg_color=PANEL)
         bar.pack(fill="x", pady=(0, 8))
         self.btn_start = ctk.CTkButton(bar, text="Start", width=80, fg_color=ACC,
                                        text_color=ACC_T, hover_color=ACC_H,
@@ -5705,6 +5789,16 @@ def A_ok(data) -> bool:
     return True
 
 
+def _settle(app, cond, timeout: float = 5.0):
+    """Pump Tk until `cond()` holds (rail buttons map / unmap asynchronously; a fixed number of updates was flaky)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        app.update()
+        if cond():
+            return
+        time.sleep(0.05)
+
+
 def selftest():
     """Build every tab, pump the event loop, exercise the grid, then quit.
 
@@ -5748,14 +5842,12 @@ def selftest():
     assert app.lamps["PLC"].val.cget("text") and app.lamps["MODEL"].val.cget("text")
     # operator mode: only the production pages in the rail; engineer mode: everything. Pages are never destroyed.
     app.set_mode("operator", save=False)
-    for _ in range(6):                                          # let Tk map / unmap the rail buttons
-        app.update(); time.sleep(0.05)
+    _settle(app, lambda: app.tabs.buttons["Production"].winfo_ismapped() and not app.tabs.buttons["Label"].winfo_ismapped())
     assert app.tabs.get() in App.OPERATOR_PAGES
     assert app.tabs.buttons["Production"].winfo_ismapped() and not app.tabs.buttons["Label"].winfo_ismapped()
     assert not app.tab_production.eng.winfo_ismapped(), "engineer controls shown to the operator"
     app.set_mode("engineer", save=False)
-    for _ in range(6):
-        app.update(); time.sleep(0.05)
+    _settle(app, lambda: app.tabs.buttons["Label"].winfo_ismapped() and app.tab_production.eng.winfo_ismapped())
     assert app.tabs.buttons["Label"].winfo_ismapped() and app.tab_production.eng.winfo_ismapped()
     _selftest_label(app)
 
@@ -6070,7 +6162,7 @@ def selftest():
         assert {r["final"] for r in rows} == {infer.PASS, infer.REJECT, infer.FAULT}
         assert any(r["evidence"] for r in rows if r["final"] == infer.REJECT)
         app.tab_history.refresh()
-        assert app.tab_history.list.size() == 4 and app.tab_history.cnt["REJECT"].cget("text") == "1"
+        assert len(app.tab_history.list.get_children()) == 4 and app.tab_history.cnt["REJECT"].cget("text") == "1"
         shift_now = next(n for n, a, b in app.tab_history.shifts()
                          if production_store.shift_span(time.strftime("%Y-%m-%d"), (n, a, b))[0] <= time.time()
                          < production_store.shift_span(time.strftime("%Y-%m-%d"), (n, a, b))[1])             if any(production_store.shift_span(time.strftime("%Y-%m-%d"), x)[0] <= time.time()
@@ -6092,7 +6184,7 @@ def selftest():
         app.tab_health.show_logs()
         assert "line started" in app.tab_health.log_box.get("1.0", "end") or             any("line started" in x for x in applog.search("machine"))
         app.tab_models.refresh()
-        assert app.tab_models.list.size() >= 1
+        assert len(app.tab_models.list.get_children()) >= 1
         assert not any(w[0] in (PLC_AM.address_of("Y0"), PLC_AM.address_of("Y1")) for w in fake.writes)
     finally:
         pt.stop_line()

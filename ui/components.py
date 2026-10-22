@@ -32,6 +32,60 @@ def button(parent, text, command, kind: str = "secondary", width: int = 0, tip: 
     return b
 
 
+class Flow(ctk.CTkFrame):
+    """A row of widgets that WRAPS onto further lines when the window is narrower than the row, instead of running off
+    the right edge. Children are created with this frame as parent and packed as usual (`.pack(side=...)` is only
+    a placeholder); the first layout pass takes them over and places them left to right in creation order."""
+
+    GAP = 4
+    PAD_X = 6
+    PAD_Y = 4
+
+    def __init__(self, master, **kw):
+        kw.setdefault("fg_color", "transparent")
+        super().__init__(master, **kw)
+        self._last_w = 0
+        self._busy = False
+        self.bind("<Configure>", self._on_cfg)
+        self.after_idle(self.reflow)
+
+    def _on_cfg(self, e):
+        if e.width != self._last_w:
+            self._last_w = e.width
+            self.reflow()
+
+    def _child_cfg(self, _e=None):
+        if not self._busy:
+            self.after_idle(self.reflow)
+
+    def reflow(self):
+        if self._busy:
+            return
+        self._busy = True
+        try:
+            width = self.winfo_width()
+            if width < 80:
+                return
+            x, y, rowh = self.PAD_X, self.PAD_Y, 0
+            for w in self.winfo_children():
+                if w.winfo_manager() == "pack":
+                    w.pack_forget()
+                if w.winfo_manager() not in ("", "place"):
+                    continue
+                if not getattr(w, "_flow_bound", False):        # a child that changes size (text, mode) re-flows the row
+                    w._flow_bound = True
+                    w.bind("<Configure>", self._child_cfg, add="+")
+                rw, rh = w.winfo_reqwidth(), w.winfo_reqheight()
+                if x > self.PAD_X and x + rw > width - self.PAD_X:
+                    x, y, rowh = self.PAD_X, y + rowh + self.GAP, 0
+                w.place(x=x, y=y)
+                x += rw + self.GAP + 4
+                rowh = max(rowh, rh)
+            self.configure(height=max(1, y + rowh + self.PAD_Y))
+        finally:
+            self._busy = False
+
+
 def section(parent, title: str, padx=12, pady=(10, 4)):
     lab = ctk.CTkLabel(parent, text=title.upper(), text_color=DIM, font=theme.CAPS, anchor="w")
     lab.pack(fill="x", padx=padx, pady=pady)

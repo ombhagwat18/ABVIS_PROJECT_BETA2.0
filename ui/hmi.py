@@ -25,10 +25,11 @@ from vision import dataset as D
 from line import machine_cycle as MC
 from registry import model_registry as MR
 from ui import theme
+from ui.components import Flow
 from line import tracking as TR
 from vision import verdict as V
 from ui.theme import (ACC, ACC_H, ACC_SOFT, ACC_T, BAD, DIM, FIELD, GOOD, INK, LINE, MONO, OFF, PANEL, PANEL_2,
-                   WARN)
+                   WARN, HOVER)
 
 SEV_COLOUR = {AL.CRITICAL: BAD, AL.MAJOR: BAD, AL.WARNING: WARN, AL.INFO: DIM}
 
@@ -46,6 +47,46 @@ def listbox(parent, height=12):
                     highlightthickness=1, highlightbackground=LINE, highlightcolor=ACC, bd=0, activestyle="none",
                     height=height, exportselection=False)
     return lb
+
+
+def table(parent, columns, height=14):
+    """A themed, aligned, sortable-looking table (ttk.Treeview in a frame with a scroll bar). `columns` =
+    ((key, heading, width), ...). Returns the Treeview; pack its `.master` frame."""
+    from tkinter import ttk
+    st = ttk.Style()
+    st.theme_use("clam")
+    st.configure("Nexa.Treeview", background=FIELD, fieldbackground=FIELD, foreground=INK, rowheight=30, borderwidth=0,
+                 font=theme.BODY)
+    st.configure("Nexa.Treeview.Heading", background=PANEL_2, foreground=DIM, font=theme.CAPS, relief="flat",
+                 padding=(8, 6))
+    st.map("Nexa.Treeview", background=[("selected", ACC_SOFT)], foreground=[("selected", INK)])
+    st.map("Nexa.Treeview.Heading", background=[("active", HOVER)])
+    frame = ctk.CTkFrame(parent, fg_color="transparent")
+    tv = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings", style="Nexa.Treeview",
+                      height=height, selectmode="browse")
+    order = {"col": None, "rev": False}
+
+    def sort_by(col):
+        """Click a heading to sort by it (numbers as numbers); click again to reverse."""
+        rev = order["col"] == col and not order["rev"]
+        order["col"], order["rev"] = col, rev
+
+        def k(i):
+            v = str(tv.set(i, col))
+            try:
+                return (0, float(v), "")
+            except ValueError:
+                return (1, 0.0, v.lower())
+        for n, i in enumerate(sorted(tv.get_children(""), key=k, reverse=rev)):
+            tv.move(i, "", n)
+    for key, head, w in columns:
+        tv.heading(key, text=head, anchor="w", command=lambda c=key: sort_by(c))
+        tv.column(key, width=w, minwidth=40, anchor="w", stretch=key in ("model", "warn"))
+    sb = ctk.CTkScrollbar(frame, command=tv.yview)
+    tv.configure(yscrollcommand=sb.set)
+    tv.pack(side="left", fill="both", expand=True)
+    sb.pack(side="right", fill="y")
+    return tv
 
 
 def _f(v, fmt="{:.3f}", none="--"):
@@ -366,7 +407,7 @@ class HistoryTab:
     def __init__(self, app, parent):
         self.app = app
         self.rows: list = []
-        bar = ctk.CTkFrame(parent, fg_color=PANEL)
+        bar = Flow(parent, fg_color=PANEL)
         bar.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(bar, text="Day").pack(side="left", padx=(12, 4), pady=8)
         self.day = ctk.CTkOptionMenu(bar, values=["-"], width=130, command=lambda _=None: self.refresh())
@@ -407,20 +448,24 @@ class HistoryTab:
         low = ctk.CTkFrame(parent, fg_color="transparent")
         low.pack(fill="both", expand=True)
         left = box(low, "INSPECTIONS (newest first)", side="left", fill="both", expand=True, padx=(0, 8))
-        head = f"{'TIME':<9}{'ID':<8}{'RESULT':<8}{'DEFECTS':<26}{'CONF':>5}  {'CMD':<7}{'PLC':<26}EVIDENCE"
-        ctk.CTkLabel(left, text=head, font=MONO, text_color=DIM, anchor="w").pack(fill="x", padx=12)
-        self.list = listbox(left, 16)
-        self.list.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        self.list = table(left, (("time", "TIME", 80), ("id", "ID", 70), ("result", "RESULT", 80),
+                                 ("defects", "DEFECTS", 150), ("conf", "CONF", 70), ("cmd", "CMD", 70),
+                                 ("plc", "PLC", 120), ("ev", "PICTURE", 95)), height=16)
+        self.list.master.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        for tag, col in (("PASS", GOOD), ("REJECT", BAD), ("FAULT", WARN)):
+            self.list.tag_configure(tag, foreground=col)
         self.list.bind("<Double-Button-1>", lambda e: self.open_evidence())
         right = box(low, "PICTURE OF THE SELECTED BOTTLE  /  ALARMS (this day)", side="left", fill="both", padx=0)
         self.preview = ctk.CTkLabel(right, text="select an inspection to see its picture", text_color=OFF,
                                     fg_color=theme.VIDEO_BG, height=230, corner_radius=6)
         self.preview.pack(fill="x", padx=12, pady=(0, 6))
         self._pv = None
-        self.list.bind("<<ListboxSelect>>", lambda e: self.show_preview())
-        self.alarm_list = listbox(right, 8)
-        self.alarm_list.configure(width=58)
-        self.alarm_list.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        self.list.bind("<<TreeviewSelect>>", lambda e: self.show_preview())
+        self.alarm_list = table(right, (("time", "TIME", 80), ("state", "STATE", 80), ("code", "ALARM", 130),
+                                        ("cause", "CAUSE", 120)), height=6)
+        self.alarm_list.master.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        for tag, col in (("BAD", BAD), ("WARN", WARN), ("DIM", DIM)):
+            self.alarm_list.tag_configure(tag, foreground=col)
 
     def shifts(self) -> list:
         """settings.json "shifts": [[name, "HH:MM", "HH:MM"], ...]; default A 06-14, B 14-22, C 22-06."""
@@ -435,7 +480,7 @@ class HistoryTab:
 
     def _chart(self, parent, title):
         f = box(parent, title, side="left", fill="both", expand=True, padx=(0, 8))
-        cv = ctk.CTkCanvas(f, width=360, height=150, bg=PANEL, highlightthickness=0)
+        cv = ctk.CTkCanvas(f, width=240, height=150, bg=PANEL, highlightthickness=0)
         cv.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         return cv
 
@@ -458,29 +503,31 @@ class HistoryTab:
         charts.bar_chart(self.c_def, [d for d, _ in defs], [v for _, v in defs], colours=[BAD] * len(defs))
         hours = sorted(s["hourly"])
         charts.bar_chart(self.c_hour, [f"{h:02d}" for h in hours], [sum(s["hourly"][h].values()) for h in hours])
-        self.list.delete(0, "end")
-        for r in self.rows:
+        self.list.delete(*self.list.get_children())
+        for n, r in enumerate(self.rows):
             d = r["data"]
             conf = "" if r["confidence"] is None else f"{r['confidence']:.2f}"
-            line = (f"{time.strftime('%H:%M:%S', time.localtime(r['wall'])):<9}{r['inspection_id']:<8}{V.shown_result(r['final']):<8}"
-                    f"{(', '.join(V.pretty(x) for x in (r['defects'] or '').split(';') if x) or ('-' if r['final'] == 'PASS' else d.get('reason', '')))[:25]:<26}{conf:>5}  "
-                    f"{(r['command'] or '-'):<7}{(r['plc_status'] or '')[:25]:<26}{'yes' if r['evidence'] else ''}")
-            self.list.insert("end", line)
-            self.list.itemconfig("end", fg={"PASS": GOOD, "REJECT": BAD}.get(r["final"], WARN))
-        self.alarm_list.delete(0, "end")
-        for a in st.alarms(day):
-            self.alarm_list.insert("end", f"{time.strftime('%H:%M:%S', time.localtime(a['wall']))} {a['state'][:5]:<6}"
-                                          f"{a['code']:<26}{a['cause'][:60]}")
-            self.alarm_list.itemconfig("end", fg=SEV_COLOUR.get(a["severity"], DIM) if a["state"] == "ACTIVE" else DIM)
+            defects = (', '.join(V.pretty(x) for x in (r['defects'] or '').split(';') if x)
+                       or ('-' if r['final'] == 'PASS' else d.get('reason', '')))
+            self.list.insert("", "end", iid=str(n), tags=(r["final"] if r["final"] in ("PASS", "REJECT") else "FAULT",),
+                             values=(time.strftime('%H:%M:%S', time.localtime(r['wall'])), r['inspection_id'],
+                                     V.shown_result(r['final']), defects, conf, r['command'] or '-',
+                                     r['plc_status'] or '', 'yes' if r['evidence'] else ''))
+        self.alarm_list.delete(*self.alarm_list.get_children())
+        for n, a in enumerate(st.alarms(day)):
+            col = SEV_COLOUR.get(a["severity"], DIM) if a["state"] == "ACTIVE" else DIM
+            self.alarm_list.insert("", "end", iid=str(n), tags=({BAD: "BAD", WARN: "WARN"}.get(col, "DIM"),),
+                                   values=(time.strftime('%H:%M:%S', time.localtime(a['wall'])), a['state'][:6],
+                                           a['code'], a['cause']))
         self.where.configure(text=f"{st.path}")
         self.model_lbl.configure(text=chr(10).join(model_results_lines()))
 
     def show_preview(self):
         """The evidence picture of the selected bottle, inside the page (no external viewer)."""
-        sel = self.list.curselection()
+        sel = self.list.selection()
         if not sel:
             return
-        r = self.rows[sel[0]]
+        r = self.rows[int(sel[0])]
         p = self.app.store().folder / r["evidence"] if r["evidence"] else None
         if p is None or not p.exists():
             self._pv = None
@@ -514,10 +561,10 @@ class HistoryTab:
             messagebox.showinfo("Report", out)
 
     def open_evidence(self):
-        sel = self.list.curselection()
+        sel = self.list.selection()
         if not sel:
             return messagebox.showinfo("Evidence", "Select an inspection first.")
-        r = self.rows[sel[0]]
+        r = self.rows[int(sel[0])]
         if not r["evidence"]:
             return messagebox.showinfo("Evidence", f"No evidence image kept for {r['inspection_id']} "
                                                    f"(policy: {self.app.settings.get('evidence_policy', 'REJECT_AND_FAULT')}).")
@@ -565,7 +612,7 @@ class HealthTab:
             badge = ctk.CTkLabel(head, text="--", font=theme.CAPS, text_color=ACC_T, fg_color=OFF, corner_radius=6,
                                  width=90)
             badge.pack(side="right")
-            body = ctk.CTkLabel(f, text="", font=MONO, anchor="nw", justify="left")
+            body = ctk.CTkLabel(f, text="", font=MONO, anchor="nw", justify="left", wraplength=400)
             body.pack(fill="both", expand=True, padx=12, pady=(0, 10))
             self.cards[n] = (badge, body)
         from line import applog
@@ -713,7 +760,7 @@ class ModelsTab:
         self.app = app
         self.reg = MR.Registry()
         self.entries: list = []
-        bar = ctk.CTkFrame(parent, fg_color=PANEL)
+        bar = Flow(parent, fg_color=PANEL)
         bar.pack(fill="x", pady=(0, 8))
         for text, fn, primary in (("Refresh", self.refresh, False), ("Validate...", self.validate, False),
                                   ("Approve", self.approve, False), ("Reject", self.reject, False),
@@ -727,11 +774,12 @@ class ModelsTab:
         body = ctk.CTkFrame(parent, fg_color="transparent")
         body.pack(fill="both", expand=True)
         left = box(body, "MODELS", side="left", fill="both", expand=True, padx=(0, 8))
-        ctk.CTkLabel(left, text=f"{'STATUS':<11}{'MODEL':<40}{'ARCH':<17}{'TEST':<6}WARNINGS", font=MONO,
-                     text_color=DIM, anchor="w").pack(fill="x", padx=12)
-        self.list = listbox(left, 18)
-        self.list.pack(fill="both", expand=True, padx=12, pady=(0, 10))
-        self.list.bind("<<ListboxSelect>>", lambda e: self.show())
+        self.list = table(left, (("status", "STATUS", 120), ("model", "MODEL", 300), ("arch", "ARCH", 150),
+                                 ("test", "TEST", 60), ("warn", "WARNINGS", 300)))
+        self.list.master.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        self.list.bind("<<TreeviewSelect>>", lambda e: self.show())
+        for tag, col in (("ACTIVE", GOOD), ("REJECTED", DIM), ("ARCHIVED", DIM), ("WARN", WARN)):
+            self.list.tag_configure(tag, foreground=col)
         right = box(body, "DETAILS", side="left", fill="both", expand=True)
         self.detail = ctk.CTkTextbox(right, font=MONO, wrap="word")
         self.detail.pack(fill="both", expand=True, padx=12, pady=(0, 10))
@@ -743,25 +791,26 @@ class ModelsTab:
             self.entries = []
             self.detail.delete("1.0", "end")
             self.detail.insert("end", f"registry error: {type(e).__name__}: {e}")
-        self.list.delete(0, "end")
-        for e in self.entries:
-            self.list.insert("end", f"{e['status']:<11}{e['name'][:39]:<40}{str(e.get('arch'))[:16]:<17}"
-                                    f"{'yes' if e['has_test'] else 'NO':<6}{'; '.join(e['warnings'])[:80]}")
-            self.list.itemconfig("end", fg={MR.ACTIVE: GOOD, MR.REJECTED: DIM, MR.ARCHIVED: DIM}.get(
-                e["status"], WARN if e["warnings"] else INK))
+        self.list.delete(*self.list.get_children())
+        for i, e in enumerate(self.entries):
+            tag = {MR.ACTIVE: "ACTIVE", MR.REJECTED: "REJECTED", MR.ARCHIVED: "ARCHIVED"}.get(
+                e["status"], "WARN" if e["warnings"] else "")
+            self.list.insert("", "end", iid=str(i), tags=(tag,), values=(
+                e["status"], e["name"], str(e.get("arch") or ""), "yes" if e["has_test"] else "NO",
+                "; ".join(e["warnings"])))
 
     def selected(self):
-        sel = self.list.curselection()
+        sel = self.list.selection()
         if not sel:
             messagebox.showinfo("Models", "Select a model first.")
             return None
-        return self.entries[sel[0]]
+        return self.entries[int(sel[0])]
 
     def show(self):
-        sel = self.list.curselection()
+        sel = self.list.selection()
         if not sel:
             return
-        e = self.entries[sel[0]]
+        e = self.entries[int(sel[0])]
         import json
         txt = {k: v for k, v in e.items() if k not in ("history", "thresholds")}
         self.detail.delete("1.0", "end")
@@ -1428,7 +1477,7 @@ class RoiDialog(ctk.CTkToplevel):
         self.pick.pack(side="left", padx=8)
         self.info = ctk.CTkLabel(row, text="", text_color=DIM)
         self.info.pack(side="left", padx=8)
-        self.cv = tk.Canvas(self, width=self.W, height=self.H, bg="#1a1d23", highlightthickness=0, cursor="crosshair")
+        self.cv = tk.Canvas(self, width=self.W, height=self.H, bg=theme.VIDEO_BG, highlightthickness=0, cursor="crosshair")
         self.cv.pack(padx=12, pady=4)
         self.cv.bind("<ButtonPress-1>", self._down)
         self.cv.bind("<B1-Motion>", self._move)
@@ -1486,7 +1535,7 @@ class RoiDialog(ctk.CTkToplevel):
                 self._place_saved = False
             self.info.configure(text=f"{w}x{h}")
         if self.rect:
-            self.cv.create_rectangle(*self.rect, outline="#e6c828", width=2)
+            self.cv.create_rectangle(*self.rect, outline=theme.HILITE, width=2)
         self.after(120, self._tick)
 
     def _down(self, e):

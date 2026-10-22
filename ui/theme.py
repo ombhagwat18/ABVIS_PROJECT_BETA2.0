@@ -73,6 +73,7 @@ LINE = _P["LINE"]            # borders, gridlines, separators
 VIDEO_BG = _P["VIDEO_BG"]    # behind camera frames and image previews (dark in both themes)
 FIELD = _P["FIELD"]          # entry / text box background
 HOVER, HOVER_2 = _P["HOVER"], _P["HOVER_2"]
+HILITE = "#e6c828"           # drawing highlight on a video frame (ROI rectangle); not a machine state
 HEADER = _P["HEADER"]        # top bar (brand, product, lamps) and footer
 
 # ---------------------------------------------------------------- navigation rail
