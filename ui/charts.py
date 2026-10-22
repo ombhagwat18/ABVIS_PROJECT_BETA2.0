@@ -63,8 +63,11 @@ def line_chart(canvas, series: dict[str, list[float]], x_values=None,
     canvas.delete("all")
     w = int(canvas.winfo_width()) or int(canvas["width"])
     h = int(canvas.winfo_height()) or int(canvas["height"])
-    x0, y0, x1, y1 = _plot_box(w, h)
     series = {k: v for k, v in series.items() if v}
+    # several series: the legend sits in its own column to the right, never on top of the lines
+    side = legend and len(series) > 1
+    legend_w = min(170, max(90, 7 * max((len(k) for k in series), default=8) + 30)) if side else 0
+    x0, y0, x1, y1 = _plot_box(w - legend_w, h)
     if not series:
         canvas.create_text(w // 2, h // 2, text="no data yet", fill=DIM, font=font)
         return
@@ -108,7 +111,11 @@ def line_chart(canvas, series: dict[str, list[float]], x_values=None,
         elif len(pts) == 2:
             canvas.create_oval(pts[0] - 3, pts[1] - 3, pts[0] + 3, pts[1] + 3,
                                fill=colour, outline="")
-        if legend:
+        if legend and side:
+            ly = y0 + 6 + k * 16
+            canvas.create_line(x1 + 14, ly, x1 + 30, ly, fill=colour, width=3)
+            canvas.create_text(x1 + 36, ly, text=label.replace("_", " "), anchor="w", fill=INK, font=font)
+        elif legend:
             ly = y0 + 4 + k * 14
             canvas.create_line(x1 - 92, ly, x1 - 76, ly, fill=colour, width=3)
             canvas.create_text(x1 - 72, ly, text=label, anchor="w", fill=INK, font=font)
@@ -122,6 +129,7 @@ def bar_chart(canvas, labels: list[str], values: list[float], colours=None,
     w = int(canvas.winfo_width()) or int(canvas["width"])
     h = int(canvas.winfo_height()) or int(canvas["height"])
     x0, y0, x1, y1 = _plot_box(w, h)
+    y1 = max(y0 + 20, y1 - 14)                      # room for a two-line label under each bar
     if not values:
         canvas.create_text(w // 2, h // 2, text="no data yet", fill=DIM, font=font)
         return
@@ -134,11 +142,8 @@ def bar_chart(canvas, labels: list[str], values: list[float], colours=None,
     canvas.create_line(x0, y1, x1, y1, fill=DIM)
 
     slot = (x1 - x0) / max(1, len(values))
-    # Fit the label to its slot instead of a fixed character count: seven
-    # defect names at ~65 px each ran into one another and read as one long
-    # word. Below about four characters, stagger every other label instead.
-    maxch = max(3, int(slot / (font[1] * 0.72)))
-    stagger = maxch < 6
+    # The whole name is kept: "damaged_bottle" and "damaged_label" must not both read "damaged...". Underscores
+    # become spaces and the label wraps inside its slot (two lines); only a single very long word is cut.
     for i, (lab, v) in enumerate(zip(labels, values)):
         cx = x0 + slot * (i + 0.5)
         bw = min(46, slot * 0.62)
@@ -146,10 +151,8 @@ def bar_chart(canvas, labels: list[str], values: list[float], colours=None,
         canvas.create_rectangle(cx - bw / 2, top, cx + bw / 2, y1,
                                 fill=(colours[i] if colours else BLUE), outline="")
         canvas.create_text(cx, top - 8, text=_fmt(v), fill=INK, font=font)
-        text = lab if len(lab) <= maxch else lab[:max(1, maxch - 1)] + "…"
-        canvas.create_text(cx, y1 + 12 + (10 if stagger and i % 2 else 0),
-                           text=text if not stagger else lab[:maxch],
-                           fill=DIM, font=font)
+        canvas.create_text(cx, y1 + 6, text=str(lab).replace("_", " "), anchor="n", width=max(30, slot - 4),
+                           justify="center", fill=DIM, font=font)
 
 
 def confusion(canvas, tp: int, fp: int, fn: int, tn: int, font=("Segoe UI", 10)):

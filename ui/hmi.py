@@ -775,14 +775,14 @@ class ModelsTab:
         body = ctk.CTkFrame(parent, fg_color="transparent")
         body.pack(fill="both", expand=True)
         left = box(body, "MODELS", side="left", fill="both", expand=True, padx=(0, 8))
-        self.list = table(left, (("status", "STATUS", 120), ("model", "MODEL", 300), ("arch", "ARCH", 150),
-                                 ("test", "TEST", 60), ("warn", "WARNINGS", 300)))
+        self.list = table(left, (("status", "STATUS", 120), ("model", "MODEL", 300), ("arch", "ARCH", 120),
+                                 ("test", "TEST", 60), ("warn", "WARNINGS", 170)))
         self.list.master.pack(fill="both", expand=True, padx=12, pady=(0, 10))
         self.list.bind("<<TreeviewSelect>>", lambda e: self.show())
         for tag, col in (("ACTIVE", GOOD), ("REJECTED", DIM), ("ARCHIVED", DIM), ("WARN", WARN)):
             self.list.tag_configure(tag, foreground=col)
-        right = box(body, "DETAILS", side="left", fill="both", expand=True)
-        self.detail = ctk.CTkTextbox(right, font=MONO, wrap="word")
+        right = box(body, "DETAILS", side="left", fill="both")
+        self.detail = ctk.CTkTextbox(right, font=("Consolas", 13), wrap="word", width=430)
         self.detail.pack(fill="both", expand=True, padx=12, pady=(0, 10))
 
     def refresh(self):
@@ -790,6 +790,7 @@ class ModelsTab:
             self.entries = self.reg.discover()
         except Exception as e:                                         # noqa: BLE001 - shown
             self.entries = []
+            self.detail.configure(state="normal")
             self.detail.delete("1.0", "end")
             self.detail.insert("end", f"registry error: {type(e).__name__}: {e}")
         self.list.delete(*self.list.get_children())
@@ -799,6 +800,11 @@ class ModelsTab:
             self.list.insert("", "end", iid=str(i), tags=(tag,), values=(
                 e["status"], e["name"], str(e.get("arch") or ""), "yes" if e["has_test"] else "NO",
                 "; ".join(e["warnings"])))
+        keep = next((str(i) for i, e in enumerate(self.entries) if e["status"] == MR.ACTIVE), None)
+        first = self.list.get_children()
+        if first:                                     # the details pane is never empty: the running model, else the first
+            self.list.selection_set(keep or first[0])
+            self.show()
 
     def selected(self):
         sel = self.list.selection()
@@ -807,18 +813,59 @@ class ModelsTab:
             return None
         return self.entries[int(sel[0])]
 
+    NEXT = {MR.CANDIDATE: "Next: run the held-out test, then Validate... (real-camera check + note).",
+            MR.VALIDATED: "Next: Approve, then ACTIVATE.",
+            MR.APPROVED: "Next: press ACTIVATE to put it on the line (the current model is archived and can be rolled back).",
+            MR.ACTIVE: "This model is running now. Roll back from the buttons above if it misbehaves.",
+            MR.ARCHIVED: "Replaced earlier. Roll back re-activates the latest archived model.",
+            MR.REJECTED: "Rejected - it will never be activated."}
+
     def show(self):
+        """The selected model in words: what it is, what to do next, the numbers, the warnings, the history."""
         sel = self.list.selection()
         if not sel:
             return
         e = self.entries[int(sel[0])]
-        import json
-        txt = {k: v for k, v in e.items() if k not in ("history", "thresholds")}
-        self.detail.delete("1.0", "end")
-        self.detail.insert("end", json.dumps(txt, indent=2, default=str))
+        ds = e.get("dataset") or {}
+        out = [f"{e['name']}", f"STATUS  {e['status']}   {self.NEXT.get(e['status'], '')}", ""]
+        if e.get("warnings"):
+            out += ["NEEDS ATTENTION"] + [f"  ⚠  {w}" for w in e["warnings"]] + [""]
+        out += ["MODEL",
+                f"  kind            {e.get('kind')}", f"  architecture    {e.get('arch')}",
+                f"  size            {e.get('size_mb')} MB", f"  trained         {e.get('trained')}"]
+        if ds and any(ds.get(k) is not None for k in ("n_train", "n_val", "n_test")):
+            out.append("  images          " + "  /  ".join(f"{n} {ds[k]}" for n, k in (("train", "n_train"), ("val", "n_val"),
+                                                                                       ("test", "n_test")) if ds.get(k) is not None))
+        if e.get("val_macro_f1") is not None:
+            out.append(f"  validation F1   {e['val_macro_f1']:.4f}   (saturated on every checkpoint - judge on the test set)")
+        for k, lab in (("latency_ms_gpu", "latency GPU"), ("latency_ms_cpu", "latency CPU")):
+            if e.get(k) is not None:
+                out.append(f"  {lab:<15} {e[k]} ms")
+        out += ["", "HELD-OUT TEST"]
+        t = e.get("test")
+        if isinstance(t, dict) and t:
+            for k, v in t.items():
+                if isinstance(v, dict):                              # per-class numbers, one short line each
+                    out.append(f"  {str(k)}")
+                    short = {"precision": "P", "recall": "R", "map50": "mAP50", "map50_95": "mAP95"}
+                    out += [f"    {c:<7}" + " ".join(f"{short.get(m, m)} {x:.2f}" if isinstance(x, float) else f"{m} {x}"
+                                                      for m, x in (vals or {}).items()) for c, vals in v.items()
+                            if isinstance(vals, dict)] or [f"    {v}"]
+                else:
+                    out.append(f"  {str(k):<15} {v:.4f}" if isinstance(v, float) else f"  {str(k):<15} {v}")
+        else:
+            out.append("  none recorded")
+        crit = e.get("critical") or {}
+        if crit:
+            out += ["", "CRITICAL CLASSES (a miss ships a defect)"] + [
+                f"  {k:<15} {'no test positives' if v is None else v}" for k, v in crit.items()]
         if e.get("history"):
-            self.detail.insert("end", "\n\nHISTORY\n" + "\n".join(
-                f"{h['time']}  {h['status']:<10} {h['by']}: {h['note']}" for h in e["history"]))
+            out += ["", "HISTORY"] + [f"  {h['time']}  {h['status']:<10} {h['by']}: {h['note']}" for h in e["history"]]
+        out += ["", "FILE", f"  {e.get('checkpoint')}"]
+        self.detail.configure(state="normal")
+        self.detail.delete("1.0", "end")
+        self.detail.insert("end", chr(10).join(out))
+        self.detail.configure(state="disabled")
 
     def _do(self, fn, ok_msg):
         try:

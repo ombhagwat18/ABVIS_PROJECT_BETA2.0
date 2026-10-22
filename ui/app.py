@@ -4086,7 +4086,7 @@ class TrainTab:
             row.pack(fill="x", pady=(0, 8))
             c_bars = chart_panel(row, "RECALL BY DEFECT", 470, 210,
                                  "Recall is the number that matters - a missed defect ships.")
-            charts.bar_chart(c_bars, [d[:12] for d in scored],
+            charts.bar_chart(c_bars, list(scored),
                              [m["per_defect"][d]["recall"] for d in scored],
                              colours=[charts.GREEN if m["per_defect"][d]["recall"] >= 0.9
                                       else charts.AMBER if m["per_defect"][d]["recall"] >= 0.7
@@ -5098,7 +5098,7 @@ class AnalysisTab:
 
         scored = [d for d in m["defects"] if m["per_defect"][d]["n_pos"]]
         if scored:
-            charts.bar_chart(self.c_bars, [d[:12] for d in scored],
+            charts.bar_chart(self.c_bars, list(scored),
                              [m["per_defect"][d]["recall"] for d in scored],
                              colours=[charts.GREEN if m["per_defect"][d]["recall"] >= 0.9
                                       else charts.AMBER if m["per_defect"][d]["recall"] >= 0.7
