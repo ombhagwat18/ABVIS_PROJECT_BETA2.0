@@ -55,8 +55,9 @@ def table(parent, columns, height=14):
     from tkinter import ttk
     st = ttk.Style()
     st.theme_use("clam")
-    st.configure("Nexa.Treeview", background=FIELD, fieldbackground=FIELD, foreground=INK, rowheight=30, borderwidth=0,
-                 font=theme.BODY)
+    st.configure("Nexa.Treeview", background=FIELD, fieldbackground=FIELD, foreground=INK, rowheight=30, borderwidth=1,
+                 bordercolor=LINE, lightcolor=LINE, darkcolor=LINE, font=theme.BODY)
+    st.layout("Nexa.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])      # no focus ring around the table
     st.configure("Nexa.Treeview.Heading", background=PANEL_2, foreground=DIM, font=theme.CAPS, relief="flat",
                  padding=(8, 6))
     st.map("Nexa.Treeview", background=[("selected", ACC_SOFT)], foreground=[("selected", INK)])
@@ -81,7 +82,7 @@ def table(parent, columns, height=14):
             tv.move(i, "", n)
     for key, head, w in columns:
         tv.heading(key, text=head, anchor="w", command=lambda c=key: sort_by(c))
-        tv.column(key, width=w, minwidth=40, anchor="w", stretch=key in ("model", "warn"))
+        tv.column(key, width=w, minwidth=40, anchor="w", stretch=True)
     sb = ctk.CTkScrollbar(frame, command=tv.yview)
     tv.configure(yscrollcommand=sb.set)
     tv.pack(side="left", fill="both", expand=True)

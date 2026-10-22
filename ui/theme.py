@@ -54,6 +54,10 @@ SERIES_DARK = ["#60a5fa", "#a78bfa", "#2dd4bf", "#f472b6", "#93c5fd", "#c4b5fd",
 
 
 def _chosen() -> str:
+    import os
+    forced = os.environ.get("NEXA_THEME")           # development / screenshots: NEXA_THEME=dark, never written to settings
+    if forced in ("light", "dark"):
+        return forced
     try:
         v = json.loads((Path(__file__).resolve().parent.parent / "settings.json").read_text(encoding="utf-8")).get("ui_theme")
     except (OSError, ValueError):

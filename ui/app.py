@@ -1458,7 +1458,7 @@ class MachineTab:
         st = h["link_state"]
         self.state.configure(text=st, text_color={PLC_CONNECTED: GOOD, PLC_DEGRADED: WARN, PLC_FAULT: BAD}.get(st, DIM))
         self.where_lbl.configure(text="SIMULATOR" if svc.simulator_mode else "REAL PLC",
-                                 fg_color=ACC if svc.simulator_mode else BAD)
+                                 fg_color=INFO if svc.simulator_mode else theme.NAV_HOVER)
         snap = svc.snapshot() if st == PLC_CONNECTED else None
         if snap is not None and snap["age_s"] > 1.5:     # connected but the values are old: do not show them as live
             snap = None
@@ -1833,10 +1833,12 @@ class ProductionTab:
                               command=lambda a=action: self.plc_button(a))
             b.pack(side="left", padx=3)
             self.pb_btns[action] = b
+            b._on_col = col
         # a trigger nobody will answer keeps M2 ON and the ladder then blocks every new bottle: clear it with a PASS
         self.pb_clear = ctk.CTkButton(mrow, text="CLEAR STUCK TRIGGER", width=170, fg_color=WARN, text_color=ACC_T,
                                       state="disabled", command=self.clear_stuck_trigger)
         self.pb_clear.pack(side="left", padx=3)
+        self.pb_clear._on_col = WARN
         lrow = Flow(man)
         lrow.pack(fill="x", padx=6, pady=(0, 6))
         self.io_lamps = {}
@@ -2679,17 +2681,20 @@ class ProductionTab:
         self._show_state(f)
         self._monitor(f)
         real = not svc.simulator_mode
-        self.plc_mode_lbl.configure(text="REAL PLC" if real else "SIMULATOR", fg_color=theme.NAV if real else INFO)
+        self.plc_mode_lbl.configure(text="REAL PLC" if real else "SIMULATOR", fg_color=theme.NAV_HOVER if real else INFO)
         self.sim_btn.configure(state="normal" if svc.simulator_mode and f["plc_run"] else "disabled")
         manual = bool(self.pb_arm.get())
         if manual and self.busy:                                  # something started the cameras / line: leave manual
             self.pb_arm.deselect()
             manual = False
         pb_ok = svc.operator_controls and f["plc_run"] and manual and not self._pb_busy
-        for b in self.pb_btns.values():
-            b.configure(state="normal" if pb_ok else "disabled")
         stuck = self.stuck_trigger() if f["plc_run"] else None
-        self.pb_clear.configure(state="normal" if stuck is not None and manual and not self._pb_busy else "disabled")
+        for b, on in [(b, pb_ok) for b in self.pb_btns.values()] + [
+                (self.pb_clear, stuck is not None and manual and not self._pb_busy)]:
+            # same rule as START / STOP: coloured = you can press it now; outlined and quiet = you cannot
+            b.configure(state="normal" if on else "disabled", fg_color=b._on_col if on else "transparent",
+                        text_color=ACC_T if on else MUTED, text_color_disabled=MUTED,
+                        border_width=0 if on else 1, border_color=theme.HOVER_2, hover_color=b._on_col)
         snap = svc.snapshot()
         vals = {} if snap is None else {**snap.get("inputs", {}), **snap.get("outputs", {}), **snap.get("internal", {})}
         for dev, (lab, name) in self.io_lamps.items():
@@ -3960,7 +3965,7 @@ class TrainTab:
         self.metrics = ctk.CTkScrollableFrame(left, fg_color="transparent")
         self.metrics.pack(fill="both", expand=True, pady=(8, 0))
 
-        right = ctk.CTkFrame(body, fg_color=PANEL, width=340)
+        right = ctk.CTkFrame(body, fg_color=PANEL, width=400)
         right.pack(side="right", fill="y")
         right.pack_propagate(False)
         ctk.CTkLabel(right, text="MODEL VERSIONS", text_color=DIM,
