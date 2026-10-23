@@ -32,7 +32,7 @@ from pathlib import Path
 from plc import ladder_check as LC
 
 SCAN_S = 0.005                       # virtual scan time
-WATCH = ("X0", "X1", "X2", "X3", "M0", "M1", "M2", "M10", "M11", "Y0", "Y1", "T0", "T1")
+WATCH = ("X0", "X1", "X2", "X3", "M0", "M1", "M2", "M3", "M10", "M11", "M12", "M20", "Y0", "Y1", "T0", "T1", "T2")
 PASS, LIMIT, WARN, FAIL, SKIP = "PASS", "LIMIT", "WARN", "FAIL", "SKIP"
 
 
@@ -67,6 +67,7 @@ class Sim:
         self.bits[d] = int(v)
 
     def _cond(self, n, now_x) -> bool:
+        res = []
         for kind, d in n.contacts:
             v = self.get(d)
             if kind == "RISE ":
@@ -77,9 +78,10 @@ class Sim:
                 ok = not v
             else:
                 ok = bool(v)
-            if not ok:
-                return False
-        return True
+            res.append(ok)
+        if getattr(n, "parallel", False):                 # two contacts on a parallel link: X1 OR M10
+            return any(res)
+        return all(res)
 
     def scan(self):
         for n in self.nets:
@@ -158,14 +160,18 @@ def run_scenarios(nets, cfg: dict) -> list:
     t1 = float(cfg.get("plc_t1_s") or 0)
     pre = Sim(nets).preset                           # what the LADDER really has (not what settings.json says)
     lt0, lt1 = pre.get("T0", t0), pre.get("T1", t1)
-    cycle = lt0 + lt1                                # one full reject cycle in the PLC
+    from line import machine_cycle as MC
+    kind = LC.style(nets)                            # what the ladder IS: san_test (Y0 at once for T0) or final_year
+    want_kind = MC.ladder_kind(cfg)                  # what settings.json says it is
+    san = kind == "san_test"
+    cycle = lt0 if san else lt0 + lt1                # one full reject cycle in the PLC (M1 ON from M1 to M1 released)
     R: list = []
-    multi = [n for n in nets if len(n.contacts) > 1]
+    multi = [n for n in nets if getattr(n, "mixed", False)]
     uses = lambda dev: any(any(d == dev for _, d in n.contacts) or any(o[1:2] == (dev,) for o in n.outputs) for n in nets)  # noqa: E731
 
     if multi:
         R.append(Result("S0", "Ladder structure", WARN,
-                        "network(s) " + ", ".join(str(n.id) for n in multi) + " have several contacts; series/parallel "
+                        "network(s) " + ", ".join(str(n.id) for n in multi) + " mix series and parallel contacts; that "
                         "wiring is not read, so they are simulated as AND (series)",
                         "results for the devices those networks drive may be wrong; check them in ISPSoft"))
     # ---------------------------------------------------------------- trigger
@@ -208,22 +214,33 @@ def run_scenarios(nets, cfg: dict) -> list:
     m1off = s.times("M1", 0, tr)
     t_on = (on[0] - tr) if on else None
     width = (off[0] - on[0]) if on and off else None
-    stuck = [d for d in ("M1", "M2", "Y0", "T0", "T1") if s.get(d)]
+    stuck = [d for d in (("M1", "M2", "Y0", "T0") if san else ("M1", "M2", "Y0", "T0", "T1")) if s.get(d)]   # san: T1 = heartbeat timer
     if not on:
         R.append(Result("S4", "REJECT cycle: Y0 pulse", FAIL, "Y0 never turned ON after M1",
                         "no physical reject", _trace(s, tr)))
     else:
         bad = []
-        if t0 and abs(t_on - t0) > 0.2:
-            bad.append(f"Y0 starts {t_on:.2f} s after M1 but settings plc_t0_s = {t0:g} s")
-        if t1 and width is not None and abs(width - t1) > 0.2:
-            bad.append(f"Y0 stays ON {width:.2f} s but settings plc_t1_s = {t1:g} s")
+        if kind != want_kind:
+            bad.append(f"the ladder is the {kind} design but settings.json plc_ladder = {want_kind}: the software would time "
+                       f"the REJECT {'T0 early' if want_kind == 'final_year' else 'with no delay'}")
+        if san:
+            if t_on > 0.1:
+                bad.append(f"Y0 starts {t_on:.2f} s after M1 (the San_test design fires at once)")
+            if t0 and width is not None and abs(width - t0) > 0.1:
+                bad.append(f"Y0 stays ON {width:.2f} s but settings plc_t0_s = {t0:g} s")
+        else:
+            if t0 and abs(t_on - t0) > 0.2:
+                bad.append(f"Y0 starts {t_on:.2f} s after M1 but settings plc_t0_s = {t0:g} s")
+            if t1 and width is not None and abs(width - t1) > 0.2:
+                bad.append(f"Y0 stays ON {width:.2f} s but settings plc_t1_s = {t1:g} s")
         if width is not None and width < 0.05:
             bad.append(f"Y0 is ON only {width * 1000:.0f} ms (one-scan flash: the cylinder will not stroke)")
         R.append(Result("S4", "REJECT cycle timing matches settings.json",
                         FAIL if bad else PASS,
-                        "; ".join(bad) if bad else f"Y0 ON {t_on:.2f} s after M1 for {width:.2f} s (T0 {t0:g} s, T1 {t1:g} s)",
-                        "REJECT is sent at trigger + travel - T0; a wrong T0 ejects the wrong bottle (or nothing)",
+                        "; ".join(bad) if bad else (f"Y0 ON {t_on:.2f} s after M1 for {width:.2f} s (T0 {t0:g} s = pulse)" if san
+                                                    else f"Y0 ON {t_on:.2f} s after M1 for {width:.2f} s (T0 {t0:g} s, T1 {t1:g} s)"),
+                        ("REJECT (M1) must be written exactly when the bottle is at the cylinder" if san else
+                         "REJECT is sent at trigger + travel - T0; a wrong T0 ejects the wrong bottle (or nothing)"),
                         _trace(s, tr)))
         R.append(Result("S5", "Exactly one Y0 pulse per REJECT, and the cycle ends clean",
                         PASS if len(on) == 1 and not stuck else FAIL,
@@ -234,13 +251,13 @@ def run_scenarios(nets, cfg: dict) -> list:
     s = _fresh(nets)
     s.pulse("X0", 0.2)
     s.set("M1", 1)
-    s.run(max(lt0, 0.5) * 0.5)
+    s.run((lt0 if san else max(lt0, 0.5)) * 0.5)
     n_before = len(s.times("M2", 1))
     s.pulse("X0", 0.2)
     masked = len(s.times("M2", 1)) == n_before
     R.append(Result("S6", "A bottle arriving during a reject cycle still gets a trigger",
                     LIMIT if masked else PASS,
-                    (f"no trigger: M2 is held reset for the whole reject cycle (T0 + T1 = {cycle:g} s in the ladder). The software "
+                    (f"no trigger: M2 is held reset for the whole reject cycle ({'T0' if san else 'T0 + T1'} = {cycle:g} s in the ladder). The software "
                      "records this bottle as NOT INSPECTED") if masked else "second trigger raised",
                     "continuous production: bottles closer than T0 + T1 after a reject are not inspected"))
     s = _fresh(nets)
@@ -254,7 +271,7 @@ def run_scenarios(nets, cfg: dict) -> list:
                     if len(s.times("M2", 1)) == n_before else "yes",
                     "the answer to a REJECT is held until its dispatch time, so spacing must exceed the travel time"))
     # ---------------------------------------------------------------- conveyor
-    if any(n.id for n in nets if n.has_out("SET", "Y1") and len(n.contacts) > 1):
+    if any(n.id for n in nets if n.has_out("SET", "Y1") and getattr(n, "mixed", False)):
         R.append(Result("S8", "Conveyor start / stop", SKIP, "Y1 is driven by a network with several contacts (OR branches "
                         "not simulated)", "check start/stop on the real PLC"))
     else:
@@ -312,15 +329,56 @@ def run_scenarios(nets, cfg: dict) -> list:
                     "PC crash / freeze"))
     # ---------------------------------------------------------------- timing against the line settings
     from line import machine_cycle as MC
-    lc = MC.line_settings(dict(cfg, plc_t0_s=lt0 or 0.01, plc_t1_s=lt1 or 0.01))    # the ladder's T0, as the PLC runs it
+    lc = MC.line_settings(dict(cfg, plc_t0_s=lt0 or 0.01, plc_t1_s=lt1 or 0.01, plc_ladder=kind))    # the ladder's own T0
     bad = MC.timing_problem(lc)
     travel, measured = MC.travel_time(lc)
-    R.append(Result("S13", "The ladder's T0 fits the belt (software start check)",
-                    FAIL if bad else PASS,
+    R.append(Result("S13", "The ladder's timing fits the belt (software start check)",
+                    (WARN if san and not measured else FAIL) if bad else PASS,
                     bad or (f"ladder T0 {lt0:g} s < travel {travel:.2f} s" if measured else
                             f"ladder T0 {lt0:g} s is plausible, but distance / speed are not measured, so the real "
                             f"travel time is unknown"),
                     "the line refuses to start otherwise (machine_cycle.timing_problem)"))
+    if uses("M20"):
+        # ------------------------------------------------------------ San_test only: heartbeat watchdog, contactor feedback
+        s = _fresh(nets)
+        for _ in range(8):                                  # the PC pulses M20 once a second
+            s.pulse("M20", 0.02)
+            s.run(0.97)
+        ok_alive = not s.get("M3")
+        s.run(3.6)                                          # the PC stops
+        faulted = s.get("M3")
+        s.pulse("M20", 0.02)                                # heartbeat is back ...
+        s.pulse("M12", 0.02)                                # ... then the fault reset
+        cleared = not s.get("M3")
+        R.append(Result("S15", "PC heartbeat (M20 about once a second) keeps M3 clear; losing it sets M3",
+                        PASS if ok_alive and faulted and cleared else FAIL,
+                        (f"M3 stayed clear with a 1 s heartbeat, was set {lt1 if lt1 else 3:g} s after the heartbeat stopped, "
+                         "and M12 cleared it once the heartbeat was back") if ok_alive and faulted and cleared else
+                        f"alive={ok_alive} faulted={bool(faulted)} cleared={cleared}",
+                        "the PC must resume the heartbeat BEFORE sending the fault reset (M3 is set again every scan while T1 is done)",
+                        _trace(s)))
+        s = _fresh(nets)
+        s.pulse("M20", 0.02)
+        s.set("X3", 0)                                      # contactor feedback lost while Y1 is ON
+        for _ in range(3):
+            s.run(0.9)
+            s.pulse("M20", 0.02)
+        R.append(Result("S16", "Contactor feedback lost (Y1 ON, X3 OFF) sets M3",
+                        PASS if s.get("M3") else WARN,
+                        "M3 set after the contactor-fail timer" if s.get("M3") else "M3 not set",
+                        "the K1 contactor did not pull in / dropped out"))
+        s = _fresh(nets)
+        s.set("M3", 1)
+        s.run(0.2)
+        still = bool(s.get("Y1"))
+        s.pulse("X0", 0.2)
+        s.set("M1", 1)
+        s.run(0.5)
+        R.append(Result("S17", "System fault M3 stops the conveyor / blocks the reject inside the PLC",
+                        WARN if still else PASS,
+                        "no: with M3 set the belt keeps running and Y0 still strokes; only the SOFTWARE reacts (halt on M3)"
+                        if still else "Y1 dropped when M3 was set",
+                        "set estop_device = M3 and estop_active_high = true so the line halts, or add `M3 -> RST Y1` to the ladder"))
     gap = cycle
     mm = float(cfg.get("conveyor_mm_s") or 0)
     R.append(Result("S14", "Minimum bottle spacing after a REJECT", LIMIT,
@@ -347,7 +405,8 @@ def simulate(path, cfg: dict) -> tuple:
 
 def report(path, cfg: dict, detail: bool = False) -> str:
     v, c, res, nets = simulate(path, cfg)
-    out = [f"ladder: {path}", f"settings used: T0 {cfg.get('plc_t0_s')} s, T1 {cfg.get('plc_t1_s')} s, "
+    out = [f"ladder: {path}", f"settings used: plc_ladder {cfg.get('plc_ladder', 'final_year')}, "
+           f"T0 {cfg.get('plc_t0_s')} s, T1 {cfg.get('plc_t1_s')} s, "
            f"estop {cfg.get('estop_device') or '-'}", "", f"{v}",
            "  " + "  ".join(f"{k} {n}" for k, n in c.items()), ""]
     for r in res:
@@ -413,7 +472,26 @@ def selftest():
     assert r["S4"] == FAIL, r
     # several contacts in one network are flagged, not guessed
     r = st(run_scenarios(saved + [N(8, [("", "X1"), ("", "M10")], [("SET", "Y1")])], {"plc_t0_s": 15.0, "plc_t1_s": 5.0}))
+    mixed = N(8, [("", "X1"), ("", "M10")], [("SET", "Y1")])
+    mixed.mixed = True
+    r = st(run_scenarios(saved + [mixed], {"plc_t0_s": 15.0, "plc_t1_s": 5.0}))
     assert r["S0"] == WARN and r["S8"] == SKIP, r
+    # an OR network (X1 OR M10) is simulated as OR: M10 alone starts the conveyor
+    orn = N(8, [("", "X1"), ("", "M10")], [("SET", "Y1")])
+    orn.parallel = True
+    r = st(run_scenarios(saved + [orn], {"plc_t0_s": 15.0, "plc_t1_s": 5.0}))
+    assert "S0" not in r or r["S0"] != WARN, r
+    # the real San_test project: Y0 at once for T0 (0.3 s), settings must say plc_ladder san_test
+    if LC.SAN_TEST_ISP.exists():
+        sn, _ = LC.load(LC.SAN_TEST_ISP)
+        base = {"plc_t0_s": 0.3, "plc_t1_s": 3.0, "reject_travel_s": 4.0}
+        r = st(run_scenarios(sn, dict(base, plc_ladder="san_test")))
+        assert r["S1"] == r["S2"] == r["S3"] == r["S4"] == r["S5"] == r["S8"] == r["S9"] == PASS, r
+        assert r["S15"] == r["S16"] == PASS and r["S17"] == WARN and r["S6"] == LIMIT, r
+        r = st(run_scenarios(sn, dict(base, plc_ladder="final_year")))
+        assert r["S4"] == FAIL, r                             # software would reject T0 early on this ladder
+        r = st(run_scenarios(sn, {"plc_t0_s": 0.3, "plc_ladder": "san_test"}))
+        assert r["S13"] == WARN, r                            # travel not measured: the line will not start
     print("ok  ladder_sim: scan simulator on the saved ladder (timing mismatch caught, masking + one-bottle limits "
           "reported), contract ladder passes, Y0 flash and missing reject cycle caught, OR networks flagged")
 
@@ -423,5 +501,6 @@ if __name__ == "__main__":
     if "--selftest" in a:
         selftest()
     else:
-        path = Path(a[0]) if a and not a[0].startswith("--") else LC.DEFAULT_ISP
-        print(report(path, _settings_cfg(a), detail="--trace" in a))
+        cfg = _settings_cfg(a)
+        path = Path(a[0]) if a and not a[0].startswith("--") else LC.isp_for(cfg.get("plc_ladder"))
+        print(report(path, cfg, detail="--trace" in a))

@@ -27,6 +27,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_ISP = Path(__file__).resolve().parent.parent / "plc file" / "final_year" / "final_year.isp"
+SAN_TEST_ISP = Path(__file__).resolve().parent.parent / "plc file" / "San_test" / "San_test.isp"
+ISP_FILES = {"final_year": DEFAULT_ISP, "san_test": SAN_TEST_ISP}
+
+
+def isp_for(kind) -> Path:
+    """The ladder project for settings.json `plc_ladder` (final_year when unknown)."""
+    return ISP_FILES.get(str(kind or "").lower(), DEFAULT_ISP)
 CONTACT = {1: "", 2: "NOT ", 3: "RISE ", 4: "FALL "}
 COIL = {13: "OUT", 15: "SET", 16: "RST"}
 TIMER_BASE_S = 0.1                      # DVP-SS2 T0..T63: 100 ms base (INFERRED from Delta docs; matches simulator)
@@ -37,6 +44,8 @@ class Net:
     id: int
     contacts: list = field(default_factory=list)       # [(kind, device)]  kind: "", "NOT ", "RISE ", "FALL "
     outputs: list = field(default_factory=list)        # [("SET", "M2")] / [("TMR", "T0", "150")] / [("CNT", "C0", "9999")]
+    parallel: bool = False                             # two contacts joined by a parallel link (TYPE 6) = OR, e.g. X1 OR M10
+    mixed: bool = False                                # a parallel link we could not reduce to one OR: wiring unknown
 
     def text(self) -> str:
         cond = " , ".join(f"{k}{d}" for k, d in self.contacts) or "(always)"
@@ -79,6 +88,8 @@ def parse(text: str) -> tuple:
         n = Net(nid)
         root = re.search(r"<ROOTLINK_START>(.*?)<ROOTLINK_END>", block, re.S)
         out = re.search(r"<OUTLINK_START>(.*?)<OUTLINK_END>", block, re.S)
+        if root and len(re.findall(r"TYPE=6\b", root.group(1))) == 1:
+            n.parallel = True                                 # confirmed below: it needs exactly two contacts
         for part, is_root in ((root, True), (out, False)):
             if not part:
                 continue
@@ -96,6 +107,8 @@ def parse(text: str) -> tuple:
                     symb = re.search(r"SYMB=(\S+)", node).group(1)
                     n.outputs.append((symb, *(pending or [])))
                     pending = None
+        if n.parallel and len(n.contacts) != 2:
+            n.parallel, n.mixed = False, True                 # wiring we cannot reconstruct: simulated as series and flagged
         nets.append(n)
     return nets, comments
 
@@ -105,6 +118,14 @@ def load(path: Path) -> tuple:
 
 
 # --------------------------------------------------------------------------------- requirements
+def style(nets) -> str:
+    """san_test when Y0 is driven at once by `M1 AND NOT T0` (T0 = pulse length), else final_year (T0 = delay, T1 = pulse)."""
+    for n in nets:
+        if n.has_out("OUT", "Y0") and n.has_contact("M1") and n.has_contact("T0", ("NOT ",)):
+            return "san_test"
+    return "final_year"
+
+
 def _timer(nets, t):
     for n in nets:
         for o in n.outputs:
@@ -133,24 +154,33 @@ def check(nets, t0_s: float | None = None, t1_s: float | None = None, estop: str
     add("R3", bool(f), "M1 (REJECT answer) -> RST M2",
         f[0].text() if f else "missing", "REJECT acknowledge (M2 cleared; M1 may be held, HELD_UNTIL_DONE)")
     t0n, t0k = _timer(nets, "T0")
+    san = style(nets) == "san_test"
     y0 = find(lambda n: n.has_contact("T0") and n.has_out("OUT", "Y0"))
     t1n, t1k = _timer(nets, "T1")
     m1rst = find(lambda n: n.has_out("RST", "M1"))
-    ok = bool(t0n and t0n.has_contact("M1") and y0 and t1n and m1rst)
-    add("R4", ok, "Reject cycle in the PLC: M1 -> T0 (travel / lead) -> Y0 for T1 -> RST M1",
-        "; ".join(x.text() for x in ([t0n] if t0n else []) + y0 + m1rst) or "missing",
-        "physical reject (Python never writes Y0)")
+    if san:
+        ok = bool(t0n and t0n.has_contact("M1") and y0 and m1rst)
+        add("R4", ok, "Reject cycle in the PLC (San_test): M1 -> Y0 at once for T0 -> T0 resets M1",
+            "; ".join(x.text() for x in ([t0n] if t0n else []) + y0 + m1rst) or "missing",
+            "physical reject (Python never writes Y0); the software writes M1 exactly when the bottle is at the cylinder")
+    else:
+        ok = bool(t0n and t0n.has_contact("M1") and y0 and t1n and m1rst)
+        add("R4", ok, "Reject cycle in the PLC: M1 -> T0 (travel / lead) -> Y0 for T1 -> RST M1",
+            "; ".join(x.text() for x in ([t0n] if t0n else []) + y0 + m1rst) or "missing",
+            "physical reject (Python never writes Y0)")
     for rid, tn, k, want, name, why in (
-            ("R5", "T0", t0k, t0_s, "T0 travel/lead delay",
+            ("R5", "T0", t0k, t0_s, "T0 Y0 pulse length (San_test)" if san else "T0 travel/lead delay",
+             "settings plc_t0_s = how long Y0 stays ON; the stuck-reject timeout is T0 + 3 s" if san else
              "REJECT dispatch = trigger + travel - T0: a wrong T0 hits the wrong bottle"),
-            ("R6", "T1", t1k, t1_s, "T1 reject pulse",
+            ("R6", "T1", t1k, None if san else t1_s, "T1 heartbeat-lost timer (San_test)" if san else "T1 reject pulse",
+             "the PC heartbeat M20 must be pulsed more often than this or M3 (system fault) is set" if san else
              "pulse length and the 'stuck reject' timeout (T0 + T1 + 3 s); while M1 is held, triggers are masked")):
         if k is None:
             add(rid, False, f"{name} preset", "timer not found", "reject timing")
             continue
         sec = int(k) * TIMER_BASE_S
         if want is None:
-            R.append((rid, "INFO", f"{name} preset", f"K{k} = {sec:.1f} s", "settings plc_t0_s / plc_t1_s must equal it"))
+            R.append((rid, "INFO", f"{name} preset", f"K{k} = {sec:.1f} s", "settings plc_t0_s / plc_t1_s must equal it" if not san else why))
         else:
             same = abs(sec - want) < 0.05
             R.append((rid, "PRESENT" if same else "MISMATCH", f"{name} preset == settings.json ({want:g} s)",
@@ -168,7 +198,9 @@ def check(nets, t0_s: float | None = None, t1_s: float | None = None, estop: str
     dev = (estop or "X3").upper()
     e = find(lambda n: n.has_contact(dev) and (n.has_out("RST", "Y1") or n.has_out("RST", "Y0")))
     add("R9", bool(e), f"E-stop status input ({dev}, NC) stops the conveyor and blocks Y0",
-        "; ".join(x.text() for x in e) or f"{dev} not used by any network",
+        "; ".join(x.text() for x in e) or (f"{dev} is read by " + ", ".join(f"net {x.id}" for x in find(lambda n: n.has_contact(dev)))
+                                         + ", but it does not stop Y1 or Y0" if find(lambda n: n.has_contact(dev))
+                                         else f"{dev} not used by any network"),
         "estop_device halt + start check (the hardware E-stop must ALSO cut power on its own)")
     il = find(lambda n: n.has_out("OUT", "Y0") and n.has_contact("Y1"))
     add("R10", bool(il), "Y0 interlocked with the conveyor (no reject stroke while Y1 is OFF)",
@@ -178,9 +210,9 @@ def check(nets, t0_s: float | None = None, t1_s: float | None = None, estop: str
     held = bool(mask and t0n and t0n.has_contact("M1"))
     R.append(("R11", "MISMATCH" if held else "PRESENT",
               "Triggers NOT masked during a reject cycle (M1 must not hold M2 reset for T0 + T1)",
-              ("M1 is held for T0 + T1 and its rung resets M2 every scan: a bottle at X0 in that window gets no "
-               "trigger (BOTTLE_UNTRIGGERED)") if held else "no masking found",
-              "continuous production (bottle spacing < T0 + T1)"))
+              ("M1 is held for " + ("T0 (the Y0 pulse)" if san else "T0 + T1") + " and its rung resets M2 every scan: a "
+               "bottle at X0 in that window gets no trigger (BOTTLE_UNTRIGGERED)") if held else "no masking found",
+              "continuous production (bottle spacing < " + ("T0" if san else "T0 + T1") + ")"))
     to = find(lambda n: n.has_contact("M2") and any(o[0] == "TMR" for o in n.outputs))
     add("R12", bool(to), "Answer timeout: M2 ON longer than N s without an answer -> fail-safe (reject / stop)",
         "; ".join(x.text() for x in to) or "no timer on M2: if the PC dies the bottle passes uninspected",
@@ -188,13 +220,25 @@ def check(nets, t0_s: float | None = None, t1_s: float | None = None, estop: str
     hb = find(lambda n: n.has_contact("M20") and any(o[0] == "TMR" for o in n.outputs))
     add("R13", bool(hb), "PC heartbeat watchdog (PC toggles a bit, PLC stops the line if it stops)",
         "; ".join(x.text() for x in hb) or "none", "detect a crashed PC (software side not built either)")
+    if san:
+        m3 = find(lambda n: n.has_contact("M3"))
+        add("R14", bool(m3), "System fault M3 (heartbeat lost / contactor feedback) acts on the machine inside the PLC",
+            "; ".join(x.text() for x in m3) or "M3 is only SET (nets 10, 12) and RESET (net 13); no network uses it as a "
+            "contact, so it stops nothing by itself",
+            "the SOFTWARE halts on M3 (settings estop_device M3 + estop_active_high true); add a rung `M3 -> RST Y1` if the "
+            "PLC itself must stop the belt")
+        yy = find(lambda n: n.has_contact("Y1") and n.has_out("SET", "M2"))
+        add("R15", bool(yy), "Inspection trigger needs the conveyor running (RISE X0 AND Y1)",
+            "; ".join(x.text() for x in yy) or "no Y1 condition on the trigger",
+            "a bottle sensed with the belt stopped is not a production bottle")
     return R
 
 
 def report(path: Path, t0_s=None, t1_s=None, estop="") -> str:
     nets, comments = load(path)
-    lines = [f"ladder: {path}", "", "NETWORKS (as decoded; branch structure not reconstructed)"]
-    lines += ["  " + n.text() for n in nets]
+    lines = [f"ladder: {path}  (style: {style(nets)})", "",
+             "NETWORKS (as decoded; [OR] = two contacts on a parallel link, otherwise contacts are in series)"]
+    lines += ["  " + n.text() + ("   [OR]" if n.parallel else "") for n in nets]
     lines += ["", "DEVICE COMMENTS (from the project)"] + [f"  {k:<5} {v}" for k, v in comments.items()]
     lines += ["", "REQUIREMENTS"]
     for rid, st, req, found, need in check(nets, t0_s, t1_s, estop):
@@ -231,6 +275,13 @@ def selftest():
                   "R11": "MISMATCH", "R12": "ABSENT", "R13": "ABSENT"}, st
     st = {r[0]: r[1] for r in check(nets, 15.0, 5.0)}
     assert st["R5"] == "PRESENT" and st["R6"] == "PRESENT"
+    assert style(nets) == "final_year" and not any(n.parallel for n in nets)
+    if SAN_TEST_ISP.exists():                                           # the real San_test project, if present
+        sn, _ = load(SAN_TEST_ISP)
+        assert style(sn) == "san_test" and [n.parallel for n in sn[:3]] == [True, True, False], [n.parallel for n in sn]
+        sst = {r[0]: r[1] for r in check(sn, 0.3, 3.0)}
+        assert sst["R4"] == sst["R5"] == sst["R13"] == sst["R15"] == "PRESENT" and sst["R14"] == "ABSENT", sst
+        assert sst["R6"] == "INFO", sst
     print("ok  ladder_check: header search + raw deflate, networks / timers / comments parsed, 13 requirement "
           "checks on the decoded 7-network ladder")
 
@@ -246,15 +297,17 @@ if __name__ == "__main__":
             i = args.index(flag)
             opt[flag[2:]] = args[i + 1]
             del args[i:i + 2]
-    path = Path(args[0]) if args else DEFAULT_ISP
-    if "t0" not in opt or "t1" not in opt:
+    path = Path(args[0]) if args else None
+    if "t0" not in opt or "t1" not in opt or path is None:
         try:
             from vision import dataset as D
             s = D.load_settings()
+            path = path or isp_for(s.get("plc_ladder"))
             opt.setdefault("t0", s.get("plc_t0_s"))
             opt.setdefault("t1", s.get("plc_t1_s"))
             opt.setdefault("estop", s.get("estop_device") or "")
         except Exception:                                             # noqa: BLE001 - settings are optional here
             pass
+    path = path or DEFAULT_ISP
     print(report(path, float(opt["t0"]) if opt.get("t0") is not None else None,
                  float(opt["t1"]) if opt.get("t1") is not None else None, str(opt.get("estop") or "")))

@@ -114,7 +114,11 @@ def ladder_timers():
     truth, so the software takes these values instead of asking the operator to type them twice."""
     try:
         from plc import ladder_check as LC
-        nets, _ = LC.load(Path(__file__).resolve().parent.parent / "plc file" / "final_year" / "final_year.isp")
+        try:
+            kind = D.load_settings().get("plc_ladder")
+        except Exception:                                    # noqa: BLE001
+            kind = None
+        nets, _ = LC.load(LC.isp_for(kind))
         out = []
         for t in ("T0", "T1"):
             k = LC._timer(nets, t)[1]
@@ -2023,6 +2027,8 @@ class ProductionTab:
             return False
         if lad and lad[1]:
             sg["plc_t1_s"] = lad[1]
+        if lad and lad[0] and MC.ladder_kind(self.app.settings) == "san_test":
+            sg["plc_t0_s"] = lad[0]                          # San_test: the ladder's T0 is the Y0 pulse length
         for k, v in sg.items():
             self.tim[k].delete(0, "end")
             self.tim[k].insert(0, f"{v:g}")
@@ -2257,9 +2263,7 @@ class ProductionTab:
         svc.watch_x0 = True                                   # bottle accounting: X0 edges with no trigger
         self.line = line
         self.line.start()
-        if self.app.settings.get("plc_heartbeat", False) and not svc.simulator_mode:
-            self.hb = HeartbeatPump(svc)                      # San_test ladder: M20 about once a second
-            self.hb.start()
+        self._ensure_heartbeat()
         self._start_live(insp, cams)
         self.msg = (f"Line started ({'SIMULATOR' if svc.simulator_mode else 'REAL PLC'}), run {store.run_id}", DIM)
         self._table_sig = None
@@ -2325,10 +2329,7 @@ class ProductionTab:
             if self.line is not None and self.line.running:
                 self.line.stop()
                 self.msg = ("Line stopped by the operator.", DIM)
-            self.app.plc.watch_x0 = False
-            if getattr(self, "hb", None) is not None:
-                self.hb.stop()
-                self.hb = None
+            self.app.plc.watch_x0 = False                    # the heartbeat keeps running: it belongs to the PLC link
             self.app.cams.stop()
             self._cam_test = False
             self.btn_camtest.configure(text="CAMERA TEST")
@@ -2342,21 +2343,27 @@ class ProductionTab:
             self.line.halt("operator HALT button")
 
     def reset_halt(self):
-        if self.line is not None and self.line.halted:
-            if not self.line.reset():
-                return messagebox.showwarning("Cannot reset", "The hardware E-stop input still reads pressed.")
-        else:
-            self.app.alarms.acknowledge_all()
         if self.app.settings.get("plc_heartbeat", False) and self.app.plc.is_connected():
             try:
-                self.app.plc.service_write("FAULT_RESET")           # San_test net 13: RST M3
+                if self._ensure_heartbeat() is not None:
+                    self.app.plc.service_write("HEARTBEAT")         # T1 must be running again before M12 clears M3
+                self.app.plc.service_write("FAULT_RESET")           # San_test net 13: RST M3 (before the halt check below:
+                time.sleep(0.3)                                     # the line stays halted while M3 still reads set)
             except Exception as e:                                # noqa: BLE001
                 self.msg = (f"PLC fault reset failed: {e}", BAD)
                 return
+        if self.line is not None and self.line.halted:
+            if not self.line.reset():
+                return messagebox.showwarning("Cannot reset", "The fault / E-stop input still reads active.")
+        else:
+            self.app.alarms.acknowledge_all()
         self.msg = ("Fault reset / alarms acknowledged.", DIM)
 
     def close(self):
         self.stop_line()
+        if getattr(self, "hb", None) is not None:
+            self.hb.stop()
+            self.hb = None
 
     MANUAL_TEXT = {"START": "conveyor START pulse (M10)", "STOP": "conveyor STOP pulse (M11)",
                    "TRIGGER": "virtual bottle (M2)", "PASS": "PASS (M0)", "REJECT": "REJECT (M1): the cylinder fires"}
@@ -2664,6 +2671,21 @@ class ProductionTab:
                     self._reopening[slot] = False
             threading.Thread(target=work, name=f"reopen-{slot}", daemon=True).start()
 
+    def _ensure_heartbeat(self):
+        """San_test ladder: the PC sets M20 about once a second for as long as the PLC link is up (not only while the
+        line runs), otherwise M3 is raised 3 s after connecting and blocks Start until a RESET FAULT that itself needs
+        the heartbeat. Stopped when the link is gone; a new pump starts after reconnect."""
+        svc = self.app.plc
+        hb = getattr(self, "hb", None)
+        want = bool(self.app.settings.get("plc_heartbeat", False)) and not svc.simulator_mode and svc.is_connected()
+        if hb is not None and not want:
+            hb.stop()
+            self.hb = hb = None
+        if want and hb is None:
+            self.hb = HeartbeatPump(svc)
+            self.hb.start()
+        return self.hb if want else None
+
     def _monitor(self, f):
         """Condition alarms while the line is (starting to) run. Idle conditions are cleared: an operator who has
         not connected the PLC yet is not an alarm."""
@@ -2673,6 +2695,9 @@ class ProductionTab:
                         f"link {f['plc_link']}")
         A.set_condition("PLC_NOT_RUNNING", on and f["plc_run"] is False, "PLC reports STOP")
         A.set_condition("E_STOP", f["estop"] is True, f"input {self.app.settings.get('estop_device')} pressed")
+        hb = self._ensure_heartbeat()
+        A.set_condition("HEARTBEAT_FAILED", hb is not None and not hb.last_ok,
+                        hb.last_error if hb is not None else "")
 
     def _update(self):
         self._tick_n += 1
@@ -6084,6 +6109,8 @@ def selftest():
         assert pt.chosen() == [0, 1], pt.chosen()
         pt.task.set("Detection")
         app.settings["monitor_only"] = False                 # the checks below are about a line that REALLY rejects
+        app.settings["plc_ladder"] = "final_year"            # these checks use the final_year timing model (T0 = travel
+        app.settings["estop_device"] = ""                    # fallback), whatever ladder / E-stop input is saved
         pt.fault_action.set("REJECT")                        # ... so the operator's saved fault_action must not decide
         for key, val in (("plc_t0_s", "0.75"), ("plc_t1_s", "0.25"), ("inspect_frames", "2"),
                          ("inspection_to_reject_mm", "0"), ("conveyor_mm_s", "0"), ("reject_travel_s", "0"),

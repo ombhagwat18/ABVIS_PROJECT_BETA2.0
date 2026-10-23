@@ -98,8 +98,10 @@ LINE_DEFAULTS = {
     "capture_delay_s": 0.0,              # frames older than trigger + this are not used
     "inspection_to_reject_mm": 0.0,      # 0 = not measured: T0 is taken as the travel time
     "conveyor_mm_s": 0.0,
-    "plc_t0_s": 1.5,                     # the ladder's T0 (travel delay) -- stated contract K15
-    "plc_t1_s": 0.5,                     # the ladder's T1 (reject pulse) -- stated contract K5
+    "plc_ladder": "final_year",          # which ladder is in the PLC: "final_year" (M1 -> wait T0 -> Y0 for T1) or
+                                         # "san_test" (M1 -> Y0 at once, for T0; T1 is the heartbeat timer)
+    "plc_t0_s": 1.5,                     # the ladder's T0: final_year = travel delay (K15); san_test = Y0 pulse length (K3)
+    "plc_t1_s": 0.5,                     # final_year = reject pulse (K5); san_test = heartbeat-lost timer, not a reject time
     "reject_tolerance_s": 0.3,           # how late M1 may be sent and still hit the bottle
     "fault_action": "REJECT",            # what the PLC does with a FAULT bottle: REJECT | PASS
     "estop_device": "",                  # optional PLC input wired to the hardware E-stop status, e.g. "X3" ("" = none)
@@ -128,6 +130,30 @@ def line_settings(settings: dict) -> dict:
     return s
 
 
+LADDERS = ("final_year", "san_test")
+
+
+def ladder_kind(cfg: dict) -> str:
+    k = str(cfg.get("plc_ladder") or "final_year").lower()
+    return k if k in LADDERS else "final_year"
+
+
+def reject_lead_s(cfg: dict) -> float:
+    """Seconds between M1 being written and Y0 turning ON. final_year: the ladder waits T0. san_test: Y0 starts at once,
+    so M1 must be written exactly when the bottle reaches the cylinder."""
+    return float(cfg["plc_t0_s"]) if ladder_kind(cfg) == "final_year" else 0.0
+
+
+def reject_pulse_s(cfg: dict) -> float:
+    """How long Y0 stays ON: final_year T1, san_test T0."""
+    return float(cfg["plc_t1_s"]) if ladder_kind(cfg) == "final_year" else float(cfg["plc_t0_s"])
+
+
+def reject_cycle_s(cfg: dict) -> float:
+    """From M1 to the end of the reject cycle in the PLC (M1 released)."""
+    return reject_lead_s(cfg) + reject_pulse_s(cfg)
+
+
 def safety_problem(cfg: dict) -> str | None:
     """A FAULT bottle is one nobody could vouch for. Letting it through is allowed only while commissioning in
     monitor-only mode (where nothing is ever rejected anyway); in production it blocks Start."""
@@ -148,12 +174,13 @@ def fit_problem(cfg: dict) -> str | None:
     travel, measured = travel_time(cfg)
     if not measured or cfg.get("monitor_only"):
         return None
-    send_at = travel - float(cfg["plc_t0_s"])
+    send_at = travel - reject_lead_s(cfg)
     ready = float(cfg.get("capture_delay_s") or 0) + float(cfg["inspect_window_s"]) + AI_ALLOWANCE_S
     if ready > send_at:
         return (f"the verdict is ready {ready:.2f} s after the trigger (delay {cfg.get('capture_delay_s') or 0:g} + window "
                 f"{cfg['inspect_window_s']:g} + AI {AI_ALLOWANCE_S:g}) but the REJECT must be sent at {send_at:.2f} s "
-                f"(travel {travel:.2f} - T0 {cfg['plc_t0_s']:g}). Lower T0 in the ladder AND here, or shorten the window.")
+                f"(travel {travel:.2f} - lead {reject_lead_s(cfg):g}). " + ("Lower T0 in the ladder AND here, or shorten the window."
+                if ladder_kind(cfg) == "final_year" else "Shorten the window or move the cylinder further from the camera."))
     return None
 
 
@@ -171,6 +198,16 @@ def suggest_timing(cfg: dict, fixed_t0: float | None = None) -> tuple:
     window = float(cfg["inspect_window_s"])
     margin = 0.2
     notes = []
+    if ladder_kind(cfg) == "san_test":            # no ladder delay: only the watch window can give (T0 is the pulse length)
+        room = travel - delay - AI_ALLOWANCE_S - margin
+        win = min(window, math.floor(room * 10 + 1e-9) / 10)
+        if win < 0.6:
+            return None, [f"san_test ladder: M1 goes out the moment the bottle reaches the cylinder, so the travel from the "
+                          f"photo-eye must be at least {delay + 0.6 + AI_ALLOWANCE_S + margin:.1f} s (now {travel:.2f} s). "
+                          f"Move the cylinder further from the camera or slow the belt."]
+        return ({"inspect_window_s": round(win, 2)},
+                [f"san_test ladder: REJECT (M1) is written at trigger + {travel:.2f} s, Y0 fires at once for "
+                 f"{float(cfg['plc_t0_s']):g} s; watch window {win:.2f} s, verdict ready by {delay + win + AI_ALLOWANCE_S:.2f} s"])
     if fixed_t0 is not None:                      # the PLC's T0 is whatever the ladder holds: only the window can give
         room = travel - fixed_t0 - delay - AI_ALLOWANCE_S - margin
         win = min(window, room)
@@ -235,6 +272,14 @@ def timing_problem(cfg: dict) -> str | None:
     travel, measured = travel_time(cfg)
     if cfg.get("monitor_only"):
         return None                                  # no reject is ever fired: travel / T0 do not matter
+    if ladder_kind(cfg) == "san_test":
+        if not measured:
+            return ("travel time photo-eye -> reject cylinder is not measured. With the San_test ladder Y0 fires the moment "
+                    "M1 is written, so the software needs the real travel time (enter distance + belt speed, or a "
+                    "stopwatch value, or run timing_check.bat).")
+        if t0 <= 0 or t0 > 3.0:
+            return f"T0 {t0:g} s is the Y0 pulse length on the San_test ladder: expected 0.1 - 3 s (ladder has K3 = 0.3 s)."
+        return None
     if measured and t0 >= travel:
         return (f"T0 {t0:.2f} s >= travel {travel:.2f} s (reject_travel_s {cfg.get('reject_travel_s')}, or "
                 f"{cfg['inspection_to_reject_mm']} mm at {cfg['conveyor_mm_s']} mm/s): every REJECT would be late. Set the ladder's T0 below the "
@@ -1028,7 +1073,7 @@ class MachineCycle:
             self._send(b)
             return
         if b.command == REJECT:
-            b.dispatch_mono = b.scheduled_mono - float(self.cfg["plc_t0_s"])
+            b.dispatch_mono = b.scheduled_mono - reject_lead_s(self.cfg)
             if b.dispatch_mono > self.clock():
                 b.status = SCHEDULED                                 # sent by _due() at its deadline
                 return
@@ -1121,7 +1166,7 @@ class MachineCycle:
             due = [b for b in self._fifo if b.status == SCHEDULED and b.dispatch_mono <= now]
             passed = [b for b in self._fifo if b.status == IN_TRANSIT and now >= b.scheduled_mono]
             stuck = [b for b in self._fifo if b.status == REJECTING and b.sent_mono is not None
-                     and now - b.sent_mono > float(self.cfg["plc_t0_s"]) + float(self.cfg["plc_t1_s"]) + 3.0]
+                     and now - b.sent_mono > reject_cycle_s(self.cfg) + 3.0]
         for b in due:
             self._send(b)
         for b in passed:                                              # PASS bottle is past the reject station
@@ -1249,6 +1294,21 @@ def demo():
 
     # the verdict must be ready before the REJECT has to be sent (travel - T0)
     assert fit_problem(T(reject_travel_s=4.5, plc_t0_s=1.5, inspect_window_s=1.5)) is None
+    # ---- San_test ladder: M1 starts Y0 at once for T0, so no lead is subtracted and travel MUST be measured
+    S = lambda **k: line_settings({"plc_ladder": "san_test", "plc_t0_s": 0.3, "plc_t1_s": 3.0, **k})      # noqa: E731
+    assert reject_lead_s(S()) == 0.0 and reject_pulse_s(S()) == 0.3 and abs(reject_cycle_s(S()) - 0.3) < 1e-9
+    assert reject_lead_s(T()) == 1.5 and reject_pulse_s(T()) == 0.5          # final_year unchanged
+    assert "not measured" in timing_problem(S())                              # Y0 fires at once: travel is the timing
+    assert timing_problem(S(monitor_only=True)) is None
+    assert timing_problem(S(reject_travel_s=9.5)) is None
+    assert "pulse length" in timing_problem(S(reject_travel_s=9.5, plc_t0_s=15.0))
+    assert fit_problem(S(reject_travel_s=4.5, inspect_window_s=3.9)) is None        # ready 4.3 s <= 4.5 s (no T0 subtracted)
+    assert "ready" in fit_problem(S(reject_travel_s=4.0, inspect_window_s=3.9))
+    sg, why = suggest_timing(S(reject_travel_s=4.5, inspect_window_s=3.9))
+    assert sg == {"inspect_window_s": 3.9} and "san_test" in why[0], (sg, why)
+    sg, why = suggest_timing(S(reject_travel_s=9.5, inspect_window_s=3.9))
+    assert sg == {"inspect_window_s": 3.9}, sg
+    assert suggest_timing(S(reject_travel_s=1.0))[0] is None
     # production decision rules are on by default; a settings key overrides only itself
     assert line_settings({})["decision_rules"] == PRODUCTION_RULES
     r = line_settings({"decision_rules": {"pass_max": 0.2, "vote": "any"}})["decision_rules"]

@@ -223,6 +223,33 @@ def test_operator_write_is_opt_in_and_narrow():
         close(fake, lad, svc)
 
 
+def test_san_test_service_bits_and_heartbeat():
+    """San_test ladder: M20 heartbeat and M12 fault reset are the ONLY extra writes; nothing stays open afterwards."""
+    from .service import HeartbeatPump
+    fake, lad, svc = rig()
+    try:
+        _expect(AM.AddressError, lambda: svc.service_write("TRIGGER"), "only HEARTBEAT / FAULT_RESET are service bits")
+        assert not fake.writes
+        svc.service_write("HEARTBEAT")
+        assert writes(fake, "M20") == [(M("M20"), 1)], fake.writes
+        svc.service_write("FAULT_RESET")
+        assert writes(fake, "M12") == [(M("M12"), 1)], fake.writes
+        assert not AM.is_writable("M20") and not AM.is_writable("M12"), "the service opening was not closed again"
+        assert not AM.is_writable("Y0") and not AM.is_writable("Y1")
+        pump = HeartbeatPump(svc, period_s=0.05)
+        pump.start()
+        time.sleep(0.4)
+        pump.stop()
+        time.sleep(0.15)
+        n = len(writes(fake, "M20"))
+        assert pump.sent >= 4 and pump.failed == 0 and n >= 5, (pump.sent, pump.failed, n)
+        time.sleep(0.2)
+        assert len(writes(fake, "M20")) == n, "heartbeat kept writing after stop()"
+        assert not any(w[0] in (M("Y0"), M("Y1")) for w in fake.writes)
+    finally:
+        close(fake, lad, svc)
+
+
 def test_operator_manual_reject_and_pass():
     """Manual mode: REJECT / PASS write M1 / M0 once (the ladder clears them) and are refused while one is still ON."""
     fake, lad, svc = rig()
@@ -303,6 +330,35 @@ def test_ladder_reject_cycle_and_masking():
         assert svc.untriggered == 1 and len(ev) == 1 and "net 5" in ev[0].error, [e.error for e in ev]
         lad.trigger()                                        # after the cycle: triggers work again
         assert svc.wait_for_trigger(1.0) is not None
+    finally:
+        close(fake, lad, svc)
+
+
+def test_san_test_ladder_reject_is_immediate():
+    """San_test ladder: no trigger while the conveyor is stopped (RISE X0 AND Y1); once the belt runs, REJECT (M1) turns Y0
+    ON at once (no T0 delay) for T0 = 5 timer ticks, M1 is released by T0, and PASS never touches Y0."""
+    fake = FakePLC()
+    lad = FakeLadder(fake, t0_k=5, style="san_test")
+    svc = PLCService(_client(fake, timeout=0.4), poll_s=0.01, status_period_s=0.1)
+    svc.start(); svc.connect()
+    try:
+        lad.trigger(); assert svc.wait_for_trigger(0.3) is None, "a trigger was raised with the conveyor stopped"
+        lad.raw[M("X1")] = 1; time.sleep(0.05); lad.raw[M("X1")] = 0       # start button: Y1 latched on
+        time.sleep(0.05)
+        lad.trigger(hold_s=0.03); t = svc.wait_for_trigger(1.0); assert t is not None
+        assert svc.send_pass(t.id).ok and not lad.y0_log
+        time.sleep(0.08)
+        lad.trigger(); t = svc.wait_for_trigger(1.0)
+        t_sent = clock.now()
+        assert svc.send_reject(t.id).ok
+        t_end = clock.now() + 1.0
+        while len(lad.y0_log) < 2 and clock.now() < t_end:
+            time.sleep(0.005)
+        assert [v for _, v in lad.y0_log] == [1, 0], lad.y0_log
+        assert lad.y0_log[0][0] - t_sent < 0.15, "Y0 must start at once, not after T0"
+        pulse = lad.y0_log[1][0] - lad.y0_log[0][0]
+        assert abs(pulse - 5 * lad.tick) < 0.065, pulse
+        assert not svc.read_bit("M1") and svc.read_word("C1") == 1
     finally:
         close(fake, lad, svc)
 

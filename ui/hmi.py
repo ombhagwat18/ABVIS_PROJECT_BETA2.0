@@ -239,10 +239,10 @@ class SpeedCalibrationDialog(ctk.CTkToplevel):
             if d > 0:
                 src = TR.position_source(cfg)
                 travel, unc = src.eta_s(d), src.uncertainty_s(d)
-                t0 = float(cfg["plc_t0_s"])
+                t0 = MC.reject_lead_s(cfg)
                 lines += ["", f"inspection->reject {d:g} mm:",
                           f"  travel         {travel:.3f} s  +- {unc:.3f} s",
-                          f"  REJECT sent at trigger + {travel - t0:.3f} s  (travel - T0 {t0:g} s)",
+                          f"  REJECT sent at trigger + {travel - t0:.3f} s  (travel - lead {t0:g} s)",
                           f"  margin left    {travel - t0 - float(cfg['inspect_window_s']):.3f} s after the frame window"]
             else:
                 lines += ["", "inspection->reject distance not set yet (Line layout)."]

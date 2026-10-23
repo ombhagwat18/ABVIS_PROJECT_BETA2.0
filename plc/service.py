@@ -423,6 +423,26 @@ class PLCService:
             return {"action": action, "device": dev, "write_ms": ms}
         return self._call(job)
 
+    def service_write(self, name: str) -> dict:
+        """SAN_TEST ladder bits (address_map.SERVICE_BITS): HEARTBEAT -> M20, FAULT_RESET -> M12. One shot each, never
+        retried, refused when the PLC is not in RUN. Y stays unwritable; this opens exactly these two M bits."""
+        name = name.strip().upper()
+        if name not in AM.SERVICE_BITS:
+            raise AM.AddressError(f"unknown service bit {name!r} (only {sorted(AM.SERVICE_BITS)})")
+        dev = AM.SERVICE_BITS[name]
+
+        def job():
+            if not self._guard(self.client.heartbeat)["plc_run"]:
+                raise PLCError(f"{name} refused: PLC is not in RUN")
+            t0 = time.perf_counter()
+            with AM.sim_test_allow(dev):
+                self._guard(lambda: self.client.write_bit(dev, True))
+            ms = (time.perf_counter() - t0) * 1000
+            if name != "HEARTBEAT":                      # a heartbeat every second is not an event worth logging
+                self._event("SERVICE_WRITE", device=dev, latency_ms=ms, ack=f"{name} ({dev})")
+            return {"name": name, "device": dev, "write_ms": ms}
+        return self._call(job)
+
     def _guard(self, fn):
         """Run a PLC read; on a link failure make the loss visible (event + trigger bookkeeping)."""
         try:
@@ -694,3 +714,43 @@ class PLCService:
                 return res
             if self.ack_poll_s:
                 time.sleep(self.ack_poll_s)
+
+
+class HeartbeatPump:
+    """Sets the San_test heartbeat bit (M20) about once a second while the line runs. A failed write is counted and
+    shown, never retried in a burst; if the PC stops, the ladder's 3 s timer raises M3 by itself."""
+
+    def __init__(self, service, period_s: float = 1.0):
+        self.service, self.period_s = service, float(period_s)
+        self.sent = self.failed = 0
+        self.last_ok = True
+        self.last_error = ""
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="plc-heartbeat", daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        while not self._stop.is_set():                               # first beat at once, then one per period
+            try:
+                self.service.service_write("HEARTBEAT")
+                self.sent += 1
+                self.last_ok = True
+            except Exception as e:                                   # noqa: BLE001 - reported, the line decides
+                self.failed += 1
+                self.last_ok = False
+                self.last_error = f"{type(e).__name__}: {e}"
+            if self._stop.wait(self.period_s):
+                break
+
+    @property
+    def running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())

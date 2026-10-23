@@ -155,9 +155,15 @@ class FakeLadder:
         never produces a trigger Python can see.
     Timers count in 100 ms units like Delta's T0..T183; `scale` shrinks that base so tests run fast.
     The default presets are the stated contract (K15 = 1.5 s, K5 = 0.5 s); the saved file has K150/K50.
-    `ignore` = True stops nets 4/5 consuming commands (a PLC that never answers). NOT the real PLC."""
+    `ignore` = True stops nets 4/5 consuming commands (a PLC that never answers). NOT the real PLC.
 
-    def __init__(self, fake, scale=0.1, t0_k=15, t1_k=5, scan_s=0.002):
+    `style="san_test"` emulates plc file/San_test/San_test.isp instead (saved 2026-10-22): net 3 needs the conveyor
+    (RISE X0 AND Y1), net 6 is `M1 AND NOT T0 -> OUT Y0` (Y0 starts the moment M1 is ON and stays ON for T0 = t0_k,
+    no delay), net 7 `T0 -> RST M1`. T1 is the heartbeat timer there, so t1_k is not used. The heartbeat / fault
+    nets (8-13) are not emulated here."""
+
+    def __init__(self, fake, scale=0.1, t0_k=15, t1_k=5, scan_s=0.002, style="final_year"):
+        self.style = style
         self.f, self.tick = fake, 0.1 * scale
         self.t0_k, self.t1_k, self.scan_s = t0_k, t1_k, scan_s
         self.ignore = False
@@ -217,8 +223,9 @@ class FakeLadder:
             if x2:                                                        # net 2
                 b[Y1] = 0
             if x0 and not x0_prev:                                        # net 3
-                b[M2] = 1
                 self.x0_edges += 1
+                if self.style != "san_test" or b.get(Y1):                 # San_test: RISE X0 AND Y1
+                    b[M2] = 1
             x0_prev = x0
             m0 = bool(b.get(M0)) and not self.ignore                      # net 4
             if m0:
@@ -238,6 +245,19 @@ class FakeLadder:
             cnt1_prev = m1
             t0_done = t0_start is not None and now - t0_start >= self.t0_k * self.tick
             b[T0] = int(t0_done)
+            if self.style == "san_test":                                  # nets 6 + 7: Y0 at once, for T0
+                t1_start, r[T1] = None, 0
+                y0 = int(m1 and not t0_done)
+                if y0 != b.get(Y0, 0):
+                    self.y0_log.append((now, y0))
+                b[Y0] = y0
+                if t0_done:
+                    b[M1] = 0
+                with self.f.lock:
+                    bits.update({k: v for k, v in b.items() if b0.get(k) != v})
+                    regs.update({k: v for k, v in r.items() if r0.get(k) != v})
+                    self.f.inputs.update(image)
+                continue
             if t0_done:                                                   # net 6
                 t1_start = now if t1_start is None else t1_start
                 r[T1] = min(self.t1_k, int((now - t1_start) / self.tick))
@@ -329,7 +349,7 @@ def unit_tests():
     assert AM.address_of("T3") == 0x0603 and AM.address_of("D100") == 0x1064
     for bad in ("X8", "Y9", "Q1", "M", "10", "", "M-1", "X 1"):
         _expect(AM.AddressError, lambda b=bad: AM.parse(b), f"invalid device {bad!r}")
-    assert set(AM.PLC_MAP) == {"X0", "X1", "X2", "Y0", "Y1", "M0", "M1", "M2", "T0", "T1", "C0", "C1", "M1000"}
+    assert set(AM.PLC_MAP) == {"X0", "X1", "X2", "Y0", "Y1", "M0", "M1", "M2", "T0", "T1", "C0", "C1", "M1000", "M3", "M12", "M20"}
     assert "PASS command counter" in AM.PLC_MAP["C0"].meaning and "Python -> PLC PASS" in AM.PLC_MAP["M0"].meaning
     assert not AM.is_writable("C0") and not AM.is_writable("C1"), "counters are read-only"
     assert {d.name for d in AM.PLC_MAP.values() if d.writable} == {"M0", "M1"}, "only the two command bits are writable"

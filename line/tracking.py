@@ -142,7 +142,8 @@ def station_problems(cfg: dict, cameras) -> list:
     window = float(cfg.get("inspect_window_s") or 0.6)
     delay = float(cfg.get("capture_delay_s") or 0.0)
     margin = float(cfg.get("timing_margin_s", TRACKING_DEFAULTS["timing_margin_s"]))
-    t0 = float(cfg.get("plc_t0_s") or 0.0)
+    # San_test ladder: Y0 fires the moment M1 is written, so there is no T0 lead to subtract (T0 is the pulse length)
+    t0 = 0.0 if str(cfg.get("plc_ladder") or "").lower() == "san_test" else float(cfg.get("plc_t0_s") or 0.0)
     for s in st.values():
         if s.offset_mm < 0:
             out.append(f"{s.name}: offset {s.offset_mm:g} mm is upstream of the trigger sensor (not supported)")

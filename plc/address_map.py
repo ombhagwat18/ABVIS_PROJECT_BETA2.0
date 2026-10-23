@@ -70,6 +70,11 @@ LATCHED_OPERATOR = frozenset({"TRIGGER", "PASS", "REJECT"})      # written once;
 
 # SIMULATOR-ONLY test stimulus. Never used by production code. Only these bits may ever be opened up,
 # only for the duration of one write, only on the service thread, and X/Y are never among them.
+# SAN_TEST ladder (plc file/San_test/San_test.isp): two more bits the PC may write, each one shot, nothing else.
+#   M20  PC heartbeat: net 9 resets it every scan, net 8 times NOT M20 (T1 K30 = 3 s) -> SET M3 "system fault"; so the PC sets it
+#        about once a second while the line runs. M12 = fault reset (net 13: RST M3, RST M12). M3 is only READ.
+HEARTBEAT_BIT, FAULT_RESET_BIT, FAULT_BIT = "M20", "M12", "M3"
+SERVICE_BITS = {"HEARTBEAT": HEARTBEAT_BIT, "FAULT_RESET": FAULT_RESET_BIT}
 SIM_TEST_BITS = frozenset({TRIGGER_BIT, PASS_BIT, REJECT_BIT, "X0", "X1", "X2"})
 _sim_open = None                       # the one device a simulator test write is currently allowed to touch
 
@@ -79,7 +84,7 @@ class sim_test_allow:
 
     def __init__(self, device: str):
         self.device = device.strip().upper()
-        allowed = SIM_TEST_BITS | set(OPERATOR_BITS.values())
+        allowed = SIM_TEST_BITS | set(OPERATOR_BITS.values()) | set(SERVICE_BITS.values())
         if self.device not in allowed:
             raise AddressError(f"{device!r} is not a test bit (allowed: {sorted(allowed)})")
 
@@ -180,6 +185,11 @@ CONTRACT = {
            "intended value from the user; the observed duration is measured in handshake_test"),
     "T1": ("Reject pulse duration (K5 = 0.5 s at 100 ms base)", "timer, read-only",
            "intended value from the user; the observed duration is measured in handshake_test"),
+    "M3": ("SAN_TEST: system fault (heartbeat lost 3 s, or contactor feedback X3 missing 2 s)", "PLC-owned flag, Python reads only",
+           "set by net 10 / net 12, cleared by M12 (fault reset)"),
+    "M12": ("SAN_TEST: fault reset from the PC", "COMMAND - one shot; the ladder clears it", "net 13: RST M3, RST M12"),
+    "M20": ("SAN_TEST: PC heartbeat", "COMMAND - one shot about every second; the ladder clears it",
+            "net 9 resets it; no pulse for 3 s sets M3"),
     "C0": ("PASS command counter (CNT C0 K9999 on the M0 rung)", "counter, read-only",
            "from the decoded ladder, net 4; counts up to 9999, the ladder never resets it"),
     "C1": ("REJECT command counter (CNT C1 K9999 on the M1 rung)", "counter, read-only",

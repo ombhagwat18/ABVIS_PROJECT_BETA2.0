@@ -49,6 +49,8 @@ CATALOG = {
     "TRIGGER_MISSED": (WARNING, "Inspection trigger lost", "Check the PLC link; remove the bottle by hand."),
     "BOTTLE_UNTRIGGERED": (MAJOR, "Bottle passed without inspection",
                            "Remove the bottle by hand. Bottles are too close (one-bottle PLC handshake)."),
+    "HEARTBEAT_FAILED": (MAJOR, "PC heartbeat to the PLC is not getting through",
+                         "The PLC raises M3 (system fault) 3 s after the last beat. Check the PLC link, then RESET FAULT."),
     "TIMING_INVALID": (MAJOR, "Line timing is not valid", "Engineer: calibrate speed / distances (Timing)."),
     "REJECT_DEADLINE_MISSED": (MAJOR, "Reject too late: bottle NOT ejected", "Remove the bottle by hand."),
     "REJECT_NOT_OBSERVED": (MAJOR, "Reject output not seen", "Check the reject cylinder and the PLC program."),

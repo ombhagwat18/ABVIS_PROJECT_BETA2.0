@@ -43,6 +43,7 @@ QUICK = (
     ("Annotation export", ["-m", "vision.annotate"], "only reviewed / annotated images become training labels"),
     ("Brand assets", ["-m", "ui.brand"], "brand.json readable, logo / mark / icon present (local files only)"),
     ("System report", ["-m", "tools.system_report", "--selftest"], "spec check rules; no device opened without asking, settings untouched"),
+    ("Timing check", ["-m", "tools.timing_check", "--selftest"], "line timing arithmetic (ladder vs settings), no hardware"),
 )
 FULL = (
     ("Dataset / split", ["-m", "vision.dataset"], "labels, crop pipeline, scene split"),

@@ -89,3 +89,6 @@ reports/
 # Claude Code context: local only, not published
 CLAUDE.md
 .claude/
+
+# OLD / TESTED baseline (old environment); kept for reference, never edited
+ALL_DATASETS/
