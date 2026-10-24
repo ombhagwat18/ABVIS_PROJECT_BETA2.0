@@ -125,6 +125,95 @@ def _real_detector():
     return detect_fn, read_wh, det.model_id
 
 
+# ------------------------------------------------------- polygon version (segmentation projects, e.g. enclosure_seg)
+# A defect that IS a part state reuses that part's seeded outline; a missing cap is the top band of the bottle outline.
+SEG_COPY = {"tilt_cap": "cap", "damaged_label": "label"}
+NECK_FRAC = 0.12                                  # bare neck + tamper ring = top 12 % of the bottle outline
+
+
+def neck_band(points: list, frac: float = NECK_FRAC) -> list | None:
+    """Normalised bottle polygon [x0, y0, x1, y1, ...] -> rectangle polygon over its top `frac` of height."""
+    xs, ys = points[0::2], points[1::2]
+    top, h = min(ys), max(ys) - min(ys)
+    if h <= 0:
+        return None
+    cut = top + frac * h
+    near = [x for x, y in zip(xs, ys) if y <= cut]
+    if len(near) < 2 or max(near) <= min(near):
+        return None
+    x0, x1 = min(near), max(near)
+    return [x0, top, x1, top, x1, cut, x0, cut]
+
+
+def seed_defect_polygons(data: dict, items) -> dict:
+    """items: [(rel, [defects])]. Adds defect polygons as SEEDS (seeded / auto / reviewed False), the same state as
+    vision.autoseed output, so they go through the same Annotation Studio review. Reviewed images are left alone and a
+    defect polygon that already exists is never doubled."""
+    s = {"images": 0, "seeded": {}, "no_part": {}, "skipped_reviewed": 0, "already": 0}
+    for rel, defects in items:
+        e = data["images"].get(rel)
+        if e is None:
+            continue
+        if e.get("reviewed"):
+            s["skipped_reviewed"] += 1
+            continue
+        polys = e.setdefault("polygons", [])
+        have = {q["cls"] for q in polys}
+        added = False
+        for d in defects:
+            if d not in data["classes"] or (d not in SEG_COPY and d != "missing_cap"):
+                continue
+            if d in have:
+                s["already"] += 1
+                continue
+            src = SEG_COPY.get(d, "bottle")
+            part = next((q for q in polys if q["cls"] == src), None)
+            pts = None if part is None else (list(part["points"]) if d in SEG_COPY else neck_band(part["points"]))
+            if not pts:
+                s["no_part"][d] = s["no_part"].get(d, 0) + 1
+                continue
+            polys.append({"cls": d, "points": pts, "score": part.get("score", 1.0), "seeded": True, "auto": True,
+                          "model": "defect_seed"})
+            s["seeded"][d] = s["seeded"].get(d, 0) + 1
+            added = True
+        s["images"] += added
+    return s
+
+
+def seg_items(slug: str, labels_from: str = "enclosure_crops") -> list:
+    """(rel in `slug`, [defects]) using the latest corrected labels of `labels_from`, matched by file name through
+    `slug`'s image_meta.json (source = '<CaptureFolder>/<file>')."""
+    import csv
+    meta = json.loads((D.PROJECTS / slug / "image_meta.json").read_text(encoding="utf-8"))
+    with open(D.PROJECTS / labels_from / "labels.csv", newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    head, by_name = rows[0], {}
+    for r in rows[1:]:
+        name = Path(r[0]).name
+        if name in by_name:
+            raise SystemExit(f"{labels_from}: file name {name} appears twice; cannot match by name")
+        by_name[name] = [d for d, v in zip(head[1:-1], r[1:-1]) if v == "1"]
+    return [(rel, by_name[Path(m["source"]).name]) for rel, m in sorted(meta.items())
+            if Path(m["source"]).name in by_name]
+
+
+def main_seg(argv) -> None:
+    slug = argv[argv.index("--project") + 1] if "--project" in argv else "enclosure_seg"
+    path = D.PROJECTS / slug / "annotations.json"
+    data = A.load_annotations(path)
+    items = seg_items(slug)
+    s = seed_defect_polygons(data, items)
+    print(f"project {slug}: {len(items)} image(s) matched to labels")
+    print(json.dumps(s, indent=1))
+    if "--write" in argv:
+        A.validate_annotations(data)
+        A.save_annotations(path, data)
+        AA.log_action(path.parent / "annotation_log.jsonl", "seed defect polygons", **s)
+        print(f"wrote seeds to {path} (unreviewed: confirm them in the Annotate page)")
+    else:
+        print("(plan only: nothing written; add --write)")
+
+
 def main(argv) -> None:
     limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else None
     path = D.PROJECT_DIR / "annotations.json"
@@ -185,12 +274,29 @@ def demo():
         assert back["images"]["a.jpg"]["proposals"]
         exported = A.export_yolo_detection(back, Path(td) / "out")
         assert "a.jpg" not in " ".join(map(str, exported)), exported
+    # polygon seeding: tilt_cap copies the cap, damaged_label the label, missing_cap = top band of the bottle
+    bottle = [0.4, 0.1, 0.6, 0.1, 0.6, 0.9, 0.4, 0.9]
+    seg = {"classes": ["bottle", "cap", "label", "tilt_cap", "damaged_label", "missing_cap"], "images": {
+        "t.jpg": {"reviewed": False, "polygons": [{"cls": "bottle", "points": bottle}, {"cls": "cap", "points": [0.45, 0.05, 0.55, 0.05, 0.55, 0.1]}]},
+        "m.jpg": {"reviewed": False, "polygons": [{"cls": "bottle", "points": bottle}]},
+        "n.jpg": {"reviewed": False, "polygons": []},
+        "r.jpg": {"reviewed": True, "polygons": [{"cls": "bottle", "points": bottle}]}}}
+    s = seed_defect_polygons(seg, [("t.jpg", ["tilt_cap", "damaged_bottle"]), ("m.jpg", ["missing_cap"]),
+                                   ("n.jpg", ["damaged_label"]), ("r.jpg", ["missing_cap"])])
+    t = {q["cls"]: q for q in seg["images"]["t.jpg"]["polygons"]}
+    assert t["tilt_cap"]["points"] == t["cap"]["points"] and t["tilt_cap"]["seeded"] and "damaged_bottle" not in t
+    band = seg["images"]["m.jpg"]["polygons"][-1]
+    assert band["cls"] == "missing_cap" and abs(band["points"][5] - (0.1 + 0.12 * 0.8)) < 1e-9, band
+    assert s["no_part"] == {"damaged_label": 1} and s["skipped_reviewed"] == 1 and len(seg["images"]["r.jpg"]["polygons"]) == 1
+    assert seed_defect_polygons(seg, [("t.jpg", ["tilt_cap"])])["already"] == 1          # never doubled
     print("ok  defect bootstrap: component -> defect-state relabel, region defects listed for hand drawing, "
-          "proposals only (never boxes / reviewed / exported), v4 recipe valid")
+          "proposals only (never boxes / reviewed / exported), v4 recipe valid, polygon defect seeds")
 
 
 if __name__ == "__main__":
-    if "--plan" in sys.argv or "--write" in sys.argv:
+    if "--seed-seg" in sys.argv:
+        main_seg(sys.argv)
+    elif "--plan" in sys.argv or "--write" in sys.argv:
         main(sys.argv)
     else:
         demo()

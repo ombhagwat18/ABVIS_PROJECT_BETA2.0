@@ -1,0 +1,36 @@
+{
+  "roi": [
+    0,
+    0,
+    288,
+    640
+  ],
+  "roi_frame": [
+    288,
+    640
+  ],
+  "input_wh": [
+    256,
+    576
+  ],
+  "cache_wh": [
+    288,
+    640
+  ],
+  "camera": 0,
+  "thresholds": {
+    "damaged_bottle": 0.5,
+    "damaged_label": 0.85,
+    "missing_cap": 0.5,
+    "missing_label": 0.65,
+    "skewed_bottle": 0.5,
+    "tilt_cap": 0.5,
+    "water_level": 0.8
+  },
+  "thresholds_before_activation": {
+    "time": "2026-10-24 18:38:36",
+    "active_model": null,
+    "thresholds": {}
+  },
+  "active_model": "20261023-154305_bisleri250-defect-classifier-v1_efficientnet_b0"
+}

@@ -96,13 +96,16 @@ BACKBONES = {
     "mobilenet_v3_small": lambda tv, w: tv.models.mobilenet_v3_small(weights=w),
     "resnet18": lambda tv, w: tv.models.resnet18(weights=w),
     "convnext_tiny": lambda tv, w: tv.models.convnext_tiny(weights=w),
+    "efficientnet_v2_s": lambda tv, w: tv.models.efficientnet_v2_s(weights=w),
+    "convnext_small": lambda tv, w: tv.models.convnext_small(weights=w),
 }
 
 # Every backbone above ends in a final nn.Linear, but not at the same
 # attribute -- ResNet keeps a bare .fc, the rest bury it inside .classifier
 # at a family-specific index.
 _CLASSIFIER_INDEX = {"efficientnet_b0": 1, "efficientnet_b1": 1,
-                     "mobilenet_v3_small": 3, "convnext_tiny": 2}
+                     "mobilenet_v3_small": 3, "convnext_tiny": 2,
+                     "efficientnet_v2_s": 1, "convnext_small": 2}
 
 
 def sample_weights(paths, labels, defects, hard=None, good_cap=5.0, hard_factor=3.0) -> tuple:
@@ -496,7 +499,7 @@ def run(epochs=25, batch=32, lr=3e-4, arch=DEFAULT_ARCH, test_frac=0.15,
     best_f1 = float(np.mean([m["f1"] for m in scored_now])) if scored_now else 0.0
     log("temperature: " + ", ".join(f"{d}={t:g}" for d, t in zip(defects, temperature)))
 
-    stamp = time.strftime("%Y%m%d-%H%M%S")
+    stamp = time.strftime("%Y%m%d-%H%M%S") + f"_{arch}"                # date-time + backbone: readable, still sorts by time
     out = D.MODELS / stamp
     out.mkdir(parents=True, exist_ok=True)
     torch.save({"arch": arch, "defects": defects, "input_wh": list(D.input_wh(cfg)),

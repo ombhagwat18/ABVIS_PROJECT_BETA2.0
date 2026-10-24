@@ -203,7 +203,7 @@ settings_audit = None
 
 # Keys whose change alters what the line decides or does physically: logged at WARNING level.
 SAFETY_SETTINGS = ("fault_action", "monitor_only", "decision_rules", "threshold_shift", "threshold_overrides",
-                   "detector_weights", "detector_conf", "plc_operator_controls", "plc_t0_s", "plc_t1_s",
+                   "detector_weights", "detector_conf", "plc_operator_controls", "plc_ladder", "plc_t0_s", "plc_t1_s",
                    "inspection_to_reject_mm", "conveyor_mm_s", "reject_travel_s", "estop_device", "line_cameras")
 
 
